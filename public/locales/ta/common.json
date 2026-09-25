@@ -7,7 +7,8 @@
     "editor": "திருத்தி",
     "library": "நூலகம்",
     "settings": "அமைப்புகள்",
-    "about": "பற்றி"
+    "about": "பற்றி",
+    "data": "தரவு"
   },
   "theme": {
     "toggle": "தீமை மாற்று",
@@ -142,5 +143,6 @@
     "shadowOffsetX": "இடம்பெயர்வு X",
     "shadowOffsetY": "இடம்பெயர்வு Y",
     "resetEffects": "பயன்களை மீட்டமை"
-  }
+  },
+  "data": {}
 }

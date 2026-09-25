@@ -7,7 +7,8 @@
     "editor": "ਐਡੀਟਰ",
     "library": "ਲਾਇਬਰੇਰੀ",
     "settings": "ਸੈਟਿੰਗਾਂ",
-    "about": "ਬਾਰੇ"
+    "about": "ਬਾਰੇ",
+    "data": "ਡਾਟਾ"
   },
   "theme": {
     "toggle": "ਥੀਮ ਬਦਲੋ",
@@ -142,5 +143,6 @@
     "shadowOffsetX": "ਆਫਸੈਟ X",
     "shadowOffsetY": "ਆਫਸੈਟ Y",
     "resetEffects": "ਪ੍ਰਭਾਵ ਰੀਸੈਟ ਕਰੋ"
-  }
+  },
+  "data": {}
 }

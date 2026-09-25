@@ -7,7 +7,8 @@
     "editor": "ସମ୍ପାଦକ",
     "library": "ଲାଇବ୍ରେରୀ",
     "settings": "ସେଟିଂସ୍",
-    "about": "ପରିଚୟ"
+    "about": "ପରିଚୟ",
+    "data": "ଡାଟା"
   },
   "theme": {
     "toggle": "ଥିମ୍ ବଦଳାନ୍ତୁ",
@@ -142,5 +143,6 @@
     "shadowOffsetX": "ଅଫସେଟ୍ X",
     "shadowOffsetY": "ଅଫସେଟ୍ Y",
     "resetEffects": "ପ୍ରଭାବ ରିସେଟ୍ କରନ୍ତୁ"
-  }
+  },
+  "data": {}
 }

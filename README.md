@@ -88,8 +88,8 @@ Contributions welcome! Please read the guidelines before submitting PRs to [thep
 Use [GitHub Issues](https://github.com/theprabir/ID-Stack-Web/issues) to report bugs or request features.
 
 ## 📊 Project Status
-**Current Phase:** 2.1 (Editor UX polish) — COMPLETE
-**Status:** v0.2.1 — shortcuts, drag-drop layers, streamlined header
+**Current Phase:** 3 (Data Import) — COMPLETE
+**Status:** v0.3.0 — Excel import, photo matching, column mapping, validation, live card preview
 
 ### Completed
 - Phase 0 — Initialization: `README.md`, `LICENSE`, `.gitignore`
@@ -109,22 +109,32 @@ Use [GitHub Issues](https://github.com/theprabir/ID-Stack-Web/issues) to report 
   - Drag-drop layer reordering in the Layers panel with full undo/redo
   - Header simplified: logo + language + theme toggle (navigation lives in the sidebar)
   - `docs/keyboard_shortcuts.md` — all active and planned shortcuts
+- **Phase 3 — Data Import:**
+  - `excelService`: SheetJS parsing of .xlsx/.xls/.csv (first sheet, header row), duplicate-column dedupe, blank-row skipping, preview helpers
+  - `photoService`: multi-photo import with blob URLs and dimensions, auto-matching by filename / Excel column / manual assignment, centre-crop+resize processing, blob cleanup
+  - `previewService`: 2D-canvas card renderer with `{{Placeholder}}` substitution, word-wrapped text, image centre-crop, shapes, shadows/strokes
+  - Placeholder collection from the template (placeholder elements + `{{Token}}` text) drives the mapping UI
+  - `dataStore`: Excel data, photos, mappings, validation and match state with auto-map on import
+  - Data Import page: ExcelImport, ColumnMapping, DataPreview (validation report + row picker), CardLivePreview, PhotoImport
+  - Validation: missing required fields, duplicate IDs, missing photos, sparse rows, unmapped placeholders (errors vs warnings)
+  - Full i18n for all new UI strings (11 languages; Hindi, Marathi and Spanish fully translated, others fall back to English for the new section)
 
 ### Working Features
-- All Phase 1 features (themes, languages, routing, PWA)
-- Add/select/move/resize elements on a CR80 canvas; edit all properties live
-- Undo/redo round-trips verified in browser
-- Save to IndexedDB verified (template record with elements persisted)
-- Front/back side isolation verified
-- Full keyboard workflow and layer drag-drop verified in browser
+- All Phase 1 & 2 features (themes, languages, routing, PWA, editor)
+- Import .xlsx/.xls/.csv with auto-mapping of placeholders to columns
+- Photo import with filename/column/manual auto-matching
+- Validation report with error/warning severity per row
+- Live card preview rendering any selected row onto the current template
+- Excel → mapping → matching → validation → preview pipeline covered by an integration test
 
 ### Known Issues
-- Barcode elements render as labelled boxes — real QR/1D rendering lands with data binding (Phase 3/4)
-- Bundle grew to ~161 KB gzipped (Fabric.js); still well under the 500 KB budget
-- Layer rename is available via properties panel only; drag-drop layer reordering arrives with richer history UX later
+- Barcode elements still render as labelled boxes in previews — real QR/1D rendering lands with batch generation (Phase 4)
+- Photo placeholders render the matched photo by row (one photo per card); per-placeholder photo columns arrive with Phase 4
+- Hindi/Marathi/Spanish data-import strings are translated; the other 7 languages fall back to English for the new `data.*` keys (editor keys remain translated)
+- Bundle grew to ~285 KB gzipped (Fabric.js + SheetJS); still under the 500 KB budget
 
 ### Next Steps
-- **Phase 3 — Data Import:** SheetJS Excel parsing, photo import/matching, column mapping UI, validation, live preview
+- **Phase 4 — Batch Processing:** Web Worker rendering, progress tracking, pause/resume/cancel, ZIP export
 
 ## 🙏 Acknowledgments
 Built with:

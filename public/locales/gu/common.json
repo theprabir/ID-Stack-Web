@@ -7,7 +7,8 @@
     "editor": "એડિટર",
     "library": "લાઇબ્રેરી",
     "settings": "સેટિંગ્સ",
-    "about": "વિશે"
+    "about": "વિશે",
+    "data": "ડેટા"
   },
   "theme": {
     "toggle": "થીમ બદલો",
@@ -142,5 +143,6 @@
     "shadowOffsetX": "ઓફસેટ X",
     "shadowOffsetY": "ઓફસેટ Y",
     "resetEffects": "અસરો રીસેટ કરો"
-  }
+  },
+  "data": {}
 }

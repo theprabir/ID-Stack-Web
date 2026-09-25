@@ -7,7 +7,8 @@
     "editor": "এডিটর",
     "library": "লাইব্রেরি",
     "settings": "সেটিংস",
-    "about": "সম্পর্কে"
+    "about": "সম্পর্কে",
+    "data": "ডেটা"
   },
   "theme": {
     "toggle": "থিম পরিবর্তন করুন",
@@ -142,5 +143,6 @@
     "shadowOffsetX": "অফসেট X",
     "shadowOffsetY": "অফসেট Y",
     "resetEffects": "প্রভাব রিসেট করুন"
-  }
+  },
+  "data": {}
 }

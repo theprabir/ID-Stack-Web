@@ -7,7 +7,8 @@
     "editor": "ಸಂಪಾದಕ",
     "library": "ಗ್ರಂಥಾಲಯ",
     "settings": "ಸೆಟ್ಟಿಂಗ್‌ಗಳು",
-    "about": "ಬಗ್ಗೆ"
+    "about": "ಬಗ್ಗೆ",
+    "data": "ದತ್ತಾಂಶ"
   },
   "theme": {
     "toggle": "ಥೀಮ್ ಬದಲಿಸಿ",
@@ -142,5 +143,6 @@
     "shadowOffsetX": "ಆಫ್‌ಸೆಟ್ X",
     "shadowOffsetY": "ಆಫ್‌ಸೆಟ್ Y",
     "resetEffects": "ಪರಿಣಾಮಗಳನ್ನು ಮರುಹೊಂದಿಸಿ"
-  }
+  },
+  "data": {}
 }

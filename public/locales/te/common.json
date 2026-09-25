@@ -7,7 +7,8 @@
     "editor": "ఎడిటర్",
     "library": "లైబ్రరీ",
     "settings": "సెట్టింగ్‌లు",
-    "about": "గురించి"
+    "about": "గురించి",
+    "data": "డేటా"
   },
   "theme": {
     "toggle": "థీమ్ మార్చు",
@@ -142,5 +143,6 @@
     "shadowOffsetX": "ఆఫ్‌సెట్ X",
     "shadowOffsetY": "ఆఫ్‌సెట్ Y",
     "resetEffects": "ప్రభావాలను రీసెట్ చేయి"
-  }
+  },
+  "data": {}
 }

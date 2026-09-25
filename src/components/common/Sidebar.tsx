@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { IdCard, Layout, Settings, Info } from 'lucide-react';
+import { IdCard, Layout, Settings, Info, TableProperties } from 'lucide-react';
 import { useUIStore } from '@/stores/uiStore';
 import { cn } from '@/lib/utils';
 
@@ -20,6 +20,7 @@ export function Sidebar(): JSX.Element {
 
   const items: SidebarItem[] = [
     { to: '/', labelKey: 'nav.editor', Icon: IdCard },
+    { to: '/data', labelKey: 'nav.data', Icon: TableProperties },
     { to: '/library', labelKey: 'nav.library', Icon: Layout },
     { to: '/settings', labelKey: 'nav.settings', Icon: Settings },
     { to: '/about', labelKey: 'nav.about', Icon: Info },
