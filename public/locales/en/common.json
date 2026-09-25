@@ -1,0 +1,71 @@
+{
+  "app": {
+    "name": "ID Card Software",
+    "tagline": "Design & print ID cards — right in your browser"
+  },
+  "nav": {
+    "editor": "Editor",
+    "library": "Library",
+    "settings": "Settings",
+    "about": "About"
+  },
+  "theme": {
+    "toggle": "Toggle theme",
+    "light": "Light mode",
+    "dark": "Dark mode"
+  },
+  "language": {
+    "label": "Language",
+    "change": "Change language"
+  },
+  "common": {
+    "loading": "Loading…",
+    "save": "Save",
+    "cancel": "Cancel",
+    "close": "Close",
+    "delete": "Delete",
+    "rename": "Rename",
+    "ok": "OK",
+    "yes": "Yes",
+    "no": "No",
+    "error": "Something went wrong",
+    "retry": "Retry",
+    "comingSoon": "Coming in a later phase"
+  },
+  "settings": {
+    "title": "Settings",
+    "general": "General",
+    "appearance": "Appearance",
+    "languageSection": "Language",
+    "units": "Units",
+    "unitsMM": "Millimetres (mm)",
+    "unitsInch": "Inches (in)",
+    "autoSave": "Auto-save templates",
+    "autoSaveDescription": "Save changes automatically while editing",
+    "themeDescription": "Choose between dark and light interface"
+  },
+  "about": {
+    "title": "About",
+    "version": "Version",
+    "description": "A professional, open-source ID card design and batch printing software that runs entirely in your browser.",
+    "privacy": "100% client-side — your data never leaves your device.",
+    "license": "Released under the MIT License."
+  },
+  "pages": {
+    "editorTitle": "Template Editor",
+    "editorPlaceholder": "The Fabric.js canvas editor arrives in Phase 2.",
+    "libraryTitle": "Template Library",
+    "libraryPlaceholder": "Pre-designed templates arrive in Phase 5.",
+    "settingsTitle": "Settings",
+    "aboutTitle": "About"
+  },
+  "errors": {
+    "boundaryTitle": "Something went wrong",
+    "boundaryDescription": "An unexpected error occurred. You can try again or reload the application.",
+    "reload": "Reload application"
+  },
+  "footer": {
+    "offlineReady": "Offline ready",
+    "clientSide": "100% client-side"
+  }
+}
