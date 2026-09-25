@@ -47,29 +47,37 @@ See the `docs/` folder for:
 
 ### Prerequisites
 - Node.js 18+
-- pnpm (recommended) or npm
+- npm (bundled with Node.js)
 
 ### Installation
 ```bash
 git clone https://github.com/theprabir/ID-Stack-Web.git
 cd ID-Stack-Web
-pnpm install
+npm install
 ```
 
-### Development
-```bash
-pnpm dev
+### Run the App (Development)
+Starts the dev server with hot reload, then open **http://localhost:5173/** in your browser:
+```cmd
+npm run dev
 ```
+Stop the server with `Ctrl+C`.
 
-### Build
-```bash
-pnpm build
-```
+### Full Command Reference
 
-### Test
-```bash
-pnpm test
-```
+| Command | What it does |
+|---|---|
+| `npm run dev` | Dev server with hot reload (for testing) — http://localhost:5173/ |
+| `npm run build` | Type-checks + builds production files to `dist/` |
+| `npm run preview` | Serves the production build locally |
+| `npm test` | Runs the test suite once |
+| `npm run test:watch` | Runs tests in watch mode |
+| `npm run test:coverage` | Runs tests with a coverage report |
+| `npm run typecheck` | TypeScript check only (no output files) |
+| `npm run lint` | ESLint check |
+| `npm run lint:fix` | ESLint check with auto-fix |
+| `npm run format` | Formats source files with Prettier |
+| `npm run format:check` | Verifies Prettier formatting without changing files |
 
 ### Deploy
 Push to main branch — auto-deploys to Vercel/Netlify.
