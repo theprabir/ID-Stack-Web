@@ -1,5 +1,4 @@
 import { useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
 import { ArrowLeftRight, Wand2 } from 'lucide-react';
 import type { CardTemplate } from '@/types/template';
 import type { ExcelData } from '@/types/data';
@@ -19,7 +18,6 @@ interface ColumnMappingProps {
  * clear. Unmapped placeholders are visually flagged.
  */
 export function ColumnMapping({ template, excelData }: ColumnMappingProps): JSX.Element {
-  const { t } = useTranslation();
   const mappings = useDataStore((state) => state.mappings);
   const setMapping = useDataStore((state) => state.setMapping);
   const autoMapColumns = useDataStore((state) => state.autoMapColumns);
@@ -34,7 +32,7 @@ export function ColumnMapping({ template, excelData }: ColumnMappingProps): JSX.
   if (!excelData) {
     return (
       <section className="rounded-lg border bg-surface-panel p-4 text-sm text-muted-foreground transition-colors duration-300">
-        {t('data.mappingNeedsExcel')}
+        Import an Excel file to map template placeholders.
       </section>
     );
   }
@@ -48,7 +46,7 @@ export function ColumnMapping({ template, excelData }: ColumnMappingProps): JSX.
         <div className="flex items-center gap-2">
           <ArrowLeftRight className="h-5 w-5 text-primary" aria-hidden="true" />
           <h2 id="column-mapping-title" className="text-sm font-semibold">
-            {t('data.mappingTitle')}
+            Column Mapping
           </h2>
         </div>
         <Button
@@ -58,20 +56,23 @@ export function ColumnMapping({ template, excelData }: ColumnMappingProps): JSX.
           disabled={placeholders.length === 0}
         >
           <Wand2 className="h-4 w-4" aria-hidden="true" />
-          {t('data.autoMap')}
+          Auto-map
         </Button>
       </div>
 
       {placeholders.length === 0 ? (
-        <p className="text-sm text-muted-foreground">{t('data.noPlaceholders')}</p>
+        <p className="text-sm text-muted-foreground">
+          No placeholders in the template. Add placeholder elements or {'{{Field}}'} text in the
+          editor.
+        </p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
-                <th className="py-2 pr-3 font-medium">{t('data.mappingPlaceholder')}</th>
-                <th className="py-2 pr-3 font-medium">{t('data.mappingColumn')}</th>
-                <th className="py-2 font-medium">{t('data.mappingSample')}</th>
+                <th className="py-2 pr-3 font-medium">Placeholder</th>
+                <th className="py-2 pr-3 font-medium">Excel column</th>
+                <th className="py-2 font-medium">Sample</th>
               </tr>
             </thead>
             <tbody>
@@ -93,12 +94,12 @@ export function ColumnMapping({ template, excelData }: ColumnMappingProps): JSX.
                     </td>
                     <td className="py-2 pr-3">
                       <Select
-                        aria-label={t('data.mappingSelectFor', { placeholder })}
+                        aria-label={`Map placeholder ${placeholder}`}
                         className="h-8 min-w-40 text-xs"
                         value={mappedColumn}
                         onChange={(event) => setMapping(placeholder, event.target.value)}
                       >
-                        <option value="">{t('data.mappingUnmapped')}</option>
+                        <option value="">Not mapped</option>
                         {excelData.columns.map((column) => (
                           <option key={column} value={column}>
                             {column}

@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 import { Eye } from 'lucide-react';
 import type { DataRow } from '@/types/data';
 import { sideKey } from '@/types/template';
@@ -23,7 +22,6 @@ interface CardLivePreviewProps {
  * Re-renders when template, mappings, row or side change.
  */
 export function CardLivePreview({ row, side, widthPx = 320 }: CardLivePreviewProps): JSX.Element {
-  const { t } = useTranslation();
   const currentTemplate = useTemplateStore((state) => state.currentTemplate);
   const mappings = useDataStore((state) => state.mappings);
   const photoMatchResult = useDataStore((state) => state.photoMatchResult);
@@ -66,10 +64,12 @@ export function CardLivePreview({ row, side, widthPx = 320 }: CardLivePreviewPro
   if (!currentTemplate) {
     return (
       <section className="rounded-lg border bg-surface-panel p-4 text-sm text-muted-foreground transition-colors duration-300">
-        {t('data.previewNeedsTemplate')}
+        Open a template in the editor first.
       </section>
     );
   }
+
+  const sideLabel = side === 'front' ? 'Front Side' : 'Back Side';
 
   return (
     <section
@@ -79,9 +79,7 @@ export function CardLivePreview({ row, side, widthPx = 320 }: CardLivePreviewPro
       <div className="mb-3 flex items-center gap-2">
         <Eye className="h-5 w-5 text-primary" aria-hidden="true" />
         <h2 id="card-preview-title" className="text-sm font-semibold">
-          {t('data.livePreviewTitle', {
-            side: t(side === 'front' ? 'editor.frontSide' : 'editor.backSide'),
-          })}
+          Live Preview — {sideLabel}
         </h2>
       </div>
 
@@ -101,7 +99,7 @@ export function CardLivePreview({ row, side, widthPx = 320 }: CardLivePreviewPro
               }
             }}
             role="img"
-            aria-label={t('data.livePreviewTitle', { side })}
+            aria-label={`Live preview — ${sideLabel}`}
             className="h-auto w-full max-w-full rounded shadow-md"
             style={{ maxWidth: widthPx }}
           />
@@ -110,7 +108,7 @@ export function CardLivePreview({ row, side, widthPx = 320 }: CardLivePreviewPro
         )}
       </div>
       <p className="mt-2 text-center text-xs text-muted-foreground">
-        {row ? t('data.livePreviewRow', { row: row.rowIndex + 1 }) : t('data.livePreviewNoRow')}
+        {row ? `Showing row ${row.rowIndex + 1}` : 'Select a row to see live data'}
       </p>
     </section>
   );

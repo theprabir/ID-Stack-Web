@@ -1,5 +1,4 @@
 import { useCallback } from 'react';
-import { useTranslation } from 'react-i18next';
 import {
   Type,
   Image as ImageIcon,
@@ -17,6 +16,15 @@ import { generateId } from '@/utils/id';
 import { Button } from '@/components/ui';
 import { Label } from '@/components/ui';
 
+/** Display names for element kinds */
+const ELEMENT_NAMES: Record<CanvasElement['type'], string> = {
+  text: 'Text',
+  image: 'Image',
+  shape: 'Shape',
+  barcode: 'Barcode',
+  placeholder: 'Placeholder',
+};
+
 interface ToolsPanelProps {
   onAddElement: (element: CanvasElement) => void;
   onSave: () => void;
@@ -25,7 +33,6 @@ interface ToolsPanelProps {
 
 /** Left panel: element creation and template-level actions. */
 export function ToolsPanel({ onAddElement, onSave, canSave }: ToolsPanelProps): JSX.Element {
-  const { t } = useTranslation();
   const currentTemplate = useTemplateStore((state) => state.currentTemplate);
   const createTemplate = useTemplateStore((state) => state.createTemplate);
   const setSideBackground = useTemplateStore((state) => state.setSideBackground);
@@ -38,7 +45,7 @@ export function ToolsPanel({ onAddElement, onSave, canSave }: ToolsPanelProps): 
       const height = kind === 'text' || kind === 'placeholder' ? 10 : 25;
       const base: CanvasElement = {
         id: generateId(),
-        name: t(`editor.element_${kind}`),
+        name: ELEMENT_NAMES[kind],
         type: kind,
         x: 17,
         y: 15,
@@ -52,7 +59,7 @@ export function ToolsPanel({ onAddElement, onSave, canSave }: ToolsPanelProps): 
         fill: { type: 'solid', color: kind === 'placeholder' ? '#2563EB' : '#111111' },
       };
       if (kind === 'text') {
-        base.text = t('editor.sampleText');
+        base.text = 'Sample text';
         base.fontFamily = 'Inter';
         base.fontSize = 12;
         base.textAlign = 'left';
@@ -68,7 +75,7 @@ export function ToolsPanel({ onAddElement, onSave, canSave }: ToolsPanelProps): 
       }
       return base;
     },
-    [t]
+    []
   );
 
   const addButtons: Array<{
@@ -86,7 +93,7 @@ export function ToolsPanel({ onAddElement, onSave, canSave }: ToolsPanelProps): 
     <div className="themed-scrollbar flex w-52 flex-col gap-3 overflow-auto border-r bg-surface-panel p-3 transition-colors duration-300">
       <div>
         <Label className="mb-1.5 block text-xs uppercase tracking-wide text-muted-foreground">
-          {t('editor.addElement')}
+          Add element
         </Label>
         <div className="grid grid-cols-1 gap-1">
           {addButtons.map(({ kind, Icon }) => (
@@ -98,7 +105,7 @@ export function ToolsPanel({ onAddElement, onSave, canSave }: ToolsPanelProps): 
               onClick={() => onAddElement(makeElement(kind))}
             >
               <Icon className="h-4 w-4" aria-hidden="true" />
-              {t(`editor.element_${kind}`)}
+              {ELEMENT_NAMES[kind]}
             </Button>
           ))}
         </div>
@@ -106,7 +113,7 @@ export function ToolsPanel({ onAddElement, onSave, canSave }: ToolsPanelProps): 
 
       <div>
         <Label className="mb-1.5 block text-xs uppercase tracking-wide text-muted-foreground">
-          {t('editor.quickShapes')}
+          Quick shapes
         </Label>
         <div className="grid grid-cols-2 gap-1">
           <Button
@@ -116,7 +123,7 @@ export function ToolsPanel({ onAddElement, onSave, canSave }: ToolsPanelProps): 
             onClick={() => onAddElement(makeElement('shape'))}
           >
             <Square className="h-3.5 w-3.5" aria-hidden="true" />
-            {t('editor.shapeRect')}
+            Rectangle
           </Button>
           <Button
             variant="outline"
@@ -124,13 +131,13 @@ export function ToolsPanel({ onAddElement, onSave, canSave }: ToolsPanelProps): 
             className="justify-start gap-1"
             onClick={() => {
               const circle = makeElement('shape');
-              circle.name = t('editor.shapeCircle');
+              circle.name = 'Circle';
               circle.cornerRadius = 999;
               onAddElement(circle);
             }}
           >
             <Circle className="h-3.5 w-3.5" aria-hidden="true" />
-            {t('editor.shapeCircle')}
+            Circle
           </Button>
         </div>
       </div>
@@ -138,14 +145,14 @@ export function ToolsPanel({ onAddElement, onSave, canSave }: ToolsPanelProps): 
       {currentTemplate && (
         <div>
           <Label className="mb-1.5 block text-xs uppercase tracking-wide text-muted-foreground">
-            {t('editor.background')}
+            Background
           </Label>
           <input
             type="color"
             value={currentTemplate[sideKey(currentSide)].backgroundColor}
             onChange={(event) => setSideBackground(event.target.value)}
             className="h-8 w-full cursor-pointer rounded-md border border-input bg-card"
-            aria-label={t('editor.background')}
+            aria-label="Background"
           />
         </div>
       )}
@@ -155,10 +162,10 @@ export function ToolsPanel({ onAddElement, onSave, canSave }: ToolsPanelProps): 
           variant="outline"
           size="sm"
           className="justify-start gap-2"
-          onClick={() => createTemplate(t('editor.untitled'))}
+          onClick={() => createTemplate('Untitled template')}
         >
           <FilePlus2 className="h-4 w-4" aria-hidden="true" />
-          {t('editor.newTemplate')}
+          New template
         </Button>
         <Button
           variant="default"
@@ -168,7 +175,7 @@ export function ToolsPanel({ onAddElement, onSave, canSave }: ToolsPanelProps): 
           onClick={onSave}
         >
           <Save className="h-4 w-4" aria-hidden="true" />
-          {t('common.save')}
+          Save
         </Button>
       </div>
     </div>

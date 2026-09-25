@@ -1,4 +1,3 @@
-import { useTranslation } from 'react-i18next';
 import {
   MousePointer2,
   Type,
@@ -38,33 +37,32 @@ export function CanvasToolbar({
   onBringToFront,
   onSendToBack,
 }: CanvasToolbarProps): JSX.Element {
-  const { t } = useTranslation();
   const currentTool = useCanvasStore((state) => state.currentTool);
   const setTool = useCanvasStore((state) => state.setTool);
 
-  const tools: Array<{ tool: ToolType; labelKey: string; Icon: typeof Type }> = [
-    { tool: 'select', labelKey: 'editor.toolSelect', Icon: MousePointer2 },
-    { tool: 'text', labelKey: 'editor.toolText', Icon: Type },
-    { tool: 'image', labelKey: 'editor.toolImage', Icon: ImageIcon },
-    { tool: 'shape', labelKey: 'editor.toolShape', Icon: Square },
-    { tool: 'barcode', labelKey: 'editor.toolBarcode', Icon: QrCode },
-    { tool: 'placeholder', labelKey: 'editor.toolPlaceholder', Icon: Braces },
-    { tool: 'pan', labelKey: 'editor.toolPan', Icon: Hand },
+  const tools: Array<{ tool: ToolType; label: string; Icon: typeof Type }> = [
+    { tool: 'select', label: 'Select', Icon: MousePointer2 },
+    { tool: 'text', label: 'Text', Icon: Type },
+    { tool: 'image', label: 'Image', Icon: ImageIcon },
+    { tool: 'shape', label: 'Shape', Icon: Square },
+    { tool: 'barcode', label: 'Barcode', Icon: QrCode },
+    { tool: 'placeholder', label: 'Placeholder', Icon: Braces },
+    { tool: 'pan', label: 'Pan', Icon: Hand },
   ];
 
   return (
     <div
       className="flex w-12 flex-col items-center gap-1 border-r bg-surface-panel py-2 transition-colors duration-300"
       role="toolbar"
-      aria-label={t('editor.toolbar')}
+      aria-label="Editor tools"
     >
-      {tools.map(({ tool, labelKey, Icon }) => (
+      {tools.map(({ tool, label, Icon }) => (
         <Button
           key={tool}
           variant={currentTool === tool ? 'default' : 'ghost'}
           size="icon"
-          title={t(labelKey)}
-          aria-label={t(labelKey)}
+          title={label}
+          aria-label={label}
           aria-pressed={currentTool === tool}
           className="h-9 w-9"
           onClick={() => setTool(tool)}
@@ -79,8 +77,8 @@ export function CanvasToolbar({
         variant="ghost"
         size="icon"
         disabled={!canUndo}
-        title={t('editor.undo')}
-        aria-label={t('editor.undo')}
+        title="Undo"
+        aria-label="Undo"
         className="h-9 w-9"
         onClick={onUndo}
       >
@@ -90,8 +88,8 @@ export function CanvasToolbar({
         variant="ghost"
         size="icon"
         disabled={!canRedo}
-        title={t('editor.redo')}
-        aria-label={t('editor.redo')}
+        title="Redo"
+        aria-label="Redo"
         className="h-9 w-9"
         onClick={onRedo}
       >
@@ -103,8 +101,8 @@ export function CanvasToolbar({
       <Button
         variant="ghost"
         size="icon"
-        title={t('editor.bringToFront')}
-        aria-label={t('editor.bringToFront')}
+        title="Bring to front"
+        aria-label="Bring to front"
         className="h-9 w-9"
         onClick={onBringToFront}
       >
@@ -113,8 +111,8 @@ export function CanvasToolbar({
       <Button
         variant="ghost"
         size="icon"
-        title={t('editor.sendToBack')}
-        aria-label={t('editor.sendToBack')}
+        title="Send to back"
+        aria-label="Send to back"
         className="h-9 w-9"
         onClick={onSendToBack}
       >
@@ -123,14 +121,14 @@ export function CanvasToolbar({
       <Button
         variant="ghost"
         size="icon"
-        title={t('common.delete')}
-        aria-label={t('common.delete')}
+        title="Delete"
+        aria-label="Delete"
         className="h-9 w-9 text-destructive"
         onClick={onDelete}
       >
         <Trash2 className="h-4 w-4" aria-hidden="true" />
       </Button>
-      <span className={cn('sr-only')}>{t('editor.toolbar')}</span>
+      <span className={cn('sr-only')}>Editor tools</span>
     </div>
   );
 }

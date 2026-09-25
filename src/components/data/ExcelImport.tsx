@@ -1,5 +1,4 @@
 import { useCallback, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 import { FileSpreadsheet, Upload, X, Loader2 } from 'lucide-react';
 import { useDataStore } from '@/stores/dataStore';
 import { Button } from '@/components/ui';
@@ -10,7 +9,6 @@ import { cn } from '@/lib/utils';
  * file info and a clear button.
  */
 export function ExcelImport(): JSX.Element {
-  const { t } = useTranslation();
   const excelData = useDataStore((state) => state.excelData);
   const isParsing = useDataStore((state) => state.isParsing);
   const parseError = useDataStore((state) => state.parseError);
@@ -45,7 +43,7 @@ export function ExcelImport(): JSX.Element {
       <div className="mb-3 flex items-center gap-2">
         <FileSpreadsheet className="h-5 w-5 text-primary" aria-hidden="true" />
         <h2 id="excel-import-title" className="text-sm font-semibold">
-          {t('data.excelTitle')}
+          Excel Data
         </h2>
       </div>
 
@@ -53,7 +51,7 @@ export function ExcelImport(): JSX.Element {
         <div
           role="button"
           tabIndex={0}
-          aria-label={t('data.excelDropzone')}
+          aria-label="Click to choose a file or drop it here"
           onClick={() => inputRef.current?.click()}
           onKeyDown={(event) => {
             if (event.key === 'Enter' || event.key === ' ') inputRef.current?.click();
@@ -72,15 +70,15 @@ export function ExcelImport(): JSX.Element {
           )}
         >
           <Upload className="h-6 w-6 text-muted-foreground" aria-hidden="true" />
-          <p className="text-sm">{t('data.excelDropzone')}</p>
-          <p className="text-xs text-muted-foreground">{t('data.excelFormats')}</p>
+          <p className="text-sm">Click to choose a file or drop it here</p>
+          <p className="text-xs text-muted-foreground">Supported: .xlsx, .xls, .csv</p>
         </div>
       )}
 
       {isParsing && (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-          {t('common.loading')}
+          Loading…
         </div>
       )}
 
@@ -91,21 +89,18 @@ export function ExcelImport(): JSX.Element {
               {excelData.fileName}
             </p>
             <p className="text-xs text-muted-foreground">
-              {t('data.excelStats', {
-                rows: excelData.rows.length,
-                columns: excelData.columns.length,
-              })}
+              {excelData.rows.length} rows · {excelData.columns.length} columns
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-1">
             <Button variant="outline" size="sm" onClick={() => inputRef.current?.click()}>
-              {t('data.replaceFile')}
+              Replace
             </Button>
             <Button
               variant="ghost"
               size="icon"
-              aria-label={t('data.clearExcel')}
-              title={t('data.clearExcel')}
+              aria-label="Remove Excel data"
+              title="Remove Excel data"
               onClick={clearExcel}
             >
               <X className="h-4 w-4" aria-hidden="true" />

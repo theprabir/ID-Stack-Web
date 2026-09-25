@@ -1,12 +1,11 @@
 import { NavLink } from 'react-router-dom';
-import { useTranslation } from 'react-i18next';
 import { IdCard, Layout, Settings, Info, TableProperties } from 'lucide-react';
 import { useUIStore } from '@/stores/uiStore';
 import { cn } from '@/lib/utils';
 
 interface SidebarItem {
   to: string;
-  labelKey: string;
+  label: string;
   Icon: typeof IdCard;
 }
 
@@ -14,16 +13,15 @@ interface SidebarItem {
  * Left navigation sidebar. Collapsible; state persists in uiStore.
  */
 export function Sidebar(): JSX.Element {
-  const { t } = useTranslation();
   const collapsed = useUIStore((state) => state.sidebarCollapsed);
   const setSidebarCollapsed = useUIStore((state) => state.setSidebarCollapsed);
 
   const items: SidebarItem[] = [
-    { to: '/', labelKey: 'nav.editor', Icon: IdCard },
-    { to: '/data', labelKey: 'nav.data', Icon: TableProperties },
-    { to: '/library', labelKey: 'nav.library', Icon: Layout },
-    { to: '/settings', labelKey: 'nav.settings', Icon: Settings },
-    { to: '/about', labelKey: 'nav.about', Icon: Info },
+    { to: '/', label: 'Editor', Icon: IdCard },
+    { to: '/data', label: 'Data', Icon: TableProperties },
+    { to: '/library', label: 'Library', Icon: Layout },
+    { to: '/settings', label: 'Settings', Icon: Settings },
+    { to: '/about', label: 'About', Icon: Info },
   ];
 
   return (
@@ -33,14 +31,14 @@ export function Sidebar(): JSX.Element {
         collapsed ? 'w-14' : 'w-52'
       )}
     >
-      <nav className="flex-1 p-2" aria-label={t('app.name')}>
+      <nav className="flex-1 p-2" aria-label="ID Stack">
         <ul className="flex flex-col gap-1">
-          {items.map(({ to, labelKey, Icon }) => (
+          {items.map(({ to, label, Icon }) => (
             <li key={to}>
               <NavLink
                 to={to}
                 end={to === '/'}
-                title={t(labelKey)}
+                title={label}
                 className={({ isActive }) =>
                   cn(
                     'flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors',
@@ -52,7 +50,7 @@ export function Sidebar(): JSX.Element {
                 }
               >
                 <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
-                {!collapsed && <span className="truncate">{t(labelKey)}</span>}
+                {!collapsed && <span className="truncate">{label}</span>}
               </NavLink>
             </li>
           ))}

@@ -3,6 +3,18 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.1] - 2026-09-25
+
+### Removed
+- **Multi-language support.** The interface is now English-only:
+  - Removed i18next / react-i18next and all `public/locales/` translation files (11 languages)
+  - Removed the language switcher from the header and the language section from Settings
+  - Removed `src/i18n/`, `src/constants/languages.ts` and the `language` field from settingsStore
+  - All translated strings replaced with plain English literals across every component and page
+
+### Changed
+- Bundle size reduced (~285 KB → smaller; locale JSON and i18n runtime no longer shipped)
+
 ## [0.3.0] - 2026-09-25
 
 ### Phase 3 — Data Import

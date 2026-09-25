@@ -1,5 +1,4 @@
 import { useEffect, useRef } from 'react';
-import { useTranslation } from 'react-i18next';
 import * as fabric from 'fabric';
 import { useTemplateStore } from '@/stores/templateStore';
 import type { UseCanvasResult } from '@/hooks/useCanvas';
@@ -17,7 +16,6 @@ interface CanvasEditorProps {
  * Implements Spacebar+drag temporary panning and middle-click panning.
  */
 export function CanvasEditor({ canvasApi }: CanvasEditorProps): JSX.Element {
-  const { t } = useTranslation();
   const canvasElementRef = useRef<HTMLCanvasElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const { attachCanvas } = canvasApi;
@@ -138,7 +136,7 @@ export function CanvasEditor({ canvasApi }: CanvasEditorProps): JSX.Element {
         className="themed-scrollbar flex flex-1 items-center justify-center overflow-auto bg-surface-canvas p-8 transition-colors duration-300"
       >
         <div className="rounded-md shadow-lg ring-1 ring-border" style={{ lineHeight: 0 }}>
-          <canvas ref={canvasElementRef} aria-label={t('editor.canvasLabel')} />
+          <canvas ref={canvasElementRef} aria-label="Template design canvas" />
         </div>
       </div>
 

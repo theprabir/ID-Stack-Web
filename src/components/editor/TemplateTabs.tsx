@@ -1,16 +1,14 @@
-import { useTranslation } from 'react-i18next';
 import { useTemplateStore } from '@/stores/templateStore';
 import { cn } from '@/lib/utils';
 
 /** Tabs to switch between the front and back card faces. */
 export function TemplateTabs(): JSX.Element {
-  const { t } = useTranslation();
   const currentSide = useTemplateStore((state) => state.currentSide);
   const switchSide = useTemplateStore((state) => state.switchSide);
 
   const tabs: Array<{ key: 'front' | 'back'; label: string }> = [
-    { key: 'front', label: t('editor.frontSide') },
-    { key: 'back', label: t('editor.backSide') },
+    { key: 'front', label: 'Front Side' },
+    { key: 'back', label: 'Back Side' },
   ];
 
   return (

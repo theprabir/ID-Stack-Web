@@ -24,7 +24,6 @@ import { useTemplateStore } from './templateStore';
 /** Number of rows shown in the preview table */
 export const PREVIEW_ROW_COUNT = 5;
 
-/** i18n-ready label for placeholders without a mapping */
 interface DataState {
   excelData: ExcelData | null;
   isParsing: boolean;

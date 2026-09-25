@@ -1,5 +1,4 @@
 import { useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
 import { AlertTriangle, CheckCircle2, Table2, XCircle } from 'lucide-react';
 import type { ExcelData } from '@/types/data';
 import { useDataStore, PREVIEW_ROW_COUNT } from '@/stores/dataStore';
@@ -23,7 +22,6 @@ export function DataPreview({
   selectedRowIndex,
   onSelectRow,
 }: DataPreviewProps): JSX.Element {
-  const { t } = useTranslation();
   const validation = useDataStore((state) => state.validation);
 
   const previewRows = useMemo(
@@ -38,7 +36,7 @@ export function DataPreview({
   if (!excelData) {
     return (
       <section className="rounded-lg border bg-surface-panel p-4 text-sm text-muted-foreground transition-colors duration-300">
-        {t('data.previewNeedsExcel')}
+        Import an Excel file to preview data.
       </section>
     );
   }
@@ -51,7 +49,7 @@ export function DataPreview({
       <div className="mb-3 flex items-center gap-2">
         <Table2 className="h-5 w-5 text-primary" aria-hidden="true" />
         <h2 id="data-preview-title" className="text-sm font-semibold">
-          {t('data.previewTitle')}
+          Data &amp; Validation
         </h2>
       </div>
 
@@ -61,7 +59,7 @@ export function DataPreview({
           {validation.valid && warningCount === 0 ? (
             <p className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
               <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-              {t('data.validationPassed', { rows: validation.validRowIndexes.length })}
+              All {validation.validRowIndexes.length} rows valid.
             </p>
           ) : (
             <ul className="themed-scrollbar max-h-32 space-y-1 overflow-auto rounded-md border bg-surface-card p-2 text-xs">
@@ -71,12 +69,12 @@ export function DataPreview({
                     className="h-3.5 w-3.5 shrink-0 text-green-600 dark:text-green-400"
                     aria-hidden="true"
                   />
-                  {t('data.validationNoErrors', { warnings: warningCount })}
+                  No errors — {warningCount} warning(s).
                 </li>
               ) : (
                 <li className="flex items-center gap-1.5 font-medium text-destructive">
                   <XCircle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                  {t('data.validationFailed', { errors: errorCount, warnings: warningCount })}
+                  {errorCount} error(s), {warningCount} warning(s) — fix errors before generating.
                 </li>
               )}
               {validation.issues.slice(0, 20).map((issue, index) => (
@@ -99,7 +97,7 @@ export function DataPreview({
               ))}
               {validation.issues.length > 20 && (
                 <li className="text-muted-foreground">
-                  {t('data.moreIssues', { count: validation.issues.length - 20 })}
+                  …and {validation.issues.length - 20} more issue(s)
                 </li>
               )}
             </ul>
@@ -114,7 +112,7 @@ export function DataPreview({
             <tr className="text-left">
               <th
                 className="px-2 py-1.5 font-medium text-muted-foreground"
-                aria-label={t('data.previewPick')}
+                aria-label="Select row for preview"
               />
               {excelData.columns.map((column) => (
                 <th key={column} className="whitespace-nowrap px-2 py-1.5 font-medium">
@@ -137,7 +135,7 @@ export function DataPreview({
                   <input
                     type="radio"
                     name="preview-row"
-                    aria-label={t('data.previewPickRow', { row: row.rowIndex + 1 })}
+                    aria-label={`Preview row ${row.rowIndex + 1}`}
                     checked={row.rowIndex === selectedRowIndex}
                     onChange={() => onSelectRow(row.rowIndex)}
                     className="h-3 w-3 accent-[hsl(var(--primary))]"
@@ -157,7 +155,9 @@ export function DataPreview({
           </tbody>
         </table>
       </div>
-      <p className="mt-1 text-xs text-muted-foreground">{t('data.previewHint')}</p>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Click a row to preview that card in the live preview.
+      </p>
     </section>
   );
 }

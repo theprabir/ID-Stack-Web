@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { useTranslation } from 'react-i18next';
 import type { DataRow } from '@/types/data';
 import { useDataStore } from '@/stores/dataStore';
 import { useTemplateStore } from '@/stores/templateStore';
@@ -16,7 +15,6 @@ import {
  * validation preview, with a live card preview of the selected row.
  */
 export function DataImportPage(): JSX.Element {
-  const { t } = useTranslation();
   const excelData = useDataStore((state) => state.excelData);
   const currentTemplate = useTemplateStore((state) => state.currentTemplate);
   const [selectedRowIndex, setSelectedRowIndex] = useState<number | null>(null);
@@ -29,7 +27,7 @@ export function DataImportPage(): JSX.Element {
 
   return (
     <div className="themed-scrollbar h-full overflow-auto p-4">
-      <h1 className="mb-4 text-lg font-semibold">{t('data.pageTitle')}</h1>
+      <h1 className="mb-4 text-lg font-semibold">Data Import</h1>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <div className="flex flex-col gap-4">

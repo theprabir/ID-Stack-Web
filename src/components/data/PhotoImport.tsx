@@ -1,5 +1,4 @@
 import { useCallback, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 import { Images, Upload, X, Loader2 } from 'lucide-react';
 import { useDataStore } from '@/stores/dataStore';
 import { Button, Select } from '@/components/ui';
@@ -10,12 +9,12 @@ import { cn } from '@/lib/utils';
  * (filename / column / manual) and a thumbnail grid with remove buttons.
  */
 export function PhotoImport(): JSX.Element {
-  const { t } = useTranslation();
   const photos = useDataStore((state) => state.photos);
   const isLoading = useDataStore((state) => state.isLoadingPhotos);
   const photoError = useDataStore((state) => state.photoError);
   const matchConfig = useDataStore((state) => state.photoMatchConfig);
   const matchResult = useDataStore((state) => state.photoMatchResult);
+  const excelData = useDataStore((state) => state.excelData);
   const loadPhotos = useDataStore((state) => state.loadPhotos);
   const removePhoto = useDataStore((state) => state.removePhoto);
   const clearPhotos = useDataStore((state) => state.clearPhotos);
@@ -23,7 +22,6 @@ export function PhotoImport(): JSX.Element {
 
   const inputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const excelData = useDataStore((state) => state.excelData);
 
   const handleFiles = useCallback(
     (files: FileList | null) => {
@@ -52,12 +50,12 @@ export function PhotoImport(): JSX.Element {
         <div className="flex items-center gap-2">
           <Images className="h-5 w-5 text-primary" aria-hidden="true" />
           <h2 id="photo-import-title" className="text-sm font-semibold">
-            {t('data.photoTitle')}
+            Photos
           </h2>
         </div>
         {photos.length > 0 && (
           <Button variant="ghost" size="sm" onClick={clearPhotos}>
-            {t('data.clearPhotos')}
+            Remove all
           </Button>
         )}
       </div>
@@ -65,7 +63,7 @@ export function PhotoImport(): JSX.Element {
       <div
         role="button"
         tabIndex={0}
-        aria-label={t('data.photoDropzone')}
+        aria-label="Click to add photos or drop them here"
         onClick={() => inputRef.current?.click()}
         onKeyDown={(event) => {
           if (event.key === 'Enter' || event.key === ' ') inputRef.current?.click();
@@ -88,14 +86,14 @@ export function PhotoImport(): JSX.Element {
         ) : (
           <Upload className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
         )}
-        <p className="text-sm">{t('data.photoDropzone')}</p>
+        <p className="text-sm">Click to add photos or drop them here</p>
       </div>
 
       {/* Matching strategy */}
       <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
         <div>
           <label htmlFor="photo-match-mode" className="mb-1 block text-xs text-muted-foreground">
-            {t('data.matchMode')}
+            Matching mode
           </label>
           <Select
             id="photo-match-mode"
@@ -107,11 +105,11 @@ export function PhotoImport(): JSX.Element {
               )
             }
           >
-            <option value="filename">{t('data.matchModeFilename')}</option>
+            <option value="filename">By file name</option>
             <option value="column" disabled={!excelData}>
-              {t('data.matchModeColumn')}
+              By Excel column
             </option>
-            <option value="manual">{t('data.matchModeManual')}</option>
+            <option value="manual">Manual</option>
           </Select>
         </div>
         {matchConfig.mode === 'column' && excelData && (
@@ -120,7 +118,7 @@ export function PhotoImport(): JSX.Element {
               htmlFor="photo-match-column"
               className="mb-1 block text-xs text-muted-foreground"
             >
-              {t('data.matchColumn')}
+              Photo name column
             </label>
             <Select
               id="photo-match-column"
@@ -128,7 +126,7 @@ export function PhotoImport(): JSX.Element {
               onChange={(event) => setPhotoMatchMode('column', event.target.value)}
             >
               <option value="" disabled>
-                {t('data.matchColumnPick')}
+                Choose a column…
               </option>
               {excelData.columns.map((column) => (
                 <option key={column} value={column}>
@@ -142,16 +140,18 @@ export function PhotoImport(): JSX.Element {
 
       {photos.length > 0 && (
         <p className="mb-2 text-xs text-muted-foreground">
-          {t('data.photoMatchStats', { matched: matchedCount, total: photos.length })}
+          {matchedCount} of {photos.length} photos matched to rows
         </p>
       )}
 
       {photos.length === 0 && !isLoading && (
-        <p className="text-xs text-muted-foreground">{t('data.noPhotos')}</p>
+        <p className="text-xs text-muted-foreground">
+          No photos loaded. Photos can be auto-matched by file name or an Excel column.
+        </p>
       )}
 
       {photos.length > 0 && (
-        <ul className="grid grid-cols-4 gap-2 sm:grid-cols-6" aria-label={t('data.photoTitle')}>
+        <ul className="grid grid-cols-4 gap-2 sm:grid-cols-6" aria-label="Photos">
           {photos.map((photo) => (
             <li key={photo.id} className="group relative overflow-hidden rounded-md border">
               <img
@@ -162,8 +162,8 @@ export function PhotoImport(): JSX.Element {
               />
               <button
                 type="button"
-                aria-label={`${t('common.delete')} ${photo.fileName}`}
-                title={`${t('common.delete')} ${photo.fileName}`}
+                aria-label={`Delete ${photo.fileName}`}
+                title={`Delete ${photo.fileName}`}
                 onClick={() => removePhoto(photo.id)}
                 className="absolute right-1 top-1 rounded bg-black/60 p-0.5 text-white opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
               >

@@ -4,21 +4,13 @@ import { useSettingsStore } from '@/stores/settingsStore';
 describe('settingsStore', () => {
   beforeEach(() => {
     localStorage.clear();
-    useSettingsStore.setState({ language: 'en', unit: 'mm', autoSave: true });
+    useSettingsStore.setState({ unit: 'mm', autoSave: true });
   });
 
-  it('defaults to English, millimetres and auto-save on', () => {
+  it('defaults to millimetres and auto-save on', () => {
     const state = useSettingsStore.getState();
-    expect(state.language).toBe('en');
     expect(state.unit).toBe('mm');
     expect(state.autoSave).toBe(true);
-  });
-
-  it('changes and persists language', () => {
-    useSettingsStore.getState().setLanguage('hi');
-    expect(useSettingsStore.getState().language).toBe('hi');
-    const stored = JSON.parse(localStorage.getItem('id-stack-settings') ?? '{}');
-    expect(stored.state?.language).toBe('hi');
   });
 
   it('changes measurement unit', () => {

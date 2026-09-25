@@ -1,5 +1,4 @@
 import { useCallback, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 import { Eye, EyeOff, Lock, Unlock, Trash2, GripVertical } from 'lucide-react';
 import type { CanvasElement } from '@/types/template';
 import { useTemplateStore } from '@/stores/templateStore';
@@ -22,7 +21,6 @@ export function LayersPanel({
   onSelect,
   onReorder,
 }: LayersPanelProps): JSX.Element {
-  const { t } = useTranslation();
   const currentTemplate = useTemplateStore((state) => state.currentTemplate);
   const currentSide = useTemplateStore((state) => state.currentSide);
   const upsertElement = useTemplateStore((state) => state.upsertElement);
@@ -58,7 +56,7 @@ export function LayersPanel({
   if (!currentTemplate) {
     return (
       <div className="w-64 border-l bg-surface-panel p-3 text-sm text-muted-foreground transition-colors duration-300">
-        {t('editor.noTemplate')}
+        No template open.
       </div>
     );
   }
@@ -66,12 +64,14 @@ export function LayersPanel({
   return (
     <div className="themed-scrollbar flex w-64 flex-col overflow-auto border-l bg-surface-panel transition-colors duration-300">
       <div className="border-b px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        {t('editor.layers')}
+        Layers
       </div>
       {elements.length === 0 && (
-        <p className="p-3 text-sm text-muted-foreground">{t('editor.noLayers')}</p>
+        <p className="p-3 text-sm text-muted-foreground">
+          No elements yet — add one from the tools panel.
+        </p>
       )}
-      <ul className="flex flex-col" role="list" aria-label={t('editor.layers')}>
+      <ul className="flex flex-col" role="list" aria-label="Layers">
         {elements.map((element, displayIndex) => (
           <li
             key={element.id}
@@ -107,7 +107,7 @@ export function LayersPanel({
           >
             <span
               className="flex h-6 w-5 shrink-0 cursor-grab items-center justify-center text-muted-foreground"
-              title={t('editor.dragReorder')}
+              title="Drag to reorder"
               aria-hidden="true"
             >
               <GripVertical className="h-3.5 w-3.5" />
@@ -124,7 +124,7 @@ export function LayersPanel({
               variant="ghost"
               size="icon"
               className="h-6 w-6"
-              title={element.visible ? t('editor.hide') : t('editor.show')}
+              title={element.visible ? 'Hide' : 'Show'}
               onClick={() => upsertElement({ ...element, visible: !element.visible })}
             >
               {element.visible ? (
@@ -137,7 +137,7 @@ export function LayersPanel({
               variant="ghost"
               size="icon"
               className="h-6 w-6"
-              title={element.locked ? t('editor.unlock') : t('editor.lock')}
+              title={element.locked ? 'Unlock' : 'Lock'}
               onClick={() => upsertElement({ ...element, locked: !element.locked })}
             >
               {element.locked ? (
@@ -150,7 +150,7 @@ export function LayersPanel({
               variant="ghost"
               size="icon"
               className="h-6 w-6 text-destructive"
-              title={t('common.delete')}
+              title="Delete"
               onClick={() => removeElement(element.id)}
             >
               <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />

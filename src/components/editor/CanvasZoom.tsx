@@ -1,11 +1,9 @@
-import { useTranslation } from 'react-i18next';
 import { ZoomIn, ZoomOut, Maximize } from 'lucide-react';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { Button } from '@/components/ui';
 
 /** Bottom-left zoom controls for the canvas viewport. */
 export function CanvasZoom(): JSX.Element {
-  const { t } = useTranslation();
   const zoom = useCanvasStore((state) => state.zoom);
   const zoomIn = useCanvasStore((state) => state.zoomIn);
   const zoomOut = useCanvasStore((state) => state.zoomOut);
@@ -17,8 +15,8 @@ export function CanvasZoom(): JSX.Element {
         variant="ghost"
         size="icon"
         className="h-7 w-7"
-        title={t('editor.zoomOut')}
-        aria-label={t('editor.zoomOut')}
+        title="Zoom out"
+        aria-label="Zoom out"
         onClick={zoomOut}
       >
         <ZoomOut className="h-4 w-4" aria-hidden="true" />
@@ -26,7 +24,7 @@ export function CanvasZoom(): JSX.Element {
       <button
         type="button"
         onClick={resetZoom}
-        title={t('editor.zoomReset')}
+        title="Reset zoom"
         className="min-w-14 rounded px-1 text-xs font-medium text-foreground hover:underline"
       >
         {Math.round(zoom * 100)}%
@@ -35,8 +33,8 @@ export function CanvasZoom(): JSX.Element {
         variant="ghost"
         size="icon"
         className="h-7 w-7"
-        title={t('editor.zoomIn')}
-        aria-label={t('editor.zoomIn')}
+        title="Zoom in"
+        aria-label="Zoom in"
         onClick={zoomIn}
       >
         <ZoomIn className="h-4 w-4" aria-hidden="true" />
@@ -45,8 +43,8 @@ export function CanvasZoom(): JSX.Element {
         variant="ghost"
         size="icon"
         className="h-7 w-7"
-        title={t('editor.zoomReset')}
-        aria-label={t('editor.zoomReset')}
+        title="Reset zoom"
+        aria-label="Reset zoom"
         onClick={resetZoom}
       >
         <Maximize className="h-4 w-4" aria-hidden="true" />

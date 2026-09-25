@@ -1,5 +1,4 @@
 import { useCallback } from 'react';
-import { useTranslation } from 'react-i18next';
 import type { CanvasElement, ShadowConfig } from '@/types/template';
 import { useTemplateStore } from '@/stores/templateStore';
 
@@ -12,6 +11,15 @@ const ELEMENT_SHADOW_DEFAULT: ShadowConfig = {
 };
 import { Label, Input, Select, Checkbox, Button } from '@/components/ui';
 
+/** Display names for element kinds */
+const ELEMENT_NAMES: Record<CanvasElement['type'], string> = {
+  text: 'Text',
+  image: 'Image',
+  shape: 'Shape',
+  barcode: 'Barcode',
+  placeholder: 'Placeholder',
+};
+
 interface PropertiesPanelProps {
   element: CanvasElement | null;
 }
@@ -22,7 +30,6 @@ interface PropertiesPanelProps {
  * (fill, stroke, shadow, opacity) for all types.
  */
 export function PropertiesPanel({ element }: PropertiesPanelProps): JSX.Element {
-  const { t } = useTranslation();
   const upsertElement = useTemplateStore((state) => state.upsertElement);
 
   const update = useCallback(
@@ -45,7 +52,7 @@ export function PropertiesPanel({ element }: PropertiesPanelProps): JSX.Element 
   if (!element) {
     return (
       <div className="w-64 border-l bg-surface-panel p-3 text-sm text-muted-foreground transition-colors duration-300">
-        {t('editor.noSelection')}
+        Select an element to edit its properties.
       </div>
     );
   }
@@ -55,13 +62,13 @@ export function PropertiesPanel({ element }: PropertiesPanelProps): JSX.Element 
   return (
     <div className="themed-scrollbar w-64 overflow-auto border-l bg-surface-panel p-3 transition-colors duration-300">
       <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        {t(`editor.element_${element.type}`)}
+        {ELEMENT_NAMES[element.type]}
       </div>
 
       {/* Name */}
       <div className="mb-3">
         <Label htmlFor="prop-name" className="mb-1 block text-xs">
-          {t('editor.propName')}
+          Name
         </Label>
         <Input
           id="prop-name"
@@ -74,21 +81,21 @@ export function PropertiesPanel({ element }: PropertiesPanelProps): JSX.Element 
       {/* Position & size */}
       <fieldset className="mb-3 rounded-md border p-2">
         <legend className="px-1 text-xs font-medium text-muted-foreground">
-          {t('editor.propTransform')}
+          Position &amp; size
         </legend>
         <div className="grid grid-cols-2 gap-2">
           {(
             [
-              ['x', 'editor.propX'],
-              ['y', 'editor.propY'],
-              ['width', 'editor.propWidth'],
-              ['height', 'editor.propHeight'],
-              ['rotation', 'editor.propRotation'],
+              ['x', 'X (mm)'],
+              ['y', 'Y (mm)'],
+              ['width', 'Width (mm)'],
+              ['height', 'Height (mm)'],
+              ['rotation', 'Rotation (°)'],
             ] as Array<[keyof CanvasElement, string]>
-          ).map(([key, labelKey]) => (
+          ).map(([key, label]) => (
             <div key={String(key)}>
               <Label htmlFor={`prop-${String(key)}`} className="mb-1 block text-xs">
-                {t(labelKey)}
+                {label}
               </Label>
               <Input
                 id={`prop-${String(key)}`}
@@ -108,14 +115,12 @@ export function PropertiesPanel({ element }: PropertiesPanelProps): JSX.Element 
       {/* Text-specific */}
       {isTextish && (
         <fieldset className="mb-3 rounded-md border p-2">
-          <legend className="px-1 text-xs font-medium text-muted-foreground">
-            {t('editor.propText')}
-          </legend>
+          <legend className="px-1 text-xs font-medium text-muted-foreground">Text</legend>
           <div className="flex flex-col gap-2">
             {element.type === 'placeholder' ? (
               <div>
                 <Label htmlFor="prop-column" className="mb-1 block text-xs">
-                  {t('editor.propColumn')}
+                  Excel column
                 </Label>
                 <Input
                   id="prop-column"
@@ -128,7 +133,7 @@ export function PropertiesPanel({ element }: PropertiesPanelProps): JSX.Element 
             ) : (
               <div>
                 <Label htmlFor="prop-text" className="mb-1 block text-xs">
-                  {t('editor.propContent')}
+                  Content
                 </Label>
                 <Input
                   id="prop-text"
@@ -141,7 +146,7 @@ export function PropertiesPanel({ element }: PropertiesPanelProps): JSX.Element 
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <Label htmlFor="prop-font" className="mb-1 block text-xs">
-                  {t('editor.propFont')}
+                  Font
                 </Label>
                 <Input
                   id="prop-font"
@@ -152,7 +157,7 @@ export function PropertiesPanel({ element }: PropertiesPanelProps): JSX.Element 
               </div>
               <div>
                 <Label htmlFor="prop-fontsize" className="mb-1 block text-xs">
-                  {t('editor.propFontSize')}
+                  Size (pt)
                 </Label>
                 <Input
                   id="prop-fontsize"
@@ -168,7 +173,7 @@ export function PropertiesPanel({ element }: PropertiesPanelProps): JSX.Element 
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <Label htmlFor="prop-weight" className="mb-1 block text-xs">
-                  {t('editor.propFontWeight')}
+                  Weight
                 </Label>
                 <Select
                   id="prop-weight"
@@ -176,13 +181,13 @@ export function PropertiesPanel({ element }: PropertiesPanelProps): JSX.Element 
                   className="h-8"
                   onChange={(event) => update({ fontWeight: event.target.value })}
                 >
-                  <option value="normal">{t('editor.weightNormal')}</option>
-                  <option value="bold">{t('editor.weightBold')}</option>
+                  <option value="normal">Normal</option>
+                  <option value="bold">Bold</option>
                 </Select>
               </div>
               <div>
                 <Label htmlFor="prop-align" className="mb-1 block text-xs">
-                  {t('editor.propAlign')}
+                  Alignment
                 </Label>
                 <Select
                   id="prop-align"
@@ -192,9 +197,9 @@ export function PropertiesPanel({ element }: PropertiesPanelProps): JSX.Element 
                     update({ textAlign: event.target.value as CanvasElement['textAlign'] })
                   }
                 >
-                  <option value="left">{t('editor.alignLeft')}</option>
-                  <option value="center">{t('editor.alignCenter')}</option>
-                  <option value="right">{t('editor.alignRight')}</option>
+                  <option value="left">Left</option>
+                  <option value="center">Center</option>
+                  <option value="right">Right</option>
                 </Select>
               </div>
             </div>
@@ -204,7 +209,7 @@ export function PropertiesPanel({ element }: PropertiesPanelProps): JSX.Element 
                 checked={element.underline ?? false}
                 onChange={(event) => update({ underline: event.target.checked })}
               />
-              <Label htmlFor="prop-underline">{t('editor.propUnderline')}</Label>
+              <Label htmlFor="prop-underline">Underline</Label>
             </div>
           </div>
         </fieldset>
@@ -212,13 +217,11 @@ export function PropertiesPanel({ element }: PropertiesPanelProps): JSX.Element 
 
       {/* Appearance */}
       <fieldset className="mb-3 rounded-md border p-2">
-        <legend className="px-1 text-xs font-medium text-muted-foreground">
-          {t('editor.propAppearance')}
-        </legend>
+        <legend className="px-1 text-xs font-medium text-muted-foreground">Appearance</legend>
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between">
             <Label htmlFor="prop-fill" className="text-xs">
-              {t('editor.propFill')}
+              Fill
             </Label>
             <input
               id="prop-fill"
@@ -230,7 +233,7 @@ export function PropertiesPanel({ element }: PropertiesPanelProps): JSX.Element 
           </div>
           <div className="flex items-center justify-between">
             <Label htmlFor="prop-stroke" className="text-xs">
-              {t('editor.propStroke')}
+              Stroke
             </Label>
             <div className="flex items-center gap-1">
               <Input
@@ -243,7 +246,7 @@ export function PropertiesPanel({ element }: PropertiesPanelProps): JSX.Element 
                 onChange={(event) => update({ strokeWidth: Number(event.target.value) })}
               />
               <input
-                aria-label={t('editor.propStroke')}
+                aria-label="Stroke"
                 type="color"
                 value={element.stroke || '#000000'}
                 onChange={(event) => update({ stroke: event.target.value })}
@@ -253,7 +256,7 @@ export function PropertiesPanel({ element }: PropertiesPanelProps): JSX.Element 
           </div>
           <div>
             <Label htmlFor="prop-opacity" className="mb-1 block text-xs">
-              {t('editor.propOpacity')}
+              Opacity
             </Label>
             <input
               id="prop-opacity"
@@ -270,9 +273,7 @@ export function PropertiesPanel({ element }: PropertiesPanelProps): JSX.Element 
 
       {/* Shadow */}
       <fieldset className="rounded-md border p-2">
-        <legend className="px-1 text-xs font-medium text-muted-foreground">
-          {t('editor.propShadow')}
-        </legend>
+        <legend className="px-1 text-xs font-medium text-muted-foreground">Shadow</legend>
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-2">
             <Checkbox
@@ -280,13 +281,13 @@ export function PropertiesPanel({ element }: PropertiesPanelProps): JSX.Element 
               checked={element.shadow?.enabled ?? false}
               onChange={(event) => updateShadow({ enabled: event.target.checked })}
             />
-            <Label htmlFor="prop-shadow-enabled">{t('editor.shadowEnable')}</Label>
+            <Label htmlFor="prop-shadow-enabled">Enable shadow</Label>
           </div>
           {element.shadow?.enabled && (
             <>
               <div className="flex items-center justify-between">
                 <Label htmlFor="prop-shadow-color" className="text-xs">
-                  {t('editor.shadowColor')}
+                  Color
                 </Label>
                 <input
                   id="prop-shadow-color"
@@ -298,14 +299,14 @@ export function PropertiesPanel({ element }: PropertiesPanelProps): JSX.Element 
               </div>
               {(
                 [
-                  ['blur', 'editor.shadowBlur', 0, 50],
-                  ['offsetX', 'editor.shadowOffsetX', -50, 50],
-                  ['offsetY', 'editor.shadowOffsetY', -50, 50],
+                  ['blur', 'Blur', 0, 50],
+                  ['offsetX', 'Offset X', -50, 50],
+                  ['offsetY', 'Offset Y', -50, 50],
                 ] as Array<[keyof ShadowConfig, string, number, number]>
-              ).map(([key, labelKey, min, max]) => (
+              ).map(([key, label, min, max]) => (
                 <div key={String(key)} className="flex items-center justify-between gap-2">
                   <Label htmlFor={`prop-shadow-${String(key)}`} className="text-xs">
-                    {t(labelKey)}
+                    {label}
                   </Label>
                   <Input
                     id={`prop-shadow-${String(key)}`}
@@ -332,7 +333,7 @@ export function PropertiesPanel({ element }: PropertiesPanelProps): JSX.Element 
           className="w-full"
           onClick={() => update({ shadow: { ...ELEMENT_SHADOW_DEFAULT } })}
         >
-          {t('editor.resetEffects')}
+          Reset effects
         </Button>
       </div>
     </div>

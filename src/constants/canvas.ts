@@ -33,6 +33,6 @@ export const ELEMENT_DEFAULTS = {
   },
 };
 
-/** Default new-template name key (i18n) and fallback */
+/** Default CR80 card dimensions for new templates */
 export const DEFAULT_CARD_WIDTH_MM = 85.6;
 export const DEFAULT_CARD_HEIGHT_MM = 54;

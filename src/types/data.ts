@@ -73,7 +73,7 @@ export type ValidationSeverity = 'error' | 'warning';
 /** A single validation issue */
 export interface ValidationIssue {
   severity: ValidationSeverity;
-  /** i18n key describing the issue type */
+  /** Issue type code */
   code: 'missing-required' | 'duplicate-id' | 'missing-photo' | 'empty-row' | 'unmapped-column';
   /** Human-readable message (already translated or raw detail) */
   message: string;

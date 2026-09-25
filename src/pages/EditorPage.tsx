@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 import type { CanvasElement, CardTemplate } from '@/types/template';
 import { sideKey } from '@/types/template';
 import type { ToolType } from '@/constants/canvas';
@@ -22,9 +21,7 @@ import { LoadingSpinner } from '@/components/common';
  * layers and properties panels, dual-sided tabs and undo/redo history.
  */
 export function EditorPage(): JSX.Element {
-  const { t } = useTranslation();
   const currentTemplate = useTemplateStore((state) => state.currentTemplate);
-  const currentSide = useTemplateStore((state) => state.currentSide);
   const createTemplate = useTemplateStore((state) => state.createTemplate);
   const saveTemplate = useTemplateStore((state) => state.saveTemplate);
   const isModified = useTemplateStore((state) => state.isModified);
@@ -49,9 +46,9 @@ export function EditorPage(): JSX.Element {
   useEffect(() => {
     if (!initializedRef.current && !currentTemplate && !isLoading) {
       initializedRef.current = true;
-      createTemplate(t('editor.untitled'));
+      createTemplate('Untitled template');
     }
-  }, [currentTemplate, isLoading, createTemplate, t]);
+  }, [currentTemplate, isLoading, createTemplate]);
 
   // Seed history once a template exists.
   useEffect(() => {
@@ -262,9 +259,6 @@ export function EditorPage(): JSX.Element {
         />
       </div>
       <TemplateTabs />
-      <span className="sr-only" aria-live="polite">
-        {t('editor.sideActive', { side: currentSide })}
-      </span>
     </div>
   );
 }

@@ -1,5 +1,4 @@
 import { Component, type ErrorInfo, type PropsWithChildren, type ReactNode } from 'react';
-import i18next from 'i18next';
 
 interface ErrorBoundaryState {
   hasError: boolean;
@@ -39,9 +38,9 @@ export class ErrorBoundary extends Component<PropsWithChildren, ErrorBoundarySta
           className="flex min-h-screen flex-col items-center justify-center gap-4 bg-surface-deepest p-8 text-center text-foreground"
           role="alert"
         >
-          <h1 className="text-2xl font-semibold">{i18next.t('errors.boundaryTitle')}</h1>
+          <h1 className="text-2xl font-semibold">Something went wrong</h1>
           <p className="max-w-md text-sm text-muted-foreground">
-            {i18next.t('errors.boundaryDescription')}
+            An unexpected error occurred. You can try again or reload the application.
           </p>
           {import.meta.env.DEV && this.state.message && (
             <pre className="max-w-xl overflow-auto rounded-md bg-surface-card p-4 text-left text-xs text-muted-foreground">
@@ -53,7 +52,7 @@ export class ErrorBoundary extends Component<PropsWithChildren, ErrorBoundarySta
             onClick={this.handleReload}
             className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
-            {i18next.t('errors.reload')}
+            Reload application
           </button>
         </div>
       );
