@@ -3,6 +3,7 @@ import {
   isSupportedImage,
   photoBaseName,
   normaliseMatchKey,
+  fuzzyMatchKey,
   loadPhotos,
   matchPhotos,
   processPhoto,
@@ -54,6 +55,13 @@ describe('photoService — helpers', () => {
   it('normaliseMatchKey matches photoBaseName for path+extension values', () => {
     expect(normaliseMatchKey('Photos/john.jpg')).toBe('john');
     expect(normaliseMatchKey('JOHN.JPG')).toBe('john');
+  });
+
+  it('fuzzyMatchKey removes spaces, underscores, hyphens, dots and case', () => {
+    expect(fuzzyMatchKey('John Smith')).toBe('johnsmith');
+    expect(fuzzyMatchKey('john_smith.jpg')).toBe('johnsmith');
+    expect(fuzzyMatchKey('John-Smith.PNG')).toBe('johnsmith');
+    expect(fuzzyMatchKey("O'Brien  Jr.")).toBe('obrienjr');
   });
 });
 
@@ -122,6 +130,30 @@ describe('photoService — matchPhotos', () => {
     expect(result.assignments.size).toBe(0);
     expect(result.unmatchedRowIndexes).toEqual([]);
     expect(result.unusedPhotoNames).toEqual([]);
+  });
+
+  it('mode column fuzzy-matches names with spaces vs underscores', () => {
+    // Excel says "Ravi Verma", photo file is "ravi_verma.jpg".
+    const spacedPhotos = [makePhoto('p1', 'ravi_verma.jpg')];
+    const rows2 = [makeRow(0, { PhotoFile: 'Ravi Verma' })];
+    const result = matchPhotos(rows2, spacedPhotos, { mode: 'column', columnName: 'PhotoFile' });
+    expect(result.assignments.get(0)?.id).toBe('p1');
+  });
+
+  it('mode filename fuzzy-matches photo named after the person (no column)', () => {
+    // Photo named after card holder: "Asha Kumar.jpg" vs row value "Asha  Kumar".
+    const peoplePhotos = [makePhoto('p1', 'Asha Kumar.jpg')];
+    const rows2 = [makeRow(0, { Name: 'Asha  Kumar' })];
+    const result = matchPhotos(rows2, peoplePhotos, { mode: 'filename' });
+    expect(result.assignments.get(0)?.id).toBe('p1');
+  });
+
+  it('manual mode clears assignments with empty photo id', () => {
+    const result = matchPhotos(rows, photos, {
+      mode: 'manual',
+      manualAssignments: { 0: '' },
+    });
+    expect(result.assignments.has(0)).toBe(false);
   });
 });
 

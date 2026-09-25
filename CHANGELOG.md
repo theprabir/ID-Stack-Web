@@ -3,6 +3,43 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.4.1] - 2026-09-25
+
+### Fixed
+- **Blank card output (critical).** Generated/preview images showed only the
+  background — all other layers were missing:
+  - Root cause: the CMYK patch imported ag-psd's deep reader module while the
+    app parsed via the public entry — Vite's dep-optimizer bundled them as two
+    separate module copies, so the patch never reached the parser (and broke
+    in-browser loading outright with "exports is not defined")
+  - Fix: `vite.config.ts` aliases the public `ag-psd` entry to the single deep
+    reader module instance and pre-bundles that path; parsing now goes through
+    `readPsdPatched` in `psdColorModePatch.ts` — one module, patch guaranteed
+  - Verified in-browser with a 3-layer forged PSD: composite reproduces all
+    layers in correct z-order (title/photo/background pixel-sampled), text
+    substitution renders in the extracted style, photo substitution
+    centre-crops into the placeholder bounds, and untouched layers keep their
+    original rasters
+
+### Changed
+- **Photo mapping modes clarified** (user chooses one):
+  1. **By Excel column** — a column holds the photo file name (extension
+     optional). New lenient matching: exact base name first, then fuzzy match
+     ignoring spaces/underscores/hyphens/dots/case ("Ravi Verma" in Excel
+     matches `ravi_verma.jpg` on disk)
+  2. **By card-holder name** — same lenient matching against any row value
+     (typically the Name column) for photos named after the person
+  3. **Manual** — new assignment panel in Data & Validation: per-row photo
+     picker with clearly visible thumbnails (current assignment + strip of all
+     uploaded photos), plus a "None" clear option
+- `assignPhotoManually` now accepts an empty id to clear an assignment
+- CMYK patch hardening: `isCmykPatched()` diagnostic and re-assertion on every
+  parse
+
+### Added
+- Tests: fuzzy matching (spaces/underscores/case), empty-id clearing (4 new; 87 total)
+- `tests/services/psdService.test.ts` covers RGB + CMYK parse-gate behaviour
+
 ## [0.4.0] - 2026-09-25
 
 ### Phases 4 & 5 — PSD-First Pipeline & Batch Generation

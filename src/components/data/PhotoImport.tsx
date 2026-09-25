@@ -89,11 +89,11 @@ export function PhotoImport(): JSX.Element {
         <p className="text-sm">Click to add photos or drop them here</p>
       </div>
 
-      {/* Matching strategy */}
+      {/* Matching strategy — the three photo mapping modes */}
       <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
         <div>
           <label htmlFor="photo-match-mode" className="mb-1 block text-xs text-muted-foreground">
-            Matching mode
+            Photo mapping mode
           </label>
           <Select
             id="photo-match-mode"
@@ -105,11 +105,11 @@ export function PhotoImport(): JSX.Element {
               )
             }
           >
-            <option value="filename">By file name</option>
+            <option value="filename">By card-holder name (photo named after person)</option>
             <option value="column" disabled={!excelData}>
-              By Excel column
+              By Excel column (photo-name column)
             </option>
-            <option value="manual">Manual</option>
+            <option value="manual">Manual (pick per record)</option>
           </Select>
         </div>
         {matchConfig.mode === 'column' && excelData && (
@@ -137,6 +137,24 @@ export function PhotoImport(): JSX.Element {
           </div>
         )}
       </div>
+      {matchConfig.mode === 'filename' && (
+        <p className="mb-2 text-xs text-muted-foreground">
+          Matches each row's name against photo file names. Spaces, underscores and letter case are
+          ignored ("John Smith", "john_smith" and "JohnSmith.jpg" all match).
+        </p>
+      )}
+      {matchConfig.mode === 'column' && (
+        <p className="mb-2 text-xs text-muted-foreground">
+          The chosen column must contain the photo file name (extension optional). Spaces and
+          underscores are ignored when matching.
+        </p>
+      )}
+      {matchConfig.mode === 'manual' && (
+        <p className="mb-2 text-xs text-muted-foreground">
+          Pick a photo for each record in the Data &amp; Validation table below (or on the Data
+          page). Photo thumbnails are shown here for reference.
+        </p>
+      )}
 
       {photos.length > 0 && (
         <p className="mb-2 text-xs text-muted-foreground">

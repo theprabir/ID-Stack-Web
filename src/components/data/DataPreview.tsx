@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { AlertTriangle, CheckCircle2, Table2, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Table2, XCircle, ImagePlus } from 'lucide-react';
 import type { ExcelData } from '@/types/data';
 import { useDataStore, PREVIEW_ROW_COUNT } from '@/stores/dataStore';
 import { getPreview } from '@/services/excelService';
@@ -23,6 +23,10 @@ export function DataPreview({
   onSelectRow,
 }: DataPreviewProps): JSX.Element {
   const validation = useDataStore((state) => state.validation);
+  const photos = useDataStore((state) => state.photos);
+  const matchConfig = useDataStore((state) => state.photoMatchConfig);
+  const matchResult = useDataStore((state) => state.photoMatchResult);
+  const assignPhotoManually = useDataStore((state) => state.assignPhotoManually);
 
   const previewRows = useMemo(
     () => (excelData ? getPreview(excelData, PREVIEW_ROW_COUNT) : []),
@@ -102,6 +106,94 @@ export function DataPreview({
               )}
             </ul>
           )}
+        </div>
+      )}
+
+      {/* Manual photo assignment — visible thumbnails per record */}
+      {matchConfig.mode === 'manual' && (
+        <div className="mb-3">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Manual photo assignment
+          </h3>
+          <div className="themed-scrollbar max-h-72 space-y-2 overflow-auto rounded-md border bg-surface-card p-2">
+            {previewRows.map((row) => {
+              const assignedPhotoId = matchConfig.manualAssignments?.[row.rowIndex];
+              const assigned = photos.find((photo) => photo.id === assignedPhotoId);
+              const auto = matchResult?.assignments.get(row.rowIndex);
+              return (
+                <div
+                  key={row.rowIndex}
+                  className="flex items-center gap-2 rounded border bg-surface-panel p-2"
+                >
+                  {/* Current assignment thumbnail (larger, clearly visible) */}
+                  <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded border bg-surface-card">
+                    {assigned || auto ? (
+                      <img
+                        src={(assigned ?? auto)?.blobUrl}
+                        alt={(assigned ?? auto)?.fileName}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <ImagePlus className="h-6 w-6 text-muted-foreground" aria-hidden="true" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-xs font-medium">
+                      Row {row.rowIndex + 1}
+                      {excelData.columns[0] && `: ${row.values[excelData.columns[0]] || '—'}`}
+                    </p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {assigned
+                        ? assigned.fileName
+                        : auto
+                          ? `auto: ${auto.fileName}`
+                          : 'No photo assigned'}
+                    </p>
+                    {/* Photo thumbnail strip to pick from */}
+                    <div className="themed-scrollbar mt-1 flex gap-1 overflow-x-auto pb-1">
+                      <button
+                        type="button"
+                        aria-label={`Clear photo for row ${row.rowIndex + 1}`}
+                        onClick={() => {
+                          if (assignedPhotoId !== undefined) {
+                            assignPhotoManually(row.rowIndex, '');
+                          }
+                        }}
+                        className={cn(
+                          'flex h-10 w-10 shrink-0 items-center justify-center rounded border text-xs text-muted-foreground transition-colors hover:bg-accent/10',
+                          !assigned && 'border-primary'
+                        )}
+                      >
+                        None
+                      </button>
+                      {photos.map((photo) => (
+                        <button
+                          key={photo.id}
+                          type="button"
+                          title={photo.fileName}
+                          aria-label={`Assign ${photo.fileName} to row ${row.rowIndex + 1}`}
+                          onClick={() => assignPhotoManually(row.rowIndex, photo.id)}
+                          className={cn(
+                            'h-10 w-10 shrink-0 overflow-hidden rounded border transition-all',
+                            assignedPhotoId === photo.id
+                              ? 'border-primary ring-2 ring-primary/40'
+                              : 'border-border hover:border-primary/50'
+                          )}
+                        >
+                          <img
+                            src={photo.blobUrl}
+                            alt={photo.fileName}
+                            className="h-full w-full object-cover"
+                            loading="lazy"
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 

@@ -71,9 +71,7 @@ export async function loadPhotos(files: FileList | File[]): Promise<PhotoRecord[
     });
   }
   return records;
-}
-
-/**
+} /**
  * Normalise a row value into a photo matching key.
  * Strips extension and lowercases so "Photos/john.jpg" matches "john".
  * @param value - Raw cell value
@@ -85,6 +83,47 @@ export function normaliseMatchKey(value: string): string {
     .replace(/\.[^.]+$/, '')
     .toLowerCase()
     .trim();
+}
+
+/**
+ * Fuzzy-normalise a name for lenient photo matching.
+ * "John  Smith Jr." → "johnsmithjr" — removes spaces, underscores, hyphens,
+ * dots and apostrophes so "john smith" matches "John_Smith.jpg" and vice
+ * versa. Used as a fallback when exact base-name matching fails.
+ *
+ * @param value - Raw name or file name
+ * @returns Normalised fuzzy key
+ */
+export function fuzzyMatchKey(value: string): string {
+  const base = normaliseMatchKey(value);
+  return base.replace(/[\s_\-.']/g, '');
+}
+
+/**
+ * Find a photo for a raw cell/file-name value with progressive leniency:
+ * 1. exact base-name match ("john smith" === "john smith.jpg")
+ * 2. fuzzy match ignoring spaces/underscores/hyphens/dots ("john_smith"
+ *    matches "John Smith", "john  smith" matches "johnsmith.jpg")
+ *
+ * @param value - Raw cell value or file name
+ * @param photoByKey - Exact base-name index
+ * @param fuzzyByKey - Fuzzy normalised index
+ * @param usedPhotoIds - Photo ids already assigned (skipped)
+ * @returns Matched photo or undefined
+ */
+function findPhotoLenient(
+  value: string,
+  photoByKey: Map<string, PhotoRecord>,
+  fuzzyByKey: Map<string, PhotoRecord>,
+  usedPhotoIds: Set<string>
+): PhotoRecord | undefined {
+  const exact = photoByKey.get(normaliseMatchKey(value));
+  if (exact && !usedPhotoIds.has(exact.id)) return exact;
+
+  const fuzzy = fuzzyByKey.get(fuzzyMatchKey(value));
+  if (fuzzy && !usedPhotoIds.has(fuzzy.id)) return fuzzy;
+
+  return undefined;
 }
 
 /**
@@ -108,6 +147,12 @@ export function matchPhotos(
   const usedPhotoIds = new Set<string>();
 
   const photoByKey = new Map(photos.map((photo) => [photo.baseName, photo]));
+  /** Fuzzy index for lenient fallback matching (spaces/underscores/case) */
+  const fuzzyByKey = new Map<string, PhotoRecord>();
+  for (const photo of photos) {
+    const key = fuzzyMatchKey(photo.fileName);
+    if (key && !fuzzyByKey.has(key)) fuzzyByKey.set(key, photo);
+  }
 
   if (config.mode === 'manual') {
     for (const row of rows) {
@@ -124,8 +169,8 @@ export function matchPhotos(
     for (const row of rows) {
       const rawValue = row.values[columnName] ?? '';
       if (!rawValue) continue;
-      const photo = photoByKey.get(normaliseMatchKey(rawValue));
-      if (photo && !usedPhotoIds.has(photo.id)) {
+      const photo = findPhotoLenient(rawValue, photoByKey, fuzzyByKey, usedPhotoIds);
+      if (photo) {
         assignments.set(row.rowIndex, photo);
         usedPhotoIds.add(photo.id);
       }
@@ -135,8 +180,8 @@ export function matchPhotos(
     for (const row of rows) {
       for (const value of Object.values(row.values)) {
         if (!value) continue;
-        const photo = photoByKey.get(normaliseMatchKey(value));
-        if (photo && !usedPhotoIds.has(photo.id)) {
+        const photo = findPhotoLenient(value, photoByKey, fuzzyByKey, usedPhotoIds);
+        if (photo) {
           assignments.set(row.rowIndex, photo);
           usedPhotoIds.add(photo.id);
           break;

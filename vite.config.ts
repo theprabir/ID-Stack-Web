@@ -69,9 +69,28 @@ export default defineConfig({
     }),
   ],
   resolve: {
-    alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url)),
-    },
+    alias: [
+      // Single-instance rule for the CMYK patch: route the public ag-psd entry
+      // to the same deep CJS reader module the patch mutates.
+      {
+        find: /^ag-psd$/,
+        replacement: fileURLToPath(
+          new URL('./node_modules/ag-psd/dist/psdReader.js', import.meta.url)
+        ),
+      },
+      {
+        find: '@',
+        replacement: fileURLToPath(new URL('./src', import.meta.url)),
+      },
+    ],
+  },
+  // CRITICAL (CMYK support): the CMYK patch (psdColorModePatch.ts) imports
+  // 'ag-psd/dist/psdReader.js' directly. The dep optimizer must convert that
+  // deep CJS path for the browser AND keep psdService on the same instance,
+  // so the deep path is pre-bundled and the public entry is aliased to it
+  // (see resolve.alias below).
+  optimizeDeps: {
+    include: ['ag-psd/dist/psdReader.js'],
   },
   build: {
     target: 'es2022',

@@ -4,8 +4,8 @@
  * rasterises layers so the design can be re-composited pixel-perfect with
  * only placeholder content replaced.
  */
-import { readPsd, type Psd, type Layer, type LayerTextData, type Color } from 'ag-psd';
-import { applyPsdColorModePatch } from './psdColorModePatch';
+import type { Layer, Psd, LayerTextData, Color } from 'ag-psd/dist/psd.d';
+import { readPsdPatched, applyPsdColorModePatch } from './psdColorModePatch';
 import type { PsdDesign, PsdLayerInfo, PsdLayerKind, SideType } from '@/types/psd';
 
 // Enable CMYK PSD files (print standard). ag-psd converts CMYK→RGB internally
@@ -185,11 +185,11 @@ export async function parsePsdFile(file: File, side: SideType): Promise<PsdDesig
   const buffer = await file.arrayBuffer();
   let psd: Psd;
   try {
-    psd = readPsd(buffer, {
+    psd = readPsdPatched(buffer, {
       // Layer rasters are needed for compositing; skip only heavyweight extras.
       skipThumbnail: true,
       skipLinkedFilesData: true,
-    });
+    }) as Psd;
   } catch (error) {
     throw new Error(
       `Could not parse "${file.name}": ${error instanceof Error ? error.message : 'unknown error'}`

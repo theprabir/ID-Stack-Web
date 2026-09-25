@@ -154,12 +154,13 @@ export const useDataStore = create<DataState>()((set, get) => ({
   assignPhotoManually: (rowIndex, photoId) => {
     const config = get().photoMatchConfig;
     if (config.mode !== 'manual') return;
-    set({
-      photoMatchConfig: {
-        ...config,
-        manualAssignments: { ...(config.manualAssignments ?? {}), [rowIndex]: photoId },
-      },
-    });
+    const manualAssignments = { ...(config.manualAssignments ?? {}) };
+    if (photoId.length === 0) {
+      delete manualAssignments[rowIndex];
+    } else {
+      manualAssignments[rowIndex] = photoId;
+    }
+    set({ photoMatchConfig: { ...config, manualAssignments } });
     get().revalidate();
   },
 
