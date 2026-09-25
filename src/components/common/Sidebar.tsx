@@ -17,7 +17,8 @@ export function Sidebar(): JSX.Element {
   const setSidebarCollapsed = useUIStore((state) => state.setSidebarCollapsed);
 
   const items: SidebarItem[] = [
-    { to: '/', label: 'Editor', Icon: IdCard },
+    { to: '/', label: 'PSD Studio', Icon: IdCard },
+    { to: '/editor', label: 'Editor', Icon: Layout },
     { to: '/data', label: 'Data', Icon: TableProperties },
     { to: '/library', label: 'Library', Icon: Layout },
     { to: '/settings', label: 'Settings', Icon: Settings },

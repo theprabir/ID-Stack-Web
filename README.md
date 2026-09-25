@@ -84,10 +84,19 @@ Contributions welcome! Please read the guidelines before submitting PRs to [thep
 Use [GitHub Issues](https://github.com/theprabir/ID-Stack-Web/issues) to report bugs or request features.
 
 ## 📊 Project Status
-**Current Phase:** 3 (Data Import) — COMPLETE
-**Status:** v0.3.1 — English-only UI (multi-language support removed); Excel import, photo matching, column mapping, validation, live card preview
+**Current Phase:** 4 & 5 (PSD Pipeline + Batch Generation) — COMPLETE
+**Status:** v0.4.0 — PSD-first workflow: parse layered designs, pick placeholder layers, map Excel columns, generate all cards as ZIP
 
 ### Completed
+- **Phases 4 & 5 — PSD-First Pipeline (the core workflow):**
+  - `psdService`: ag-psd parsing of layered .psd files — full layer tree flattened per side, text style extraction (font, size, color, bold/italic, underline, tracking, leading, justification, style runs), layer rasters + composite preview as blob URLs
+  - `psdCompositeService`: pixel-faithful re-composition — chosen placeholder layers get row content (substituted text in the original style, centre-cropped photos), every other layer is drawn from its original raster untouched, with original opacity and blend modes
+  - `LayerPicker`: filterable layer list per side; one click marks a layer as text or photo placeholder with an editable mapping key; hidden/group layers handled
+  - `PsdStudioPage` (`/`, the new home): step-guided workflow — upload front/back designs → choose placeholders → import Excel/photos → map columns → live preview (front/back tabs) → generate
+  - `batchService` + `BatchRunner`: full-batch generation with progress bar, ETA, error list, pause/resume/cancel, and ZIP download (JSZip); PNG/JPG output, front/back/both, `{Name}_{Row}` / `{{Column}}` naming templates
+  - `batchNaming`: safe file-name templating with token sanitisation
+  - Placeholders, mappings and project metadata persist in IndexedDB (Dexie v2 schema)
+  - Tests: placeholder keys, row resolver, batch naming (9 new)
 - Phase 0 — Initialization: `README.md`, `LICENSE`, `.gitignore`
 - Phase 1 — Project Foundation: Vite + React + TS strict, Tailwind themes, Zustand, i18n (11 languages), layout, Dexie/IndexedDB, PWA, ESLint/Prettier, Vitest
 - **Phase 2 — Template Editor:**

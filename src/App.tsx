@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Header, Sidebar, Footer, ErrorBoundary } from '@/components/common';
+import { PsdStudioPage } from '@/pages/PsdStudioPage';
 import { EditorPage } from '@/pages/EditorPage';
 import { DataImportPage } from '@/pages/DataImportPage';
 import { LibraryPage } from '@/pages/LibraryPage';
@@ -19,7 +20,8 @@ export default function App(): JSX.Element {
           <main className="themed-scrollbar min-w-0 flex-1 overflow-auto bg-surface-canvas transition-colors duration-300">
             <ErrorBoundary>
               <Routes>
-                <Route path="/" element={<EditorPage />} />
+                <Route path="/" element={<PsdStudioPage />} />
+                <Route path="/editor" element={<EditorPage />} />
                 <Route path="/data" element={<DataImportPage />} />
                 <Route path="/library" element={<LibraryPage />} />
                 <Route path="/settings" element={<SettingsPage />} />

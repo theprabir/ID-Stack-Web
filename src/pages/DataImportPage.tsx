@@ -1,29 +1,28 @@
 import { useState } from 'react';
 import type { DataRow } from '@/types/data';
 import { useDataStore } from '@/stores/dataStore';
-import { useTemplateStore } from '@/stores/templateStore';
-import {
-  ExcelImport,
-  PhotoImport,
-  ColumnMapping,
-  DataPreview,
-  CardLivePreview,
-} from '@/components/data';
+import { ExcelImport, PhotoImport, ColumnMapping, DataPreview } from '@/components/data';
 
 /**
  * Data import page: Excel import → photo import → column mapping →
- * validation preview, with a live card preview of the selected row.
+ * validation preview. (The PSD Studio page composes these with designs.)
  */
 export function DataImportPage(): JSX.Element {
   const excelData = useDataStore((state) => state.excelData);
-  const currentTemplate = useTemplateStore((state) => state.currentTemplate);
+  const mappings = useDataStore((state) => state.mappings);
   const [selectedRowIndex, setSelectedRowIndex] = useState<number | null>(null);
-  const [previewSide] = useState<'front' | 'back'>('front');
 
   const selectedRow: DataRow | null =
     selectedRowIndex !== null
       ? (excelData?.rows.find((row) => row.rowIndex === selectedRowIndex) ?? null)
       : null;
+  void selectedRow;
+
+  // Placeholder keys come from whatever is currently mapped (generic page).
+  const placeholderEntries = Object.entries(mappings).map(([placeholder, column]) => ({
+    placeholder,
+    column,
+  }));
 
   return (
     <div className="themed-scrollbar h-full overflow-auto p-4">
@@ -32,7 +31,7 @@ export function DataImportPage(): JSX.Element {
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <div className="flex flex-col gap-4">
           <ExcelImport />
-          <ColumnMapping template={currentTemplate} excelData={excelData} />
+          <ColumnMapping placeholders={placeholderEntries} excelData={excelData} />
           <DataPreview
             excelData={excelData}
             selectedRowIndex={selectedRowIndex}
@@ -41,7 +40,6 @@ export function DataImportPage(): JSX.Element {
         </div>
 
         <div className="flex flex-col gap-4">
-          <CardLivePreview row={selectedRow} side={previewSide} widthPx={360} />
           <PhotoImport />
         </div>
       </div>

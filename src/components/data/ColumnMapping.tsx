@@ -1,38 +1,31 @@
 import { useMemo } from 'react';
 import { ArrowLeftRight, Wand2 } from 'lucide-react';
-import type { CardTemplate } from '@/types/template';
-import type { ExcelData } from '@/types/data';
+import type { ExcelData, ColumnMapping } from '@/types/data';
 import { useDataStore } from '@/stores/dataStore';
-import { collectTemplatePlaceholders } from '@/services/excelService';
 import { getPreview } from '@/services/excelService';
 import { Button, Select } from '@/components/ui';
 
 interface ColumnMappingProps {
-  template: CardTemplate | null;
+  /** Placeholder → current column pairs to display */
+  placeholders: ColumnMapping[];
   excelData: ExcelData | null;
 }
 
 /**
- * Column mapping interface: template placeholders on the left, Excel
- * columns on the right with sample data, auto-map button and per-row
- * clear. Unmapped placeholders are visually flagged.
+ * Column mapping interface: placeholders on the left, Excel columns on the
+ * right with sample data, auto-map button. Unmapped placeholders are
+ * visually flagged. Works for PSD placeholder keys (lowercase match).
  */
-export function ColumnMapping({ template, excelData }: ColumnMappingProps): JSX.Element {
-  const mappings = useDataStore((state) => state.mappings);
+export function ColumnMapping({ placeholders, excelData }: ColumnMappingProps): JSX.Element {
   const setMapping = useDataStore((state) => state.setMapping);
   const autoMapColumns = useDataStore((state) => state.autoMapColumns);
-
-  const placeholders = useMemo(
-    () => (template ? collectTemplatePlaceholders(template) : []),
-    [template]
-  );
 
   const sampleRows = useMemo(() => (excelData ? getPreview(excelData, 2) : []), [excelData]);
 
   if (!excelData) {
     return (
       <section className="rounded-lg border bg-surface-panel p-4 text-sm text-muted-foreground transition-colors duration-300">
-        Import an Excel file to map template placeholders.
+        Import an Excel file to map placeholders.
       </section>
     );
   }
@@ -62,8 +55,7 @@ export function ColumnMapping({ template, excelData }: ColumnMappingProps): JSX.
 
       {placeholders.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No placeholders in the template. Add placeholder elements or {'{{Field}}'} text in the
-          editor.
+          No placeholders chosen. Pick text or photo layers from the design first.
         </p>
       ) : (
         <div className="overflow-x-auto">
@@ -76,8 +68,7 @@ export function ColumnMapping({ template, excelData }: ColumnMappingProps): JSX.
               </tr>
             </thead>
             <tbody>
-              {placeholders.map((placeholder) => {
-                const mappedColumn = mappings[placeholder] ?? '';
+              {placeholders.map(({ placeholder, column: mappedColumn }) => {
                 const sample = mappedColumn ? (sampleRows[0]?.values[mappedColumn] ?? '—') : '—';
                 return (
                   <tr key={placeholder} className="border-b last:border-0">

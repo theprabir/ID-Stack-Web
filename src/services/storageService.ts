@@ -14,6 +14,18 @@ export interface TemplateRecord {
   data: unknown;
 }
 
+/** PSD project record (placeholders + design metadata) */
+export interface PsdProjectRecord {
+  id: string;
+  name: string;
+  createdDate: string;
+  modifiedDate: string;
+  /** Raw PSD bytes (nullable — large designs are re-uploaded per session) */
+  frontPsd: ArrayBuffer | null;
+  backPsd: ArrayBuffer | null;
+  placeholders: unknown[];
+}
+
 /** Uploaded font record stored in IndexedDB */
 export interface FontRecord {
   name: string;
@@ -31,6 +43,7 @@ export class IdStackDatabase extends Dexie {
   public keyValue!: Table<KeyValueRecord, string>;
   public templates!: Table<TemplateRecord, string>;
   public fonts!: Table<FontRecord, string>;
+  public psdProjects!: Table<PsdProjectRecord, string>;
 
   public constructor() {
     super('id-stack');
@@ -38,6 +51,9 @@ export class IdStackDatabase extends Dexie {
       keyValue: 'key',
       templates: 'id, name, modifiedDate',
       fonts: 'name, fileName',
+    });
+    this.version(2).stores({
+      psdProjects: 'id, name, modifiedDate',
     });
   }
 }
@@ -148,4 +164,22 @@ export async function deleteFontRecord(name: string): Promise<void> {
  */
 export async function listFontRecords(): Promise<FontRecord[]> {
   return getDatabase().fonts.toArray();
+}
+
+/**
+ * Persist the PSD project record (placeholders, mappings, metadata).
+ * @param record - Project record to save
+ */
+export async function savePsdProjectRecord(record: PsdProjectRecord): Promise<void> {
+  await getDatabase().psdProjects.put(record);
+}
+
+/**
+ * Load the PSD project record.
+ * @param id - Project id
+ * @returns The record or null
+ */
+export async function loadPsdProjectRecord(id: string): Promise<PsdProjectRecord | null> {
+  const record = await getDatabase().psdProjects.get(id);
+  return record ?? null;
 }

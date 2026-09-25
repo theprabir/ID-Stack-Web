@@ -20,6 +20,7 @@ import {
   isSupportedImage,
 } from '@/services/photoService';
 import { useTemplateStore } from './templateStore';
+import { usePsdStore } from './psdStore';
 
 /** Number of rows shown in the preview table */
 export const PREVIEW_ROW_COUNT = 5;
@@ -176,15 +177,22 @@ export const useDataStore = create<DataState>()((set, get) => ({
   autoMapColumns: () => {
     const { excelData } = get();
     if (!excelData) return;
-    const template = useTemplateStore.getState().currentTemplate;
-    if (!template) return;
+    // Placeholder keys come from the active PSD project when present,
+    // otherwise from the legacy editor template.
+    const psdProject = usePsdStore.getState().project;
+    const keys =
+      psdProject.placeholders.length > 0
+        ? psdProject.placeholders.map((placeholder) => placeholder.key)
+        : (() => {
+            const template = useTemplateStore.getState().currentTemplate;
+            return template ? collectTemplatePlaceholders(template) : [];
+          })();
 
-    const placeholders = collectTemplatePlaceholders(template);
     const columnsLower = new Map(excelData.columns.map((column) => [column.toLowerCase(), column]));
     const mappings: Record<string, string> = {};
-    for (const placeholder of placeholders) {
-      const column = columnsLower.get(placeholder.toLowerCase());
-      if (column) mappings[placeholder] = column;
+    for (const key of keys) {
+      const column = columnsLower.get(key.toLowerCase());
+      if (column) mappings[key] = column;
     }
     set({ mappings });
   },
@@ -196,8 +204,14 @@ export const useDataStore = create<DataState>()((set, get) => ({
       return { valid: true, issues: [], validRowIndexes: [] };
     }
 
-    const template = useTemplateStore.getState().currentTemplate;
-    const placeholders = template ? collectTemplatePlaceholders(template) : [];
+    const psdProject = usePsdStore.getState().project;
+    const placeholders =
+      psdProject.placeholders.length > 0
+        ? psdProject.placeholders.map((placeholder) => placeholder.key)
+        : (() => {
+            const template = useTemplateStore.getState().currentTemplate;
+            return template ? collectTemplatePlaceholders(template) : [];
+          })();
 
     const mappingList: ColumnMapping[] = placeholders.map((placeholder) => ({
       placeholder,

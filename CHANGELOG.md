@@ -3,6 +3,27 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.4.0] - 2026-09-25
+
+### Phases 4 & 5 — PSD-First Pipeline & Batch Generation
+
+### Added
+- `psdService` (ag-psd): layered .psd parsing per card face, flattened layer tree with kinds (text/image/group), bounds/opacity/blend/effect flags, full text style extraction (font, size, colour, bold/italic/underline, tracking, leading, justification, style runs), per-layer rasters + composite preview
+- `psdCompositeService`: pixel-faithful card rendering — placeholder text layers re-drawn with row content in the original style; photo layers filled with the row's matched photo (centre-crop); ALL other layers drawn from original rasters untouched, in original order, opacity and blend mode
+- `LayerPicker` (front/back): filterable layer list, mark any text layer as text placeholder or raster layer as photo placeholder, editable mapping keys, remove
+- `PsdStudioPage` at `/`: guided workflow (upload designs → choose placeholders → import data → map columns → live preview → generate) with step indicator and front/back preview tabs
+- `batchService`: chunked batch generation with `BatchState` progress (current/total/ETA/errors), pause/resume/cancel via control ref, JSZip packaging, PNG/JPG quality option, front/back/both sides
+- `BatchRunner`: options (format, sides, naming template), live progress bar, pause/resume/cancel controls, error list, ZIP download
+- `batchNaming`: `{Row}`, `{Column}`, `{{Column}}` templates with file-name sanitisation
+- IndexedDB schema v2: `psdProjects` table for placeholders/mappings persistence
+- Tests: placeholder key collection, row resolver semantics, batch naming (9 new; 80 total)
+
+### Changed
+- App home is now PSD Studio (`/`); the legacy Fabric editor moved to `/editor`
+- `dataStore` placeholders source: PSD project keys take precedence over editor template tokens
+- `ColumnMapping` now takes generic placeholder→column pairs (works for PSD keys and editor tokens)
+- Sidebar: PSD Studio / Editor / Data / Library / Settings / About
+
 ## [0.3.1] - 2026-09-25
 
 ### Removed
