@@ -3,3 +3,4 @@ export { Card, CardHeader, CardTitle, CardDescription, CardContent } from './car
 export { Select, type SelectProps } from './select';
 export { Checkbox, type CheckboxProps } from './checkbox';
 export { Label, type LabelProps } from './label';
+export { Input, type InputProps } from './input';

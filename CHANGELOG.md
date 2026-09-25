@@ -3,6 +3,27 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.0] - 2026-09-25
+
+### Phase 2 — Template Editor
+
+### Added
+- Fabric.js 6 canvas editor: zoom (Ctrl+wheel, buttons, 10%–400%), Alt+drag pan, multi-select
+- Element tools: text, image, shape (rectangle/circle), barcode, `{{placeholder}}` (dashed visual indicator)
+- ToolsPanel: element creation, quick shapes, background color, new/save template
+- LayersPanel: visibility toggle, lock/unlock, delete, per-layer select, top-first ordering
+- PropertiesPanel: name, X/Y/width/height/rotation (mm), text properties (font/size/weight/align/underline), fill color, stroke + width, opacity, full shadow editor (enable/color/blur/offset X/Y), reset effects
+- useHistory hook: snapshot undo/redo, 50-step cap, jump-capable labels, redo-stack invalidation
+- Dual-sided templates with Front/Back tabs and independent element sets
+- templateService: create/save/load/delete/duplicate/list, element upsert/remove via IndexedDB (Dexie)
+- Keyboard shortcuts: Ctrl+Z undo, Ctrl+Y / Ctrl+Shift+Z redo, Ctrl+S save, Delete/Backspace remove, Esc deselect
+- Editor i18n strings across all 11 languages
+- Tests: templateService CRUD (7), useHistory (4), units (4) — 36 total
+- About page Credits section (ID Stack, Prabir kumar Das @theprabir, GitHub repo link)
+
+### Fixed
+- Canvas API instance shared via props (EditorPage ↔ CanvasEditor) so tool actions affect the real canvas
+
 ## [0.1.1] - 2026-09-25
 
 ### Changed

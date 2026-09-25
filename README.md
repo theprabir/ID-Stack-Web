@@ -88,38 +88,36 @@ Contributions welcome! Please read the guidelines before submitting PRs to [thep
 Use [GitHub Issues](https://github.com/theprabir/ID-Stack-Web/issues) to report bugs or request features.
 
 ## 📊 Project Status
-**Current Phase:** 1 (Project Foundation) — COMPLETE
-**Status:** Foundation implemented, tested and verified
+**Current Phase:** 2 (Template Editor) — COMPLETE
+**Status:** Editor implemented, tested and verified in-browser
 
 ### Completed
 - Phase 0 — Initialization: `README.md`, `LICENSE`, `.gitignore`
-- **Phase 1 — Project Foundation:**
-  - Vite 5 + React 18 + TypeScript (strict mode) toolchain
-  - Tailwind CSS 3 with `darkMode: 'class'` and full dark/light theme tokens
-  - shadcn/ui-style base components (Button, Card, Select, Checkbox, Label)
-  - React Router with 4 pages: Editor, Library, Settings, About
-  - Zustand stores: `uiStore` (theme, layout) and `settingsStore` (language, units, auto-save), both persisted
-  - **Theme system:** `ThemeProvider`, `useTheme` hook, sun/moon toggle in Header, OS-preference detection on first visit, persistence in localStorage **and** IndexedDB, 300 ms transitions
-  - **i18n (i18next):** all 11 languages (en, hi, mr, or, bn, ta, te, kn, gu, pa, es) with lazy-loaded locale files and runtime switching
-  - Main layout: Header (nav + language switcher + theme toggle), collapsible Sidebar, Footer status bar
-  - **IndexedDB via Dexie.js:** `storageService` with key-value, templates and fonts tables
-  - **PWA (vite-plugin-pwa):** manifest, generated icons, service worker with auto-update, offline caching
-  - ESLint + Prettier configured; Vitest + React Testing Library + fake-indexeddb test setup
-  - Error boundary wrapping all routes
+- Phase 1 — Project Foundation: Vite + React + TS strict, Tailwind themes, Zustand, i18n (11 languages), layout, Dexie/IndexedDB, PWA, ESLint/Prettier, Vitest
+- **Phase 2 — Template Editor:**
+  - Fabric.js 6 canvas with zoom (Ctrl+wheel, buttons, 10%–400%), Alt+drag pan, selection sync
+  - Element tools: text, image, shape (rect/circle), barcode (as labelled box until Phase 3 wiring), `{{placeholder}}` with visual dashed border
+  - Layers panel: visibility, lock, delete, select; top-first ordering
+  - Context-sensitive properties panel: name, X/Y/width/height/rotation (mm), text options (font, size, weight, align, underline), fill, stroke + width, opacity slider, full shadow editor (color/blur/offsets/toggle)
+  - Undo/redo history (50-step cap) with redo-stack invalidation and keyboard shortcuts (Ctrl+Z/Y, Ctrl+S, Delete, Esc)
+  - Dual-sided templates: Front/Back tabs with independent element sets
+  - `templateService`: create/save/load/delete/duplicate/list via IndexedDB
+  - Editor i18n strings in all 11 languages
 
 ### Working Features
-- Dark/light theme toggle with persistence (verified in browser in both themes)
-- Language switching across all 11 locales with persistence (verified with Hindi)
-- Client-side routing between all pages
-- PWA installs a service worker and precaches assets (verified in production build)
-- Template/font/settings persistence layer ready for later phases
+- All Phase 1 features (themes, languages, routing, PWA)
+- Add/select/move/resize elements on a CR80 canvas; edit all properties live
+- Undo/redo round-trips verified in browser
+- Save to IndexedDB verified (template record with elements persisted)
+- Front/back side isolation verified
 
 ### Known Issues
-- One benign ESLint warning (`react-refresh/only-export-components` in `button.tsx` due to barrel-style variant export)
-- Editor/Library pages are placeholders pending Phases 2 and 5
+- Barcode elements render as labelled boxes — real QR/1D rendering lands with data binding (Phase 3/4)
+- Bundle grew to ~161 KB gzipped (Fabric.js); still well under the 500 KB budget
+- Layer rename is available via properties panel only; drag-drop layer reordering arrives with richer history UX later
 
 ### Next Steps
-- **Phase 2 — Template Editor:** Fabric.js canvas, tools/layers/properties panels, history (undo/redo), template save/load, effects (shadow, stroke, fill)
+- **Phase 3 — Data Import:** SheetJS Excel parsing, photo import/matching, column mapping UI, validation, live preview
 
 ## 🙏 Acknowledgments
 Built with:
