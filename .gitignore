@@ -8,6 +8,7 @@ build/
 .vite/
 
 #Agent files
+.freebuff/
 AGENTS.md
 Architecture.md
 Design.md
