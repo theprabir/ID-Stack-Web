@@ -62,7 +62,7 @@ describe('ThemeProvider', () => {
     })) as unknown as typeof window.matchMedia;
 
     // Simulate a true first visit: no persisted preference at all.
-    localStorage.removeItem('id-card-ui-preferences');
+    localStorage.removeItem('id-stack-ui-preferences');
 
     act(() => {
       render(

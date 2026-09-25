@@ -35,7 +35,7 @@ export const useSettingsStore = create<SettingsState>()(
       setAutoSave: (autoSave) => set({ autoSave }),
     }),
     {
-      name: 'id-card-settings',
+      name: 'id-stack-settings',
     }
   )
 );

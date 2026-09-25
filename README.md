@@ -1,7 +1,7 @@
-# ID Card Design & Batch Printing Software
+# ID Stack — ID Card Design & Batch Printing Software
 
 ## 🎯 Overview
-A professional, open-source ID card design and batch printing software that runs entirely in your browser. No installation, no backend, no server. Just open the URL and start designing.
+**ID Stack** is a professional, open-source ID card design and batch printing software that runs entirely in your browser. No installation, no backend, no server. Just open the URL and start designing.
 
 ## ✨ Features
 - Photoshop-like template editor with layers, effects, and precision tools
@@ -52,8 +52,8 @@ See the `docs/` folder for:
 
 ### Installation
 ```bash
-git clone <repo-url>
-cd id-card-software
+git clone https://github.com/theprabir/ID-Stack-Web.git
+cd ID-Stack-Web
 pnpm install
 ```
 
@@ -82,10 +82,10 @@ English, Hindi (हिंदी), Marathi (मराठी), Odia (ଓଡ଼ି�
 MIT License - see LICENSE file
 
 ## 🤝 Contributing
-Contributions welcome! Please read the guidelines before submitting PRs.
+Contributions welcome! Please read the guidelines before submitting PRs to [theprabir/ID-Stack-Web](https://github.com/theprabir/ID-Stack-Web).
 
 ## 🐛 Reporting Issues
-Use GitHub Issues to report bugs or request features.
+Use [GitHub Issues](https://github.com/theprabir/ID-Stack-Web/issues) to report bugs or request features.
 
 ## 📊 Project Status
 **Current Phase:** 1 (Project Foundation) — COMPLETE
@@ -133,4 +133,4 @@ Built with:
 - Vite (build tool)
 
 ## 📞 Support
-Open an issue on GitHub or contact the maintainers.
+Open an issue on [GitHub Issues](https://github.com/theprabir/ID-Stack-Web/issues) or contact the maintainer: **Prabir kumar Das** ([@theprabir](https://github.com/theprabir)).

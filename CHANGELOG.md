@@ -3,6 +3,16 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.1.1] - 2026-09-25
+
+### Changed
+- Project rebranded to **ID Stack** (author: Prabir kumar Das, [@theprabir](https://github.com/theprabir))
+- Repository URL set to `https://github.com/theprabir/ID-Stack-Web`
+- App name updated in PWA manifest, `index.html`, package metadata and all 11 locale files (app.name)
+- MIT LICENSE copyright holder set to "Prabir kumar Das"
+- Persisted storage keys renamed: `id-stack-ui-preferences`, `id-stack-settings`, IndexedDB database `id-stack`
+- README updated with repository links, issue tracker and maintainer contact
+
 ## [0.1.0] - 2026-09-25
 
 ### Phase 1 — Project Foundation

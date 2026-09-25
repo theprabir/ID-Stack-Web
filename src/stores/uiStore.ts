@@ -41,7 +41,7 @@ export const useUIStore = create<UIState>()(
       setUpdateAvailable: (updateAvailable) => set({ updateAvailable }),
     }),
     {
-      name: 'id-card-ui-preferences',
+      name: 'id-stack-ui-preferences',
       partialize: (state) => ({ theme: state.theme }),
     }
   )

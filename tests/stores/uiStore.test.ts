@@ -26,7 +26,7 @@ describe('uiStore', () => {
 
   it('persists theme to localStorage', () => {
     useUIStore.getState().setTheme('light');
-    const stored = JSON.parse(localStorage.getItem('id-card-ui-preferences') ?? '{}');
+    const stored = JSON.parse(localStorage.getItem('id-stack-ui-preferences') ?? '{}');
     expect(stored.state?.theme).toBe('light');
   });
 
@@ -35,7 +35,7 @@ describe('uiStore', () => {
     useUIStore.getState().setLoading(true);
     expect(useUIStore.getState().sidebarCollapsed).toBe(true);
     expect(useUIStore.getState().isLoading).toBe(true);
-    const stored = JSON.parse(localStorage.getItem('id-card-ui-preferences') ?? '{}');
+    const stored = JSON.parse(localStorage.getItem('id-stack-ui-preferences') ?? '{}');
     expect(stored.state?.sidebarCollapsed).toBeUndefined();
   });
 });

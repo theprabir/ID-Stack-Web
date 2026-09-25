@@ -3,7 +3,7 @@ import { useUIStore } from '@/stores/uiStore';
 import { saveToIndexedDB, loadFromIndexedDB } from '@/services/storageService';
 
 const THEME_STORAGE_KEY = 'theme';
-const UI_PREFERENCES_KEY = 'id-card-ui-preferences';
+const UI_PREFERENCES_KEY = 'id-stack-ui-preferences';
 
 /**
  * Wraps the application. Applies the `dark`/`light` class to <html>,

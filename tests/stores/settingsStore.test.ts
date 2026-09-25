@@ -17,7 +17,7 @@ describe('settingsStore', () => {
   it('changes and persists language', () => {
     useSettingsStore.getState().setLanguage('hi');
     expect(useSettingsStore.getState().language).toBe('hi');
-    const stored = JSON.parse(localStorage.getItem('id-card-settings') ?? '{}');
+    const stored = JSON.parse(localStorage.getItem('id-stack-settings') ?? '{}');
     expect(stored.state?.language).toBe('hi');
   });
 

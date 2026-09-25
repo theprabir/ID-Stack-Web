@@ -27,13 +27,13 @@ export interface FontRecord {
  * Dexie database. Per Architecture.md, this is the app's only "database" —
  * everything is client-side.
  */
-export class IdCardDatabase extends Dexie {
+export class IdStackDatabase extends Dexie {
   public keyValue!: Table<KeyValueRecord, string>;
   public templates!: Table<TemplateRecord, string>;
   public fonts!: Table<FontRecord, string>;
 
   public constructor() {
-    super('id-card-software');
+    super('id-stack');
     this.version(1).stores({
       keyValue: 'key',
       templates: 'id, name, modifiedDate',
@@ -42,15 +42,15 @@ export class IdCardDatabase extends Dexie {
   }
 }
 
-let databaseInstance: IdCardDatabase | null = null;
+let databaseInstance: IdStackDatabase | null = null;
 
 /**
  * Get (and lazily create) the singleton database instance.
  * @returns The Dexie database
  */
-export function getDatabase(): IdCardDatabase {
+export function getDatabase(): IdStackDatabase {
   if (!databaseInstance) {
-    databaseInstance = new IdCardDatabase();
+    databaseInstance = new IdStackDatabase();
   }
   return databaseInstance;
 }

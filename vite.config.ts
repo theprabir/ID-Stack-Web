@@ -14,8 +14,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'robots.txt', 'apple-touch-icon.png'],
       manifest: {
-        name: 'ID Card Software',
-        short_name: 'IDCard',
+        name: 'ID Stack',
+        short_name: 'IDStack',
         description: 'Professional ID Card Design & Batch Printing',
         theme_color: '#0078D4',
         background_color: '#1E1E1E',

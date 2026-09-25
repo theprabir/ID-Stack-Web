@@ -46,7 +46,7 @@ function chunk(type, data) {
 }
 
 /**
- * Render a simple ID-card glyph icon at the given size.
+ * Render a simple ID-card glyph icon (ID Stack branding) at the given size.
  * Background #0078D4, white rounded card with a blue stripe.
  */
 function renderIcon(size) {
