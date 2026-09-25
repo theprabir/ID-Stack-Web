@@ -1,27 +1,59 @@
+import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Eye, EyeOff, Lock, Unlock, Trash2 } from 'lucide-react';
+import { Eye, EyeOff, Lock, Unlock, Trash2, GripVertical } from 'lucide-react';
 import type { CanvasElement } from '@/types/template';
 import { useTemplateStore } from '@/stores/templateStore';
-import { sideKey } from '@/types/template';
 import { Button } from '@/components/ui';
 import { cn } from '@/lib/utils';
 
 interface LayersPanelProps {
   selectedElementId: string | null;
   onSelect: (element: CanvasElement) => void;
+  /** Move an element to a new stack index (bottom-based, matches canvas order). */
+  onReorder: (elementId: string, toIndex: number) => void;
 }
 
-/** Right panel layer list: order (top first), visibility, lock, rename, delete. */
-export function LayersPanel({ selectedElementId, onSelect }: LayersPanelProps): JSX.Element {
+/**
+ * Right panel layer list: order (top first), visibility, lock, delete and
+ * drag-drop reordering with undo/redo support via the reorder callback.
+ */
+export function LayersPanel({
+  selectedElementId,
+  onSelect,
+  onReorder,
+}: LayersPanelProps): JSX.Element {
   const { t } = useTranslation();
   const currentTemplate = useTemplateStore((state) => state.currentTemplate);
   const currentSide = useTemplateStore((state) => state.currentSide);
   const upsertElement = useTemplateStore((state) => state.upsertElement);
   const removeElement = useTemplateStore((state) => state.removeElement);
 
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
+
+  // Display order: top-most first. Canvas stack index = (count - 1 - displayIndex).
   const elements: CanvasElement[] = currentTemplate
-    ? [...currentTemplate[sideKey(currentSide)].elements].reverse() // top-most first
+    ? [...currentTemplate[currentSide === 'front' ? 'frontSide' : 'backSide'].elements].reverse()
     : [];
+
+  /** Convert display (top-first) index to canvas stack index. */
+  const toStackIndex = useCallback(
+    (displayIndex: number): number => Math.max(0, elements.length - 1 - displayIndex),
+    [elements.length]
+  );
+
+  const handleDrop = useCallback(
+    (targetDisplayIndex: number) => {
+      if (draggingId && dropTargetIndex !== null) {
+        // Dropping "before" the target row (in top-first display order)
+        const targetStack = toStackIndex(targetDisplayIndex);
+        onReorder(draggingId, targetStack);
+      }
+      setDraggingId(null);
+      setDropTargetIndex(null);
+    },
+    [draggingId, dropTargetIndex, onReorder, toStackIndex]
+  );
 
   if (!currentTemplate) {
     return (
@@ -39,15 +71,47 @@ export function LayersPanel({ selectedElementId, onSelect }: LayersPanelProps): 
       {elements.length === 0 && (
         <p className="p-3 text-sm text-muted-foreground">{t('editor.noLayers')}</p>
       )}
-      <ul className="flex flex-col">
-        {elements.map((element) => (
+      <ul className="flex flex-col" role="list" aria-label={t('editor.layers')}>
+        {elements.map((element, displayIndex) => (
           <li
             key={element.id}
+            draggable
+            onDragStart={(event) => {
+              setDraggingId(element.id);
+              event.dataTransfer.effectAllowed = 'move';
+            }}
+            onDragOver={(event) => {
+              event.preventDefault();
+              event.dataTransfer.dropEffect = 'move';
+              setDropTargetIndex(displayIndex);
+            }}
+            onDragLeave={() =>
+              setDropTargetIndex((current) => (current === displayIndex ? null : current))
+            }
+            onDrop={(event) => {
+              event.preventDefault();
+              handleDrop(displayIndex);
+            }}
+            onDragEnd={() => {
+              setDraggingId(null);
+              setDropTargetIndex(null);
+            }}
             className={cn(
-              'flex items-center gap-1.5 border-b px-2 py-1.5 text-sm',
-              element.id === selectedElementId ? 'bg-primary/10' : 'hover:bg-accent/5'
+              'flex items-center gap-1 border-b px-1.5 py-1.5 text-sm transition-colors',
+              element.id === selectedElementId ? 'bg-primary/10' : 'hover:bg-accent/5',
+              draggingId === element.id && 'opacity-40',
+              dropTargetIndex === displayIndex &&
+                draggingId !== element.id &&
+                'border-t-2 border-t-primary'
             )}
           >
+            <span
+              className="flex h-6 w-5 shrink-0 cursor-grab items-center justify-center text-muted-foreground"
+              title={t('editor.dragReorder')}
+              aria-hidden="true"
+            >
+              <GripVertical className="h-3.5 w-3.5" />
+            </span>
             <button
               type="button"
               className="min-w-0 flex-1 truncate text-left text-foreground"

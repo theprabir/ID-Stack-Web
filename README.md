@@ -88,8 +88,8 @@ Contributions welcome! Please read the guidelines before submitting PRs to [thep
 Use [GitHub Issues](https://github.com/theprabir/ID-Stack-Web/issues) to report bugs or request features.
 
 ## 📊 Project Status
-**Current Phase:** 2 (Template Editor) — COMPLETE
-**Status:** Editor implemented, tested and verified in-browser
+**Current Phase:** 2.1 (Editor UX polish) — COMPLETE
+**Status:** v0.2.1 — shortcuts, drag-drop layers, streamlined header
 
 ### Completed
 - Phase 0 — Initialization: `README.md`, `LICENSE`, `.gitignore`
@@ -103,6 +103,12 @@ Use [GitHub Issues](https://github.com/theprabir/ID-Stack-Web/issues) to report 
   - Dual-sided templates: Front/Back tabs with independent element sets
   - `templateService`: create/save/load/delete/duplicate/list via IndexedDB
   - Editor i18n strings in all 11 languages
+- **v0.2.1 — Editor UX polish:**
+  - Photoshop-style keyboard shortcuts (implemented features only): tools V/T/U/H, zoom Ctrl+±/0/1, save Ctrl+S, undo/redo, select all/deselect, layer ordering Ctrl+[/] (+Shift), arrow-key nudging (Shift = 10 px)
+  - Spacebar temporary-pan + middle-click canvas panning
+  - Drag-drop layer reordering in the Layers panel with full undo/redo
+  - Header simplified: logo + language + theme toggle (navigation lives in the sidebar)
+  - `docs/keyboard_shortcuts.md` — all active and planned shortcuts
 
 ### Working Features
 - All Phase 1 features (themes, languages, routing, PWA)
@@ -110,6 +116,7 @@ Use [GitHub Issues](https://github.com/theprabir/ID-Stack-Web/issues) to report 
 - Undo/redo round-trips verified in browser
 - Save to IndexedDB verified (template record with elements persisted)
 - Front/back side isolation verified
+- Full keyboard workflow and layer drag-drop verified in browser
 
 ### Known Issues
 - Barcode elements render as labelled boxes — real QR/1D rendering lands with data binding (Phase 3/4)

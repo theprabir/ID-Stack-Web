@@ -3,6 +3,17 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.1] - 2026-09-25
+
+### Added
+- Photoshop-style keyboard shortcuts for all implemented editor features: tool pickers (V/T/U/H), zoom (Ctrl+/-/0/1), save (Ctrl+S), undo/redo (Ctrl+Z/Y/Shift+Z), select all/deselect (Ctrl+A/D), layer ordering (Ctrl+[/]/Shift), arrow-key nudging (Shift = 10 px)
+- Spacebar temporary-pan (grab cursor) and middle-click canvas panning
+- Drag-drop layer reordering in the Layers panel with full undo/redo support
+- `docs/keyboard_shortcuts.md` documenting every active shortcut and planned ones
+
+### Changed
+- Header simplified to logo + language switcher + theme toggle; page navigation now lives only in the left sidebar
+
 ## [0.2.0] - 2026-09-25
 
 ### Phase 2 — Template Editor

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { CanvasElement, CardTemplate } from '@/types/template';
 import { sideKey } from '@/types/template';
+import type { ToolType } from '@/constants/canvas';
 import { useTemplateStore } from '@/stores/templateStore';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useHistory } from '@/hooks/useHistory';
@@ -78,7 +79,10 @@ export function EditorPage(): JSX.Element {
     }
   }, [history, canvasApi]);
 
-  /** Keyboard shortcuts (Design.md list). */
+  /**
+   * Keyboard shortcuts (Photoshop-style, implemented features only —
+   * see docs/keyboard_shortcuts.md).
+   */
   useEffect(() => {
     const handler = (event: KeyboardEvent): void => {
       const target = event.target as HTMLElement | null;
@@ -89,25 +93,126 @@ export function EditorPage(): JSX.Element {
       if (isTyping) return;
 
       const modifier = event.ctrlKey || event.metaKey;
+      const key = event.key.toLowerCase();
+      const zoom = useCanvasStore.getState().zoom;
 
-      if (modifier && event.key.toLowerCase() === 'z' && !event.shiftKey) {
+      // ---- Tool pickers (single keys, Photoshop-style) ----
+      if (!modifier && !event.altKey && !event.shiftKey) {
+        const toolKeys: Record<string, ToolType> = {
+          v: 'select',
+          t: 'text',
+          u: 'shape',
+          h: 'pan',
+        };
+        const tool = toolKeys[key];
+        if (tool) {
+          useCanvasStore.getState().setTool(tool);
+          return;
+        }
+      }
+
+      // ---- Zoom & view ----
+      if (modifier && (event.key === '=' || event.key === '+')) {
         event.preventDefault();
-        handleUndo();
-      } else if (
-        (modifier && event.key.toLowerCase() === 'y') ||
-        (modifier && event.shiftKey && event.key.toLowerCase() === 'z')
-      ) {
+        useCanvasStore.getState().setZoom(Math.round((zoom + 0.1) * 10) / 10);
+        return;
+      }
+      if (modifier && event.key === '-') {
         event.preventDefault();
-        handleRedo();
-      } else if (modifier && event.key.toLowerCase() === 's') {
+        useCanvasStore.getState().setZoom(Math.round((zoom - 0.1) * 10) / 10);
+        return;
+      }
+      if (modifier && key === '0') {
+        event.preventDefault();
+        useCanvasStore.getState().resetZoom();
+        return;
+      }
+      if (modifier && key === '1') {
+        event.preventDefault();
+        useCanvasStore.getState().setZoom(1);
+        return;
+      }
+
+      // ---- File ----
+      if (modifier && key === 's' && !event.shiftKey) {
         event.preventDefault();
         void saveTemplate();
-      } else if (event.key === 'Delete' || event.key === 'Backspace') {
+        return;
+      }
+
+      // ---- History ----
+      if (modifier && key === 'z' && !event.shiftKey && !event.altKey) {
+        event.preventDefault();
+        handleUndo();
+        return;
+      }
+      if ((modifier && key === 'y') || (modifier && event.shiftKey && key === 'z')) {
+        event.preventDefault();
+        handleRedo();
+        return;
+      }
+
+      // ---- Selection ----
+      if (modifier && key === 'a' && !event.altKey) {
+        event.preventDefault();
+        canvasApi.selectAll();
+        return;
+      }
+      if (modifier && key === 'd') {
+        event.preventDefault();
+        canvasApi.deselectAll();
+        useCanvasStore.getState().clearSelection();
+        return;
+      }
+
+      // ---- Layer ordering ----
+      if (modifier && event.key === ']' && !event.shiftKey) {
+        event.preventDefault();
+        canvasApi.bringForward();
+        return;
+      }
+      if (modifier && event.key === ']' && event.shiftKey) {
+        event.preventDefault();
+        canvasApi.bringToFront();
+        return;
+      }
+      if (modifier && event.key === '[' && !event.shiftKey) {
+        event.preventDefault();
+        canvasApi.sendBackward();
+        return;
+      }
+      if (modifier && event.key === '[' && event.shiftKey) {
+        event.preventDefault();
+        canvasApi.sendToBack();
+        return;
+      }
+
+      // ---- Nudge (arrow keys; Shift = 10 px) ----
+      if (event.key.startsWith('Arrow')) {
+        event.preventDefault();
+        const step = event.shiftKey ? 10 : 1;
+        const deltas: Record<string, [number, number]> = {
+          ArrowLeft: [-step, 0],
+          ArrowRight: [step, 0],
+          ArrowUp: [0, -step],
+          ArrowDown: [0, step],
+        };
+        const delta = deltas[event.key];
+        if (delta) canvasApi.nudgeSelected(delta[0], delta[1]);
+        return;
+      }
+
+      // ---- Delete / cancel ----
+      if (event.key === 'Delete' || event.key === 'Backspace') {
         canvasApi.deleteSelected();
-      } else if (event.key === 'Escape') {
+        return;
+      }
+      if (event.key === 'Escape') {
+        canvasApi.deselectAll();
         useCanvasStore.getState().clearSelection();
       }
     };
+
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [handleUndo, handleRedo, canvasApi, saveTemplate]);
@@ -149,11 +254,11 @@ export function EditorPage(): JSX.Element {
           onSave={() => void saveTemplate()}
           canSave={canSave}
         />
-        <CanvasEditor canvasApi={canvasApi} />
-        <PropertiesPanel element={selectedElement} />
+        <CanvasEditor canvasApi={canvasApi} /> <PropertiesPanel element={selectedElement} />
         <LayersPanel
           selectedElementId={selectedElementIds[0] ?? null}
           onSelect={pickSelectedElement}
+          onReorder={canvasApi.reorderElement}
         />
       </div>
       <TemplateTabs />

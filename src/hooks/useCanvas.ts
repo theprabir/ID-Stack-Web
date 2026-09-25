@@ -22,6 +22,16 @@ export interface UseCanvasResult {
   /** Bring selected to front / send to back. */
   bringToFront: () => void;
   sendToBack: () => void;
+  /** Step-wise ordering (Ctrl+] / Ctrl+[). */
+  bringForward: () => void;
+  sendBackward: () => void;
+  /** Select all / deselect (Ctrl+A / Ctrl+D). */
+  selectAll: () => void;
+  deselectAll: () => void;
+  /** Nudge selected objects by pixel deltas (arrow keys). */
+  nudgeSelected: (dx: number, dy: number) => void;
+  /** Reorder an element to a stack index (drag-drop layers). */
+  reorderElement: (elementId: string, toIndex: number) => void;
 }
 
 /** Fabric object → CanvasElement serialisation */
@@ -426,6 +436,78 @@ export function useCanvas(
     commit('send to back');
   }, [commit]);
 
+  /** Bring selected object one step forward (Ctrl+]). */
+  const bringForward = useCallback((): void => {
+    const canvas = canvasRef.current;
+    const active = canvas?.getActiveObject();
+    if (!canvas || !active) return;
+    canvas.bringObjectForward(active);
+    canvas.requestRenderAll();
+    commit('bring forward');
+  }, [commit]);
+
+  /** Send selected object one step backward (Ctrl+[). */
+  const sendBackward = useCallback((): void => {
+    const canvas = canvasRef.current;
+    const active = canvas?.getActiveObject();
+    if (!canvas || !active) return;
+    canvas.sendObjectBackwards(active);
+    canvas.requestRenderAll();
+    commit('send backward');
+  }, [commit]);
+
+  /** Select all objects on the canvas (Ctrl+A). */
+  const selectAll = useCallback((): void => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const objects = canvas.getObjects().filter((object) => object.selectable);
+    if (objects.length === 0) return;
+    const activeSelection = new fabric.ActiveSelection(objects, { canvas });
+    canvas.setActiveObject(activeSelection);
+    canvas.requestRenderAll();
+  }, []);
+
+  /** Deselect everything (Ctrl+D / Esc). */
+  const deselectAll = useCallback((): void => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    canvas.discardActiveObject();
+    canvas.requestRenderAll();
+  }, []);
+
+  /** Nudge selected objects by dx/dy pixels (arrow keys). */
+  const nudgeSelected = useCallback(
+    (dx: number, dy: number): void => {
+      const canvas = canvasRef.current;
+      const active = canvas?.getActiveObject();
+      if (!canvas || !active) return;
+      active.set({ left: (active.left ?? 0) + dx, top: (active.top ?? 0) + dy });
+      active.setCoords();
+      canvas.requestRenderAll();
+      commit('move');
+    },
+    [commit]
+  );
+
+  /** Reorder an element by moving it to a specific stack index (drag-drop layers). */
+  const reorderElement = useCallback(
+    (elementId: string, toIndex: number): void => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const objects = canvas.getObjects();
+      const fromIndex = objects.findIndex(
+        (object) => (object as FabricObjectWithElement).elementId === elementId
+      );
+      if (fromIndex < 0) return;
+      const object = objects[fromIndex];
+      if (!object) return;
+      canvas.moveObjectTo(object, toIndex);
+      canvas.requestRenderAll();
+      commit('reorder layer');
+    },
+    [commit]
+  );
+
   /** Cleanup on unmount. */
   useEffect(() => {
     return () => {
@@ -454,5 +536,11 @@ export function useCanvas(
     deleteSelected,
     bringToFront,
     sendToBack,
+    bringForward,
+    sendBackward,
+    selectAll,
+    deselectAll,
+    nudgeSelected,
+    reorderElement,
   };
 }
