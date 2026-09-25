@@ -5,7 +5,12 @@
  * only placeholder content replaced.
  */
 import { readPsd, type Psd, type Layer, type LayerTextData, type Color } from 'ag-psd';
+import { applyPsdColorModePatch } from './psdColorModePatch';
 import type { PsdDesign, PsdLayerInfo, PsdLayerKind, SideType } from '@/types/psd';
+
+// Enable CMYK PSD files (print standard). ag-psd converts CMYK→RGB internally
+// but gates the color mode behind a whitelist; the patch extends it.
+applyPsdColorModePatch();
 
 /** Convert an ag-psd Color union to a CSS color string ('' when unknown) */
 export function agColorToCss(color: Color | undefined): string {

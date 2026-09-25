@@ -98,6 +98,12 @@ function createMockContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D 
     createPattern: (): null => null,
     measureText: (text: string): TextMetrics =>
       ({ width: text.length * 6 }) as unknown as TextMetrics,
+    createImageData: (width: number, height: number): ImageData =>
+      ({
+        data: new Uint8ClampedArray(width * height * 4),
+        width,
+        height,
+      }) as unknown as ImageData,
     getImageData: (): ImageData =>
       ({
         data: new Uint8ClampedArray(Math.max(1, canvas.width * canvas.height * 4)),
