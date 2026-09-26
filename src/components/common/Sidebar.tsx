@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { IdCard, Layout, Settings, Info, TableProperties } from 'lucide-react';
+import { IdCard, Layout, Settings, Info } from 'lucide-react';
 import { useUIStore } from '@/stores/uiStore';
 import { cn } from '@/lib/utils';
 
@@ -19,7 +19,6 @@ export function Sidebar(): JSX.Element {
   const items: SidebarItem[] = [
     { to: '/', label: 'PSD Studio', Icon: IdCard },
     { to: '/editor', label: 'Editor', Icon: Layout },
-    { to: '/data', label: 'Data', Icon: TableProperties },
     { to: '/library', label: 'Library', Icon: Layout },
     { to: '/settings', label: 'Settings', Icon: Settings },
     { to: '/about', label: 'About', Icon: Info },

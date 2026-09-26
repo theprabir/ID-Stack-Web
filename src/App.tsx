@@ -2,7 +2,6 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Header, Sidebar, Footer, ErrorBoundary } from '@/components/common';
 import { PsdStudioPage } from '@/pages/PsdStudioPage';
 import { EditorPage } from '@/pages/EditorPage';
-import { DataImportPage } from '@/pages/DataImportPage';
 import { LibraryPage } from '@/pages/LibraryPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { AboutPage } from '@/pages/AboutPage';
@@ -22,7 +21,6 @@ export default function App(): JSX.Element {
               <Routes>
                 <Route path="/" element={<PsdStudioPage />} />
                 <Route path="/editor" element={<EditorPage />} />
-                <Route path="/data" element={<DataImportPage />} />
                 <Route path="/library" element={<LibraryPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/about" element={<AboutPage />} />

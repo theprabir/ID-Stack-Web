@@ -3,6 +3,32 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.5.2] - 2026-09-26
+
+### Changed
+
+- **PSD Studio is now a 3-step wizard.** The old single-page layout (and the
+  separate Data page) are consolidated into one guided flow, all inside the
+  PSD Studio tab:
+  1. **Upload Designs & Data** — PSD front/back upload, Excel import,
+     photo import and font management
+  2. **Choose Placeholders** — layer pickers for both sides
+  3. **Generate** — column mapping, data validation table, live front/back
+     preview and the full batch output (cards ZIP or imposed printable
+     sheets) — the whole generation workflow
+- **Back / Next navigation** between steps with a clickable step indicator:
+  completed steps show a green check, future steps stay locked until their
+  requirements are met, and blocked Next buttons explain what is missing.
+- **Nothing is lost while navigating** — all three step panels stay mounted
+  (hidden when inactive) and all state lives in the shared stores, so users
+  can freely go back to change/add/remove uploads or placeholders and
+  return without any data loss.
+
+### Removed
+
+- The **Data** sidebar tab and `/data` route — data upload now lives in
+  step 1 of PSD Studio (`DataImportPage.tsx` deleted).
+
 ## [0.5.1] - 2026-09-26
 
 ### Added

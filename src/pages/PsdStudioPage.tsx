@@ -4,18 +4,47 @@ import { usePsdStore } from '@/stores/psdStore';
 import { useDataStore, PREVIEW_ROW_COUNT } from '@/stores/dataStore';
 import { matchPhotos } from '@/services/photoService';
 import { getPreview } from '@/services/excelService';
-import { PsdUploader, LayerPicker, PsdCardPreview, BatchRunner, FontManager } from '@/components/psd';
-import { DataPreview } from '@/components/data';
+import {
+  PsdUploader,
+  LayerPicker,
+  PsdCardPreview,
+  BatchRunner,
+  FontManager,
+} from '@/components/psd';
+import { StudioStepper, StudioNavButtons, type StudioStep } from '@/components/psd/StudioStepper';
+import { ExcelImport, PhotoImport, DataPreview } from '@/components/data';
 import { ColumnMapping } from '@/components/data/ColumnMapping';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui';
 import { cn } from '@/lib/utils';
 
+/** Total wizard steps in the PSD Studio */
+const TOTAL_STEPS = 3;
+
+const STEPS: StudioStep[] = [
+  {
+    number: 1,
+    label: 'Upload Designs & Data',
+    description: 'Upload PSD designs, import the Excel sheet and the photos',
+  },
+  {
+    number: 2,
+    label: 'Choose Placeholders',
+    description: 'Pick the text and photo layers that change per card',
+  },
+  {
+    number: 3,
+    label: 'Generate',
+    description: 'Map columns, preview, then generate cards or printable sheets',
+  },
+];
+
 /**
- * PSD Studio — the main production pipeline:
- * 1. Upload front/back PSD designs
- * 2. Choose placeholder layers (text/photo)
- * 3. Import Excel + photos, map columns to placeholders
- * 4. Preview live, then generate the full batch as a ZIP
+ * PSD Studio — a 3-step wizard:
+ * 1. Upload designs & data (PSD front/back + Excel + photos)
+ * 2. Choose placeholders (text/photo layers per side)
+ * 3. Generate (mapping, live preview, batch output as ZIP or imposed sheets)
+ *
+ * All step panels stay mounted (hidden when inactive) so nothing is lost
+ * while navigating back and forth; the underlying stores keep their state.
  */
 export function PsdStudioPage(): JSX.Element {
   const project = usePsdStore((state) => state.project);
@@ -24,6 +53,7 @@ export function PsdStudioPage(): JSX.Element {
   const mappings = useDataStore((state) => state.mappings);
   const photoMatchConfig = useDataStore((state) => state.photoMatchConfig);
   const photos = useDataStore((state) => state.photos);
+  const [step, setStep] = useState(1);
   const [selectedRowIndex, setSelectedRowIndex] = useState<number | null>(null);
   const [previewSide, setPreviewSide] = useState<'front' | 'back'>('front');
 
@@ -43,140 +73,170 @@ export function PsdStudioPage(): JSX.Element {
     [excelData]
   );
 
-  const readyToGenerate = Boolean(
-    project.front && project.placeholders.length > 0 && excelData && excelData.rows.length > 0
-  );
+  // Step gates: what must be ready to move forward.
+  const designsReady = Boolean(project.front || project.back);
+  const placeholdersReady = project.placeholders.length > 0;
+  const dataReady = Boolean(excelData && excelData.rows.length > 0);
+  const readyToGenerate = designsReady && placeholdersReady && dataReady;
 
-  const steps = [
-    { label: 'Upload designs', done: Boolean(project.front || project.back) },
-    {
-      label: 'Choose placeholders',
-      done: project.placeholders.length > 0,
-    },
-    { label: 'Import data', done: Boolean(excelData) },
-    { label: 'Generate', done: false },
-  ];
-  const currentStep = steps.findIndex((step) => !step.done);
+  // Highest step reachable right now (used for chip clicking and Next).
+  const maxReachableStep = !designsReady && !dataReady ? 1 : placeholdersReady ? 3 : 2;
+
+  const step1Blocked =
+    !designsReady && !dataReady
+      ? 'Upload at least one design or an Excel sheet to continue.'
+      : null;
+  const step2Blocked = !placeholdersReady
+    ? 'Choose at least one placeholder layer to continue.'
+    : null;
 
   return (
     <div className="themed-scrollbar h-full overflow-auto p-4">
-      <div className="mb-4 flex items-center justify-between gap-4">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-lg font-semibold">PSD Studio</h1>
-        {/* Step indicator */}
-        <ol className="flex items-center gap-2 text-xs" aria-label="Workflow progress">
-          {steps.map((step, index) => (
-            <li
-              key={step.label}
-              className={cn(
-                'flex items-center gap-1.5 rounded-full border px-2.5 py-1',
-                step.done
-                  ? 'border-green-500/40 text-green-600 dark:text-green-400'
-                  : index === currentStep
-                    ? 'border-primary/50 bg-primary/10 text-primary'
-                    : 'text-muted-foreground'
-              )}
-            >
-              <span className="font-medium">{index + 1}.</span>
-              {step.label}
-            </li>
-          ))}
-        </ol>
+        <StudioStepper
+          steps={STEPS}
+          currentStep={step}
+          maxReachableStep={maxReachableStep}
+          onSelectStep={setStep}
+        />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        {/* Left column: design + layers */}
-        <div className="flex flex-col gap-4">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <PsdUploader side="front" />
-            <PsdUploader side="back" />
+      {/* Step 1 — Upload designs, Excel and photos (stays mounted, hidden) */}
+      <section hidden={step !== 1} aria-hidden={step !== 1}>
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <div className="flex flex-col gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <PsdUploader side="front" />
+              <PsdUploader side="back" />
+            </div>
+            <ExcelImport />
           </div>
+          <div className="flex flex-col gap-4">
+            <PhotoImport />
+            <FontManager />
+          </div>
+        </div>
+        <div className="mt-4">
+          <StudioNavButtons
+            currentStep={1}
+            totalSteps={TOTAL_STEPS}
+            canProceed={designsReady || dataReady}
+            blockedReason={step1Blocked}
+            onBack={() => setStep(1)}
+            onNext={() => setStep(2)}
+          />
+        </div>
+      </section>
 
+      {/* Step 2 — Choose placeholders (stays mounted, hidden) */}
+      <section hidden={step !== 2} aria-hidden={step !== 2}>
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           <LayerPicker side="front" />
           <LayerPicker side="back" />
-          <FontManager />
         </div>
-
-        {/* Right column: data, mapping, preview, generation */}
-        <div className="flex flex-col gap-4">
-          {/* Placeholder → column mapping */}
-          {project.placeholders.length > 0 && excelData && (
-            <ColumnMapping
-              placeholders={project.placeholders.map((placeholder) => ({
-                placeholder: placeholder.key,
-                column: mappings[placeholder.key] ?? '',
-              }))}
-              excelData={excelData}
-            />
-          )}
-
-          <DataPreview
-            excelData={excelData}
-            selectedRowIndex={selectedRowIndex}
-            onSelectRow={setSelectedRowIndex}
+        <div className="mt-4">
+          <StudioNavButtons
+            currentStep={2}
+            totalSteps={TOTAL_STEPS}
+            canProceed={placeholdersReady}
+            blockedReason={step2Blocked}
+            onBack={() => setStep(1)}
+            onNext={() => setStep(3)}
           />
-
-          {/* Live preview with side switcher */}
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={previewSide === 'front'}
-              onClick={() => setPreviewSide('front')}
-              className={cn(
-                'rounded-md px-3 py-1 text-sm transition-colors',
-                previewSide === 'front'
-                  ? 'bg-primary/10 font-medium text-primary'
-                  : 'text-muted-foreground hover:bg-accent/10'
-              )}
-            >
-              Front
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={previewSide === 'back'}
-              onClick={() => setPreviewSide('back')}
-              className={cn(
-                'rounded-md px-3 py-1 text-sm transition-colors',
-                previewSide === 'back'
-                  ? 'bg-primary/10 font-medium text-primary'
-                  : 'text-muted-foreground hover:bg-accent/10'
-              )}
-            >
-              Back
-            </button>
-          </div>
-          <PsdCardPreview side={previewSide} row={selectedRow} widthPx={340} />
-
-          {readyToGenerate && excelData && photoMatches ? (
-            <BatchRunner project={project} excelData={excelData} photoMatches={photoMatches} />
-          ) : (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Generate Cards</CardTitle>
-                <CardDescription>
-                  {!project.front && 'Upload at least the front design. '}
-                  {project.placeholders.length === 0 && 'Choose at least one placeholder layer. '}
-                  {!excelData && 'Import an Excel sheet with the card data. '}
-                  {excelData && excelData.rows.length === 0 && 'The Excel sheet has no data rows. '}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="text-xs text-muted-foreground">
-                {isParsing ? 'Parsing design…' : 'Complete the steps above to unlock generation.'}
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Sample of mapped rows for quick sanity check */}
-          {sampleRows.length > 0 && project.placeholders.length > 0 && (
-            <p className="text-xs text-muted-foreground">
-              Sample row keys:{' '}
-              {project.placeholders.map((placeholder) => `{{${placeholder.key}}}`).join(' ')} —
-              mapped columns: {Object.values(mappings).filter(Boolean).join(', ') || 'none yet'}
-            </p>
-          )}
         </div>
-      </div>
+      </section>
+
+      {/* Step 3 — Generate (stays mounted, hidden) */}
+      <section hidden={step !== 3} aria-hidden={step !== 3}>
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          {/* Left: mapping + data table */}
+          <div className="flex flex-col gap-4">
+            {project.placeholders.length > 0 && excelData && (
+              <ColumnMapping
+                placeholders={project.placeholders.map((placeholder) => ({
+                  placeholder: placeholder.key,
+                  column: mappings[placeholder.key] ?? '',
+                }))}
+                excelData={excelData}
+              />
+            )}
+            <DataPreview
+              excelData={excelData}
+              selectedRowIndex={selectedRowIndex}
+              onSelectRow={setSelectedRowIndex}
+            />
+          </div>
+
+          {/* Right: live preview + batch generation */}
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={previewSide === 'front'}
+                onClick={() => setPreviewSide('front')}
+                className={cn(
+                  'rounded-md px-3 py-1 text-sm transition-colors',
+                  previewSide === 'front'
+                    ? 'bg-primary/10 font-medium text-primary'
+                    : 'text-muted-foreground hover:bg-accent/10'
+                )}
+              >
+                Front
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={previewSide === 'back'}
+                onClick={() => setPreviewSide('back')}
+                className={cn(
+                  'rounded-md px-3 py-1 text-sm transition-colors',
+                  previewSide === 'back'
+                    ? 'bg-primary/10 font-medium text-primary'
+                    : 'text-muted-foreground hover:bg-accent/10'
+                )}
+              >
+                Back
+              </button>
+            </div>
+            <PsdCardPreview side={previewSide} row={selectedRow} widthPx={340} />
+
+            {readyToGenerate && excelData && photoMatches ? (
+              <BatchRunner project={project} excelData={excelData} photoMatches={photoMatches} />
+            ) : (
+              <div className="rounded-lg border bg-surface-panel p-4 text-sm text-muted-foreground">
+                Complete the earlier steps to unlock generation.
+              </div>
+            )}
+
+            {/* Sample of mapped rows for quick sanity check */}
+            {sampleRows.length > 0 && project.placeholders.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                Sample row keys:{' '}
+                {project.placeholders.map((placeholder) => `{{${placeholder.key}}}`).join(' ')} —
+                mapped columns: {Object.values(mappings).filter(Boolean).join(', ') || 'none yet'}
+              </p>
+            )}
+          </div>
+        </div>
+        <div className="mt-4">
+          <StudioNavButtons
+            currentStep={3}
+            totalSteps={TOTAL_STEPS}
+            canProceed
+            blockedReason={null}
+            onBack={() => setStep(2)}
+            onNext={() => setStep(3)}
+          />
+        </div>
+      </section>
+
+      {isParsing && (
+        <p className="mt-3 text-xs text-muted-foreground" role="status">
+          Parsing design…
+        </p>
+      )}
     </div>
   );
 }
