@@ -98,8 +98,9 @@ Use [GitHub Issues](https://github.com/theprabir/ID-Stack-Web/issues) to report 
 
 ## 📊 Project Status
 **Current Phase:** 6 (Imposition Engine) — COMPLETE
-**Patch:** 0.5.4 (placeholder text & photos re-render with the exact Photoshop layer styling: effects, masks, clipping masks)
-**Status:** v0.5.4 — guided 3-step PSD Studio (Upload Designs & Data → Choose Placeholders → Generate); imposed sheets with each back directly below its front (or separate duplex sheets), undistorted contain-fitted cards, portrait/landscape card + page direction with PSD-based auto card sizing, live preview with real cards; v0.5.0–0.5.1 imposition options (custom paper/units, bleed, gap, margin, crop marks, positioned numbering, per-slot card numbering, persisted settings); one 2-page PDF per person, bundled Arial-compatible font, fully faithful placeholder rendering (text style + layer effects + masks; photo effects + masks + clipping masks)
+**Patch:** 0.6.1 (THE DPI fix: placeholder text sizing + card physical sizing now honour the PSD's declared resolution)
+**Status:** v0.6.1 — Phase 7 Web Worker batch rendering; card size LOCKED to the uploaded PSD's true physical size (px ÷ DPI × 72 — a 300-dpi 1056×663 px card derives to 89.4×56.1 mm, never raw pixels), placeholder text/effects sized in true Photoshop units (points→design pixels at document DPI), so imposition fits and placeholder styling are correct at any document resolution
+**Status:** v0.6.0 — guided 3-step PSD Studio (Upload Designs & Data → Choose Placeholders → Generate); imposed sheets with each back directly below its front (or separate duplex sheets), undistorted contain-fitted cards, card size LOCKED to the uploaded PSD (orientation switch swaps width/height at true scale), live preview with real cards; batch export runs JPEG compression + DEFLATE in a dedicated Web Worker with transparent main-thread fallback; fully faithful placeholder rendering (text style + layer effects + masks; photo effects + masks + clipping masks); v0.5.0–0.5.1 imposition options (custom paper/units, bleed, gap, margin, crop marks, positioned numbering, per-slot card numbering, persisted settings); one 2-page PDF per person, bundled Arial-compatible font
 
 ### Completed
 - **Phases 4 & 5 — PSD-First Pipeline (the core workflow):**

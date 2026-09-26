@@ -14,6 +14,10 @@ import { DEFAULT_IMPOSITION_SETTINGS } from '@/services/impositionTypes';
 /** IndexedDB key for the current project's imposition settings */
 const IMPOSITION_SETTINGS_KEY = 'psd-imposition-settings';
 
+/** Sanity limit (in any unit) above which a card size is clearly a raw
+ * pixel count mistakenly stored as a physical size (pre-v0.6.1 bug). */
+const CARD_SIZE_SANITY_LIMIT = 500;
+
 /** Batch state/control slice embedded in the PSD store */
 export interface PsdStoreBatchSlice {
   batchState: BatchState | null;
@@ -87,7 +91,15 @@ export const usePsdStore = create<PsdState>()((set, get) => ({
       const stored = await loadFromIndexedDB<ImpositionSettings>(IMPOSITION_SETTINGS_KEY);
       if (stored && typeof stored === 'object' && stored.paper && stored.numbering) {
         // Merge over defaults so newly added fields always have values.
-        set({ impositionSettings: { ...DEFAULT_IMPOSITION_SETTINGS, ...stored } });
+        const merged = { ...DEFAULT_IMPOSITION_SETTINGS, ...stored };
+        // v0.6.1 fix: sizes written before DPI-aware derivation are raw
+        // pixel counts (e.g. "622 cm") and can never fit any paper — discard
+        // them so the PSD-locked derivation starts from the true default.
+        if (merged.cardWidth > CARD_SIZE_SANITY_LIMIT || merged.cardHeight > CARD_SIZE_SANITY_LIMIT) {
+          merged.cardWidth = DEFAULT_IMPOSITION_SETTINGS.cardWidth;
+          merged.cardHeight = DEFAULT_IMPOSITION_SETTINGS.cardHeight;
+        }
+        set({ impositionSettings: merged });
       }
     } catch {
       // Missing/corrupt settings fall back to defaults.

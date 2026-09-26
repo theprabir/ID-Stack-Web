@@ -144,21 +144,24 @@ export function ImpositionPanel({
         </div>
       </div>
 
-      {/* Card size + spacing */}
+      {/* Card size + spacing. Card width/height are LOCKED to the uploaded
+          PSD (auto-derived at 72 dpi); only the direction selector changes
+          them (swapping width/height). Manual editing is disabled to prevent
+          sizes that break the imposition maths. */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <NumberField
           id="imp-card-w"
-          label={`Card width (${unit})`}
+          label={`Card width (${unit}, from PSD)`}
           value={settings.cardWidth}
-          disabled={disabled}
+          disabled={true}
           step={0.1}
           onChange={(value) => patch({ cardWidth: value })}
         />
         <NumberField
           id="imp-card-h"
-          label={`Card height (${unit})`}
+          label={`Card height (${unit}, from PSD)`}
           value={settings.cardHeight}
-          disabled={disabled}
+          disabled={true}
           step={0.1}
           onChange={(value) => patch({ cardHeight: value })}
         />

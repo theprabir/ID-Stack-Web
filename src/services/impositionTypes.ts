@@ -208,22 +208,23 @@ export function resolvePageSizePt(
     [widthPt, heightPt] = [heightPt, widthPt];
   }
   return { width: widthPt, height: heightPt };
-}
-
-/**
- * Convert a rendered design's pixel size to the settings' unit at 72 dpi
- * (PDF points, so 1 px = 1 pt = 1/72 inch).
+}/**
+ * Convert a rendered design's pixel size to the settings' unit at the
+ * design's resolution (px ÷ PPI × 72 = pt, then pt → unit).
  */
-function designPxToUnit(px: number, unit: LengthUnit): number {
-  return toPoints(px, 'pt') / toPoints(1, unit);
+function designPxToUnit(px: number, dpi: number, unit: LengthUnit): number {
+  return (px / dpi) * 72 / toPoints(1, unit);
 }
 
 /**
  * Imposition card size derived from an uploaded PSD design.
  *
- * The card trim size ALWAYS comes from the PSD's pixel dimensions (converted
- * to the active unit at 72 dpi) — never the app default. The requested
- * direction only normalises which side is width vs height:
+ * The card trim size ALWAYS comes from the PSD's pixel dimensions and the
+ * PSD's declared resolution (PPI): physical size = px ÷ PPI × 72 pt, then
+ * converted to the active unit — never the app default, never a raw pixel
+ * count. A 300-DPI 1056×663 px card correctly derives to 86×54 mm, not
+ * absurd centimetre values. The requested direction only normalises which
+ * side is width vs height:
  * - portrait → the card must be taller than wide (a wide design is swapped)
  * - landscape → the card must be wider than tall (a tall design is swapped)
  * Aspect is preserved in both cases.
@@ -232,16 +233,18 @@ function designPxToUnit(px: number, unit: LengthUnit): number {
  * @param designHeightPx - PSD design height in pixels
  * @param direction - Requested card direction
  * @param unit - Active length unit
+ * @param dpi - Design resolution in pixels per inch (default 72)
  * @returns Card trim width/height in the given unit (2-decimal rounded)
  */
 export function deriveCardSizeFromDesign(
   designWidthPx: number,
   designHeightPx: number,
   direction: CardOrientation,
-  unit: LengthUnit
+  unit: LengthUnit,
+  dpi = 72
 ): { width: number; height: number } {
-  let widthPt = designPxToUnit(designWidthPx, unit);
-  let heightPt = designPxToUnit(designHeightPx, unit);
+  let widthPt = designPxToUnit(designWidthPx, dpi, unit);
+  let heightPt = designPxToUnit(designHeightPx, dpi, unit);
   const isTall = heightPt > widthPt;
   if (
     (direction === 'portrait' && !isTall) ||
@@ -253,6 +256,36 @@ export function deriveCardSizeFromDesign(
     width: Number(widthPt.toFixed(2)),
     height: Number(heightPt.toFixed(2)),
   };
+}
+
+/**
+ * True when the stored card size matches the PSD-derived size for the
+ * current direction (within rounding). Used to decide whether persisted
+ * settings are stale and should be re-derived from the design.
+ *
+ * @param settings - Current imposition settings
+ * @param designWidthPx - Front PSD width in pixels
+ * @param designHeightPx - Front PSD height in pixels
+ * @param dpi - Design resolution in pixels per inch (default 72)
+ */
+export function isCardSizeSyncedWithDesign(
+  settings: Pick<ImpositionSettings, 'cardWidth' | 'cardHeight' | 'unit' | 'cardOrientation'>,
+  designWidthPx: number,
+  designHeightPx: number,
+  dpi = 72
+): boolean {
+  const expected = deriveCardSizeFromDesign(
+    designWidthPx,
+    designHeightPx,
+    settings.cardOrientation,
+    settings.unit,
+    dpi
+  );
+  const tolerance = 0.05;
+  return (
+    Math.abs(settings.cardWidth - expected.width) <= tolerance &&
+    Math.abs(settings.cardHeight - expected.height) <= tolerance
+  );
 }
 
 /** Default imposition settings (A4, CR80 54×86 mm cards, 3 mm bleed) */

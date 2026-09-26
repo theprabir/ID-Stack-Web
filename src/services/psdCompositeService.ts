@@ -19,12 +19,7 @@
  * shadows/strokes are not clipped) and composited once, which keeps effect
  * compositing correct over any backdrop.
  */
-import type {
-  PsdDesign,
-  PsdPlaceholder,
-  PsdLayerInfo,
-  PsdLayerEffects,
-} from '@/types/psd';
+import type { PsdDesign, PsdPlaceholder, PsdLayerInfo, PsdLayerEffects } from '@/types/psd';
 import { sideKeyOf } from '@/types/psd';
 import type { DataRow, PhotoRecord } from '@/types/data';
 import { loadImageElement } from './psdService';
@@ -135,10 +130,7 @@ function clearShadow(context: CanvasRenderingContext2D): void {
 /** Convert a Photoshop drop shadow (angle/distance) to canvas offsets.
  * Photoshop angle is degrees counter-clockwise from +x with y UP; canvas y
  * is DOWN, so offsetY = −sin. */
-function shadowOffsets(
-  angleDeg: number,
-  distancePx: number
-): { offsetX: number; offsetY: number } {
+function shadowOffsets(angleDeg: number, distancePx: number): { offsetX: number; offsetY: number } {
   const radians = (angleDeg * Math.PI) / 180;
   return {
     offsetX: Math.cos(radians) * distancePx,
@@ -231,6 +223,19 @@ interface TextLayout {
   boxWidth: number;
   boxHeight: number;
   ascent: number;
+}
+
+/**
+ * Shared offscreen measurement context. Using one dedicated canvas for ALL
+ * text measurement guarantees the measurement font state matches the draw
+ * font state exactly (a mismatch silently mis-centres and mis-wraps text).
+ * Sized 10×10 so even the jsdom canvas mock returns consistent metrics.
+ */
+let measureContext: CanvasRenderingContext2D | null = null;
+function getMeasureContext(): CanvasRenderingContext2D {
+  if (!measureContext) measureContext = makeCanvas(10, 10).getContext('2d');
+  if (!measureContext) throw new Error('Canvas 2D context unavailable for text measurement.');
+  return measureContext;
 }
 
 /** Compute the text layout for a text layer at the given scale */
@@ -439,13 +444,19 @@ function drawTextLayer(
   const family = resolveFontFamily(text.fontFamily);
   const weight = text.bold ? 'bold' : 'normal';
   const style = text.italic ? 'italic' : 'normal';
+  const font = `${style} ${weight} ${(text.fontSize ?? 18) * scale}px ${family}`;
 
-  // Measure with the final font (metrics depend on it).
-  const probe = makeCanvas(1, 1).getContext('2d');
-  const fontSize = (text.fontSize ?? 18) * scale;
-  if (!probe) return;
-  probe.font = `${style} ${weight} ${fontSize}px ${family}`;
-  const layout = computeTextLayout(probe, layer, content, scale);
+  // Measure with the EXACT font string used for drawing (metrics depend on
+  // it) on the shared measurement canvas.
+  let layout: TextLayout;
+  try {
+    const measure = getMeasureContext();
+    measure.font = font;
+    layout = computeTextLayout(measure, layer, content, scale);
+  } catch {
+    // Canvas 2D unavailable — nothing sensible can be drawn.
+    return;
+  }
 
   const pad = effectPadding(layer.effects, scale);
   const canvasWidth = layout.boxWidth + pad * 2;
@@ -454,7 +465,7 @@ function drawTextLayer(
   const layerContext = layerCanvas.getContext('2d');
   if (!layerContext) return;
 
-  layerContext.font = `${style} ${weight} ${fontSize}px ${family}`;
+  layerContext.font = font;
   layerContext.textBaseline = 'alphabetic';
 
   drawTextContent(layerContext, layer, layout, layout.boxLeft - pad, layout.boxTop - pad);
@@ -467,7 +478,13 @@ function drawTextLayer(
     const maskTop = ((layer.maskOffset?.top ?? bounds.top) - bounds.top) * scale;
     const maskLeft = ((layer.maskOffset?.left ?? bounds.left) - bounds.left) * scale;
     layerContext.globalCompositeOperation = 'destination-in';
-    layerContext.drawImage(layer.maskCanvas, pad + maskLeft, pad + maskTop, layout.boxWidth, layout.boxHeight);
+    layerContext.drawImage(
+      layer.maskCanvas,
+      pad + maskLeft,
+      pad + maskTop,
+      layout.boxWidth,
+      layout.boxHeight
+    );
     layerContext.globalCompositeOperation = 'source-over';
   }
 
@@ -529,7 +546,15 @@ async function drawPhotoLayer(
   if (dropShadow) {
     const { offsetX, offsetY } = shadowOffsets(dropShadow.angle, dropShadow.distance);
     layerContext.save();
-    setShadow(layerContext, dropShadow.color, dropShadow.opacity, dropShadow.blur, offsetX, offsetY, scale);
+    setShadow(
+      layerContext,
+      dropShadow.color,
+      dropShadow.opacity,
+      dropShadow.blur,
+      offsetX,
+      offsetY,
+      scale
+    );
     layerContext.fillStyle = '#000000';
     layerContext.fillRect(pad, pad, dw, dh);
     layerContext.restore();
@@ -583,7 +608,9 @@ async function drawPhotoLayer(
     const width = stroke.width * scale;
     layerContext.lineWidth = width;
     const inset =
-      stroke.position === 'outside' ? pad - width / 2 : pad + (stroke.position === 'inside' ? width / 2 : 0);
+      stroke.position === 'outside'
+        ? pad - width / 2
+        : pad + (stroke.position === 'inside' ? width / 2 : 0);
     layerContext.strokeRect(inset, inset, dw + pad * 2 - inset * 2, dh + pad * 2 - inset * 2);
     layerContext.restore();
   }
@@ -740,12 +767,7 @@ export async function compositeDesign(
           if (layer.clipped) {
             const base = layers[layerIndex - 1];
             if (base && !base.clipped) {
-              rendered = await applyClippingMask(
-                stage,
-                design.layerRasters[base.id],
-                base,
-                scale
-              );
+              rendered = await applyClippingMask(stage, design.layerRasters[base.id], base, scale);
             }
           }
           context.drawImage(rendered, 0, 0);

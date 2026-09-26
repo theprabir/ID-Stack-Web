@@ -169,6 +169,13 @@ export interface PsdDesign {
   fileName: string;
   width: number;
   height: number;
+  /**
+   * Design resolution in pixels per inch (from the PSD's ResolutionInfo).
+   * Everything physical — card trim size, font point sizes, effect
+   * distances — derives from px ÷ DPI × 72. Falls back to 72 (screen
+   * resolution, 1 px = 1 pt) when the PSD does not declare one.
+   */
+  horizontalResolution: number;
   /** Flattened layer list, bottom-most first (Photoshop file order) */
   layers: PsdLayerInfo[];
   /** Flattened visible composite of the design (blob URL) */

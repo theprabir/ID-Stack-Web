@@ -13,13 +13,7 @@ import type {
   LayerMaskData,
 } from 'ag-psd/dist/psd.d';
 import { readPsdPatched, applyPsdColorModePatch } from './psdColorModePatch';
-import type {
-  PsdDesign,
-  PsdLayerInfo,
-  PsdLayerKind,
-  SideType,
-  PsdLayerEffects,
-} from '@/types/psd';
+import type { PsdDesign, PsdLayerInfo, PsdLayerKind, SideType, PsdLayerEffects } from '@/types/psd';
 
 // Enable CMYK PSD files (print standard). ag-psd converts CMYK→RGB internally
 // but gates the color mode behind a whitelist; the patch extends it.
@@ -61,11 +55,28 @@ export function agColorToCss(color: Color | undefined): string {
   return '';
 }
 
-/** Convert a UnitsValue ({units, value}) or number to plain pixels */
-function unitsToPx(value: unknown): number {
+/** Convert a UnitsValue ({units, value}) or number to plain pixels.
+ * Plain numbers and 'Pixels' units are already design pixels; physical
+ * units (points/mm/cm/inches/picas) convert through the design DPI so a
+ * 300-DPI document's 10 pt shadow distance becomes 10/72×300 ≈ 41.7 px. */
+function unitsValueToPx(value: unknown, dpi: number): number {
   if (typeof value === 'number') return value;
   if (value && typeof value === 'object' && 'value' in value) {
-    return (value as { value: number }).value;
+    const { units, value: raw } = value as { units?: string; value: number };
+    switch (units) {
+      case 'Points':
+        return (raw / 72) * dpi;
+      case 'Millimeters':
+        return (raw / 25.4) * dpi;
+      case 'Centimeters':
+        return (raw / 2.54) * dpi;
+      case 'Inches':
+        return raw * dpi;
+      case 'Picas':
+        return (raw * 12 / 72) * dpi;
+      default: // 'Pixels' (and anything unknown) — already design pixels
+        return raw;
+    }
   }
   return 0;
 }
@@ -74,11 +85,15 @@ function unitsToPx(value: unknown): number {
  * Extract the layer's Photoshop layer effects (stroke, shadows, glows,
  * overlays) in a serialisable, renderer-agnostic form. Disabled effects and
  * absent values are dropped so the renderer only ever sees live effects.
+ * Effect sizes/distances arrive as physical units (points/mm/…); they are
+ * normalised to design pixels at the document DPI so substituted content
+ * keeps the exact effect geometry at any document resolution.
  *
  * @param effects - ag-psd layer effects (may be undefined)
+ * @param dpi - Document resolution in pixels per inch (default 72)
  * @returns Normalised effects object, or undefined when nothing is enabled
  */
-export function extractLayerEffects(effects?: LayerEffectsInfo): PsdLayerEffects | undefined {
+export function extractLayerEffects(effects?: LayerEffectsInfo, dpi = 72): PsdLayerEffects | undefined {
   if (!effects || effects.disabled === true) return undefined;
 
   const out: PsdLayerEffects = {};
@@ -94,8 +109,8 @@ export function extractLayerEffects(effects?: LayerEffectsInfo): PsdLayerEffects
       color: agColorToCss(shadow.color) || '#000000',
       opacity: shadow.opacity ?? 1,
       angle: shadow.angle ?? 120,
-      distance: unitsToPx(shadow.distance),
-      blur: unitsToPx(shadow.size) / 2, // Photoshop size ≈ diameter → canvas blur radius
+      distance: unitsValueToPx(shadow.distance, dpi),
+      blur: unitsValueToPx(shadow.size, dpi) / 2, // Photoshop size ≈ diameter → canvas blur radius
     });
   }
 
@@ -106,8 +121,8 @@ export function extractLayerEffects(effects?: LayerEffectsInfo): PsdLayerEffects
       color: agColorToCss(shadow.color) || '#000000',
       opacity: shadow.opacity ?? 1,
       angle: shadow.angle ?? 120,
-      distance: unitsToPx(shadow.distance),
-      blur: unitsToPx(shadow.size) / 2,
+      distance: unitsValueToPx(shadow.distance, dpi),
+      blur: unitsValueToPx(shadow.size, dpi) / 2,
     });
   }
 
@@ -117,7 +132,7 @@ export function extractLayerEffects(effects?: LayerEffectsInfo): PsdLayerEffects
     out.outerGlow = {
       color: agColorToCss(glow.color) || '#ffffff',
       opacity: glow.opacity ?? 1,
-      blur: unitsToPx(glow.size) / 2,
+      blur: unitsValueToPx(glow.size, dpi) / 2,
     };
   }
 
@@ -127,7 +142,7 @@ export function extractLayerEffects(effects?: LayerEffectsInfo): PsdLayerEffects
     out.innerGlow = {
       color: agColorToCss(glow.color) || '#ffffff',
       opacity: glow.opacity ?? 1,
-      blur: unitsToPx(glow.size) / 2,
+      blur: unitsValueToPx(glow.size, dpi) / 2,
     };
   }
 
@@ -136,7 +151,7 @@ export function extractLayerEffects(effects?: LayerEffectsInfo): PsdLayerEffects
     any = true;
     out.stroke = {
       color: agColorToCss(stroke.color) || '#000000',
-      width: unitsToPx(stroke.size),
+      width: unitsValueToPx(stroke.size, dpi),
       position: stroke.position ?? 'outside',
       opacity: stroke.opacity ?? 1,
     };
@@ -198,23 +213,43 @@ function hasLayerEffects(layer: Layer): boolean {
   );
 }
 
-/** Extract faithful text info from a text layer */
-function extractText(text: LayerTextData): PsdLayerInfo['text'] {
+/**
+ * Convert a font measurement from points (Photoshop engine-data unit) to
+ * design pixels at the document resolution. At 72 dpi this is the identity.
+ */
+function pointsToDesignPx(points: number, dpi: number): number {
+  return (points / 72) * dpi;
+}
+
+/**
+ * Extract faithful text info from a text layer.
+ *
+ * UNIT CONTRACT: the Photoshop text engine stores fontSize/leading in
+ * POINTS regardless of the document ruler unit, while layer bounds are in
+ * design PIXELS. Both are normalised to design pixels here (using the
+ * document DPI) so the composite renderer can draw px-for-px: a 12 pt font
+ * on a 300-DPI doc becomes 50 px, matching the raster scale of every other
+ * layer. Getting this wrong renders placeholder text ~DPI/72× too small.
+ */
+function extractText(text: LayerTextData, dpi: number): PsdLayerInfo['text'] {
   const firstStyle = text.styleRuns?.[0]?.style ?? text.style;
   const fontName = firstStyle?.font?.name ?? undefined;
   const color = agColorToCss(firstStyle?.fillColor);
   const justification = text.paragraphStyle?.justification ?? 'left';
 
+  const fontSizePt = firstStyle?.fontSize !== undefined ? unitsValueToPx(firstStyle.fontSize, dpi) : undefined;
+  const leadingPt = firstStyle?.leading !== undefined ? unitsValueToPx(firstStyle.leading, dpi) : undefined;
+
   return {
     content: text.text,
-    fontSize: firstStyle?.fontSize !== undefined ? unitsToPx(firstStyle.fontSize) : undefined,
+    fontSize: fontSizePt !== undefined ? pointsToDesignPx(fontSizePt, dpi) : undefined,
     fontFamily: fontName,
     color: color || undefined,
     bold: firstStyle?.fauxBold === true || /bold|black|heavy/i.test(fontName ?? ''),
     italic: firstStyle?.fauxItalic === true || /italic|oblique/i.test(fontName ?? ''),
     underline: firstStyle?.underline === true,
     tracking: firstStyle?.tracking,
-    leading: firstStyle?.leading !== undefined ? unitsToPx(firstStyle.leading) : undefined,
+    leading: leadingPt !== undefined ? pointsToDesignPx(leadingPt, dpi) : undefined,
     justification,
     // Preserve every run so re-rendered text keeps mixed styling.
     styleRuns: text.styleRuns?.map((run) => ({
@@ -230,6 +265,7 @@ function flattenLayers(
   children: Layer[],
   ancestors: string[],
   side: SideType,
+  dpi: number,
   out: PsdLayerInfo[]
 ): void {
   // ag-psd returns children top-most first, same as Photoshop's panel.
@@ -258,11 +294,11 @@ function flattenLayers(
       childCount: layer.children?.length ?? 0,
     };
     if (layer.text !== undefined) {
-      info.text = extractText(layer.text);
+      info.text = extractText(layer.text, dpi);
     }
     // Effects + masks travel with the layer so placeholders re-render with
     // the exact Photoshop styling (stroke/shadow/glow/overlay/mask clip).
-    const effects = extractLayerEffects(layer.effects);
+    const effects = extractLayerEffects(layer.effects, dpi);
     if (effects) info.effects = effects;
     const maskCanvas = extractMaskCanvas(layer.mask);
     if (maskCanvas) {
@@ -283,7 +319,7 @@ function flattenLayers(
     info.clipped = layer.clipping === true;
     out.push(info);
     if (layer.children) {
-      flattenLayers(layer.children, path, side, out);
+      flattenLayers(layer.children, path, side, dpi, out);
     }
   }
 }
@@ -350,8 +386,23 @@ export async function parsePsdFile(file: File, side: SideType): Promise<PsdDesig
     );
   }
 
+  // Design resolution (PPI) FIRST — font sizes and effect distances are
+  // normalised to design pixels through it. ag-psd reports PPI directly in
+  // the ResolutionInfo image resource; sane-guard against absurd/absent
+  // values (72 = screen, 1 px = 1 pt).
+  const rawResolution =
+    (psd.imageResources?.resolutionInfo?.horizontalResolution as number | undefined) ?? 72;
+  // PPCM → PPI when the file declares centimetre units.
+  const resolutionUnit = psd.imageResources?.resolutionInfo?.horizontalResolutionUnit;
+  const resolutionPpi =
+    resolutionUnit === 'PPCM' ? rawResolution * 2.54 : rawResolution;
+  const horizontalResolution =
+    Number.isFinite(resolutionPpi) && resolutionPpi >= 36 && resolutionPpi <= 2400
+      ? resolutionPpi
+      : 72;
+
   const layers: PsdLayerInfo[] = [];
-  flattenLayers(psd.children, [], side, layers);
+  flattenLayers(psd.children, [], side, horizontalResolution, layers);
 
   // Composite preview of the whole design.
   let compositeUrl = '';
@@ -382,6 +433,7 @@ export async function parsePsdFile(file: File, side: SideType): Promise<PsdDesig
     fileName: file.name,
     width: psd.width,
     height: psd.height,
+    horizontalResolution,
     layers,
     compositeUrl,
     layerRasters,

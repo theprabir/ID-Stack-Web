@@ -10,6 +10,7 @@ import {
   type ImpositionSettings,
   computeSheetLayout,
   deriveCardSizeFromDesign,
+  isCardSizeSyncedWithDesign,
 } from '@/services/impositionTypes';
 import { renderJobPreview } from '@/services/impositionService';
 import { compositeDesign } from '@/services/psdCompositeService';
@@ -51,7 +52,11 @@ export function BatchRunner({ project, excelData, photoMatches }: BatchRunnerPro
   }, [restoreImpositionSettings]);
 
   // Keep the batch options in sync with the persisted imposition settings.
+  // Skipped right after this component itself updates the store (card-size
+  // auto-derivation) so the store echo cannot overwrite the derived size.
+  const lastWrittenRef = useRef<ImpositionSettings | null>(null);
   useEffect(() => {
+    if (impositionSettings === lastWrittenRef.current) return;
     setOptions((current) =>
       current.imposition === impositionSettings
         ? current
@@ -63,33 +68,47 @@ export function BatchRunner({ project, excelData, photoMatches }: BatchRunnerPro
   const controlRef = useRef<'running' | 'paused' | 'cancelled' | 'done'>('done');
   const previewCanvasRef = useRef<HTMLDivElement | null>(null);
 
-  // Card size is ALWAYS auto-detected from the uploaded PSD design: its pixel
-  // dimensions convert to the active unit at 72 dpi. The card-direction
-  // selector only normalises which side is width vs height (portrait = tall,
-  // landscape = wide); the PSD's aspect is preserved either way. Any manual
-  // edit of the direction (or unit) re-derives from the design immediately.
+  // Card size is ALWAYS locked to the uploaded front PSD: pixels ÷ DPI × 72
+  // = points (a 300-DPI 1056×663 px card derives to a true 86×54 mm card,
+  // NOT raw pixel numbers). The card-direction selector swaps width/height
+  // at that same true scale. Derived values are WRITTEN THROUGH to the
+  // persisted store (not just local state) so restored IndexedDB settings
+  // cannot clobber them back to stale sizes.
   const designSize = project.front
-    ? { width: project.front.width, height: project.front.height }
+    ? {
+        width: project.front.width,
+        height: project.front.height,
+        dpi: project.front.horizontalResolution,
+      }
     : null;
   const impositionUnit = options.imposition.unit;
   const cardDirection = options.imposition.cardOrientation;
-  const lastDerivedRef = useRef<string | null>(null);
+  const cardWidth = options.imposition.cardWidth;
+  const cardHeight = options.imposition.cardHeight;
   useEffect(() => {
     if (!designSize) return;
-    const signature = `${designSize.width}x${designSize.height}|${cardDirection}|${impositionUnit}`;
-    if (lastDerivedRef.current === signature) return; // already derived for this combo
-    lastDerivedRef.current = signature;
+    const current = { cardWidth, cardHeight, unit: impositionUnit, cardOrientation: cardDirection };
+    if (isCardSizeSyncedWithDesign(current, designSize.width, designSize.height, designSize.dpi)) {
+      return;
+    }
     const { width, height } = deriveCardSizeFromDesign(
       designSize.width,
       designSize.height,
       cardDirection,
-      impositionUnit
+      impositionUnit,
+      designSize.dpi
     );
-    setOptions((current) => ({
-      ...current,
-      imposition: { ...current.imposition, cardWidth: width, cardHeight: height },
-    }));
-  }, [designSize, cardDirection, impositionUnit]);
+    const updated: ImpositionSettings = {
+      ...options.imposition,
+      cardWidth: width,
+      cardHeight: height,
+    };
+    setOptions((previous) => ({ ...previous, imposition: updated }));
+    // Persist so the store-sync effect (and the next session) agree.
+    lastWrittenRef.current = updated;
+    setImpositionSettings(updated);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [designSize, cardWidth, cardHeight, cardDirection, impositionUnit]);
 
   // --- Live imposed-sheet preview with REAL card images -------------------
   const previewContainer = previewCanvasRef.current;

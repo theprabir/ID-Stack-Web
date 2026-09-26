@@ -3,6 +3,104 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6.1] - 2026-09-26
+
+### Fixed
+
+- **THE DPI fix — placeholder styling AND card size together.** Both
+  long-standing issues shared one root cause: the app treated PSD pixels as
+  72-dpi points regardless of the document's real resolution.
+  - **Placeholder text too small:** the Photoshop text engine stores font
+    size and leading in POINTS while layer bounds are design pixels; at 72
+    dpi they coincide, but on a 300-dpi card the substituted text rendered
+    ~4× too small (tiny "Sue Smith" next to a huge raster "Name:"). Font
+    sizes and leading are now converted points→design pixels through the
+    document's declared resolution, so placeholder text matches the PSD
+    raster exactly at any DPI. Effect distances/sizes in points/mm convert
+    the same way; pixel-unit values are untouched.
+  - **"The cards do not fit" error:** a 300-dpi 1056×663 px card derived to
+    a raw "622.51 × 1011.35 cm" — obviously unfittable. Card size now
+    derives as px ÷ DPI × 72 (= true physical size: 89.4 × 56.1 mm for that
+    card), so imposition fit works at every DPI. PPCM resolutions convert
+    to PPI; missing/absurd resolution values fall back to 72.
+  - **State clobber:** the derived card size was written to local state only
+    and the persisted-store sync effect immediately overwrote it with stale
+    values — the error persisted even after the fix shipped. Derivation now
+    writes through to the persisted store (with an echo guard), and restore
+    discards pre-fix sizes above a sanity limit so old sessions heal on
+    next load.
+
+### Added
+
+- `PsdDesign.horizontalResolution` parsed from the PSD's ResolutionInfo
+  image resource (PPI and PPCM, sane-guarded).
+- Tests: DPI card-size derivation (pt/mm/cm at 300 dpi, portrait/landscape
+  swaps, 72-dpi identity, raw-pixel rejection) and DPI-aware effect
+  extraction — 9 new (153 total).
+
+## [0.6.0] - 2026-09-26
+
+### Phase 7 — Web Worker batch rendering, fidelity fixes, final testing pass
+
+### Fixed
+
+- **Placeholder TEXT styling now renders correctly (photo styling already
+  worked).** Root cause: the v0.5.4 refactor measured text layout on a fresh
+  1×1 probe canvas, so the measurement context did not reliably carry the
+  resolved font. All placeholder text now measures on a shared dedicated
+  measurement canvas set to the EXACT font string used for drawing (style,
+  weight, size, resolved family) — wrap, centring, leading and tracking are
+  computed from the same metrics the glyphs are painted with, so drop
+  shadows, strokes, glows and colour overlays land exactly on the shaped
+  text.
+- **Card size no longer explodes after switching card direction.** Root
+  cause: an earlier build seeded card width/height in millimetres; the
+  unit-aware re-derivation then wrote point-magnitude numbers into fields
+  still labelled mm (e.g. a 638×1011 px PSD became a "638 × 1011 mm" card),
+  which could never fit the paper ("The cards do not fit…"). The card size
+  is now LOCKED to the uploaded front PSD: pixels convert to the active unit
+  at 72 dpi, stale persisted sizes (different unit, app default, pre-switch
+  orientation) are detected via `isCardSizeSyncedWithDesign` and re-derived
+  automatically, and the width/height fields are read-only in the imposition
+  panel. Switching direction swaps width/height at true PSD scale — values
+  stay physically correct and always fit-testable.
+
+### Added
+
+- **Web Worker batch rendering (Phase 7 core).** New dedicated export worker
+  (`src/workers/exportWorker.ts`) handles the CPU-heavy parts of batch
+  export off the main thread:
+  - CMYK JPEG compression (the 4-component encoder is pure CPU)
+  - DEFLATE of raw CMYK samples for PDF image XObjects
+  (`workerPool.ts`): promise-based RPC with id matching, transferables
+  (ArrayBuffers are moved, never copied), a 60 s per-request timeout,
+  crash recycling, and **transparent main-thread fallback** — if workers
+  are unavailable (old browser, restrictive CSP) or a request fails, the
+  batch continues on the main thread and never errors out because of the
+  pool itself. ICC conversion stays main-thread (shared transform cache).
+- **Exception-handling hardening.** ZIP packaging failures are now caught
+  and surfaced as job-level batch errors instead of unhandled rejections;
+  per-row error capture describes string/object throws (`describeUnknownError`)
+  so no failure mode can freeze the UI or silently drop diagnostics.
+- Tests: PSD-locked card sizing (identity at 72 dpi, mm conversion, sync /
+  stale / orientation-switch detection, app-default rejection) and worker
+  pool fallback (main-thread output equals worker contract, degraded flag)
+  — 8 new (144 total).
+
+### Performance
+
+- Batch card export keeps the UI responsive during long jobs: JPEG
+  compression runs in the worker while compositing yields per row as before.
+- Transferable buffers keep peak memory at roughly one card, not two.
+
+### Technical notes
+
+- The worker imports the JPEG encoder through a top-level `await import`,
+  bundled by Vite as a module worker; the pool degrades to the same encoder
+  on the main thread (bit-identical output, verified by test).
+- `disposeWorkerPool()` is exported for app teardown; the pool is lazily
+  created on first export and recreated after a crash.
+
 ## [0.5.4] - 2026-09-26
 
 ### Fixed

@@ -51,6 +51,16 @@ export interface BatchCallbacks {
   onComplete: (zip: Blob | null) => void;
 }
 
+/** Human-readable description for any thrown value (string, object, …) */
+function describeUnknownError(error: unknown): string {
+  if (typeof error === 'string' && error.length > 0) return error;
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = String((error as { message: unknown }).message);
+    if (message.length > 0) return message;
+  }
+  return 'Unknown render error';
+}
+
 /** Wait until resumed or cancelled; resolves 'continue' | 'abort' */
 function waitWhilePaused(getControl: () => BatchControl): Promise<'continue' | 'abort'> {
   return new Promise((resolve) => {
@@ -187,9 +197,10 @@ export async function runBatch(
         }
       }
     } catch (error) {
+      // Per-row isolation: one bad row must never kill the batch.
       errors.push({
         rowIndex: row.rowIndex,
-        message: error instanceof Error ? error.message : 'Unknown render error',
+        message: error instanceof Error ? error.message : describeUnknownError(error),
       });
     }
 
@@ -250,7 +261,20 @@ export async function runBatch(
     }
   }
 
-  const zipBlob = await zip.generateAsync({ type: 'blob' });
+  let zipBlob: Blob;
+  try {
+    zipBlob = await zip.generateAsync({ type: 'blob' });
+  } catch (error) {
+    // ZIP assembly is the last irreversible step — surface it as a job-level
+    // error instead of an unhandled rejection that would freeze the UI.
+    errors.push({
+      rowIndex: -1,
+      message: `ZIP packaging failed: ${error instanceof Error ? error.message : 'unknown error'}`,
+    });
+    callbacks.onProgress({ control: 'done', current, total, etaSeconds: 0, errors });
+    callbacks.onComplete(null);
+    return;
+  }
   callbacks.onProgress({
     control: 'done',
     current,

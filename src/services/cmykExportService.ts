@@ -10,7 +10,7 @@
  *    ICCBased colour space and a document OutputIntent — no Photoshop step.
  */
 import { PDFDocument, PDFName, PDFNumber, PDFRawStream, PDFString } from 'pdf-lib';
-import { encodeCmykJpegBytes } from '@/services/cmykJpegEncoder';
+import { encodeJpegInWorker } from '@/services/workerPool';
 import {
   initWasm,
   cmsCreate_sRGBProfile,
@@ -230,7 +230,9 @@ export async function encodeCmykJpeg(
 ): Promise<Uint8Array> {
   await initCmykEngine();
   const cmyk = await canvasToCmykBytes(canvas);
-  return encodeCmykJpegBytes(
+  // JPEG compression runs in the export worker (falls back to the main
+  // thread automatically when workers are unavailable).
+  return encodeJpegInWorker(
     cmyk,
     canvas.width,
     canvas.height,
