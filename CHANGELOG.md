@@ -3,6 +3,60 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.5.4] - 2026-09-26
+
+### Fixed
+
+- **Placeholder text now re-renders with the exact Photoshop styling.**
+  Previously substituted text kept only the base text style (font, size,
+  colour, tracking, leading, justification). All Photoshop **layer effects**
+  on the placeholder text layer are now extracted at parse time and applied
+  during re-rendering: drop shadow (Photoshop angle/distance semantics),
+  inner shadow, outer glow, inner glow, stroke (outside/center/inside), and
+  colour overlay (solidFill). Static text layers were already pixel-faithful
+  (drawn from original rasters) and remain untouched.
+- **Placeholder photos now render with the placeholder's styling.** A
+  substituted photo now carries the photo layer's original effects — drop
+  shadow, inner shadow, outer glow, stroke outline and colour overlay —
+  instead of a plain centre-cropped rectangle. The photo is still
+  centre-cropped to the layer aspect, never stretched.
+- **Layer/vector masks clip re-rendered placeholders.** If the placeholder
+  text or photo layer has a raster or vector mask in the PSD, the substituted
+  content is masked by it exactly like Photoshop (white = keep, black =
+  hide), including the mask's own offset when it differs from the layer
+  bounds.
+- **Photoshop clipping masks honoured for photo placeholders.** A photo
+  placeholder that is clipped to the layer below (Photoshop clipping mask,
+  e.g. a photo inside a shape) is now alpha-masked by that base layer's
+  raster, so substituted photos keep their shaped silhouettes.
+
+### Added
+
+- `PsdLayerEffects` type + `extractLayerEffects` parser: normalises ag-psd
+  effect descriptors (disabled effects dropped, UnitsValues converted to
+  pixels, CMYK/RGB/float colours converted via the shared `agColorToCss`,
+  Photoshop "size" halved to canvas blur radius) into a serialisable,
+  renderer-agnostic form carried on every `PsdLayerInfo`.
+- Mask bitmaps (`PsdLayerInfo.maskCanvas` + `maskOffset`) extracted from
+  layer and real (vector) masks at parse time.
+- Effects-aware rendering internals: padded offscreen layer canvases (so
+  shadows/glows/strokes are never clipped at layer edges), the
+  inner-shadow/inner-glow halo-intersection composite (canvas-accurate
+  recipe: invert-offset shadow halo → erase shape → intersect shape), and
+  glyph-shape drop shadows for text.
+- Tests: effect extraction (drop shadow geometry, disabled filtering,
+  stroke position, glows/overlay, CMYK colours) — 7 new (136 total).
+
+### Technical notes
+
+- Canvas has no native inner-shadow; the halo-intersection method reproduces
+  Photoshop's inner shadow/glow to within antialiasing tolerance.
+- Stroke "outside" on text is approximated by an under-stroke at double
+  width (canvas cannot offset outlines); visually equivalent for the stroke
+  widths used on ID card designs.
+- All effect units are in layer pixels and scale with the render scale, so
+  previews and full-resolution exports stay consistent.
+
 ## [0.5.3] - 2026-09-26
 
 ### Changed

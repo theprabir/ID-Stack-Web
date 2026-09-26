@@ -4,9 +4,22 @@
  * rasterises layers so the design can be re-composited pixel-perfect with
  * only placeholder content replaced.
  */
-import type { Layer, Psd, LayerTextData, Color } from 'ag-psd/dist/psd.d';
+import type {
+  Layer,
+  Psd,
+  LayerTextData,
+  Color,
+  LayerEffectsInfo,
+  LayerMaskData,
+} from 'ag-psd/dist/psd.d';
 import { readPsdPatched, applyPsdColorModePatch } from './psdColorModePatch';
-import type { PsdDesign, PsdLayerInfo, PsdLayerKind, SideType } from '@/types/psd';
+import type {
+  PsdDesign,
+  PsdLayerInfo,
+  PsdLayerKind,
+  SideType,
+  PsdLayerEffects,
+} from '@/types/psd';
 
 // Enable CMYK PSD files (print standard). ag-psd converts CMYK→RGB internally
 // but gates the color mode behind a whitelist; the patch extends it.
@@ -55,6 +68,104 @@ function unitsToPx(value: unknown): number {
     return (value as { value: number }).value;
   }
   return 0;
+}
+
+/**
+ * Extract the layer's Photoshop layer effects (stroke, shadows, glows,
+ * overlays) in a serialisable, renderer-agnostic form. Disabled effects and
+ * absent values are dropped so the renderer only ever sees live effects.
+ *
+ * @param effects - ag-psd layer effects (may be undefined)
+ * @returns Normalised effects object, or undefined when nothing is enabled
+ */
+export function extractLayerEffects(effects?: LayerEffectsInfo): PsdLayerEffects | undefined {
+  if (!effects || effects.disabled === true) return undefined;
+
+  const out: PsdLayerEffects = {};
+  let any = false;
+
+  const enabled = (effect: { enabled?: boolean; present?: boolean } | undefined): boolean =>
+    effect !== undefined && effect.enabled !== false && effect.present !== false;
+
+  for (const shadow of effects.dropShadow ?? []) {
+    if (!enabled(shadow)) continue;
+    any = true;
+    (out.dropShadows ??= []).push({
+      color: agColorToCss(shadow.color) || '#000000',
+      opacity: shadow.opacity ?? 1,
+      angle: shadow.angle ?? 120,
+      distance: unitsToPx(shadow.distance),
+      blur: unitsToPx(shadow.size) / 2, // Photoshop size ≈ diameter → canvas blur radius
+    });
+  }
+
+  for (const shadow of effects.innerShadow ?? []) {
+    if (!enabled(shadow)) continue;
+    any = true;
+    (out.innerShadows ??= []).push({
+      color: agColorToCss(shadow.color) || '#000000',
+      opacity: shadow.opacity ?? 1,
+      angle: shadow.angle ?? 120,
+      distance: unitsToPx(shadow.distance),
+      blur: unitsToPx(shadow.size) / 2,
+    });
+  }
+
+  if (enabled(effects.outerGlow)) {
+    any = true;
+    const glow = effects.outerGlow!;
+    out.outerGlow = {
+      color: agColorToCss(glow.color) || '#ffffff',
+      opacity: glow.opacity ?? 1,
+      blur: unitsToPx(glow.size) / 2,
+    };
+  }
+
+  if (enabled(effects.innerGlow)) {
+    any = true;
+    const glow = effects.innerGlow!;
+    out.innerGlow = {
+      color: agColorToCss(glow.color) || '#ffffff',
+      opacity: glow.opacity ?? 1,
+      blur: unitsToPx(glow.size) / 2,
+    };
+  }
+
+  for (const stroke of effects.stroke ?? []) {
+    if (!enabled(stroke)) continue;
+    any = true;
+    out.stroke = {
+      color: agColorToCss(stroke.color) || '#000000',
+      width: unitsToPx(stroke.size),
+      position: stroke.position ?? 'outside',
+      opacity: stroke.opacity ?? 1,
+    };
+  }
+
+  for (const fill of effects.solidFill ?? []) {
+    if (!enabled(fill)) continue;
+    any = true;
+    out.solidFill = { color: agColorToCss(fill.color) || '#000000', opacity: fill.opacity ?? 1 };
+  }
+
+  return any ? out : undefined;
+}
+
+/** Extract a layer's mask pixel data (layer + vector masks) as a canvas */
+function extractMaskCanvas(mask?: LayerMaskData): HTMLCanvasElement | undefined {
+  if (!mask || mask.disabled === true) return undefined;
+  if (mask.canvas) return mask.canvas;
+  if (mask.imageData) {
+    const { data, width, height } = mask.imageData;
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d');
+    if (!context) return undefined;
+    context.putImageData(new ImageData(new Uint8ClampedArray(data), width, height), 0, 0);
+    return canvas;
+  }
+  return undefined;
 }
 
 /** Determine the kind of a layer */
@@ -126,27 +237,50 @@ function flattenLayers(
     const path: string[] = [...ancestors, layer.name ?? 'Layer'];
     const id = `${side}/${path.join('/')}`;
     const kind = layerKind(layer);
+    const bounds = {
+      left: layer.left ?? 0,
+      top: layer.top ?? 0,
+      right: layer.right ?? layer.left ?? 0,
+      bottom: layer.bottom ?? layer.top ?? 0,
+    };
     const info: PsdLayerInfo = {
       id,
       name: layer.name ?? 'Layer',
       path: [...path],
       kind,
       hidden: layer.hidden === true,
-      bounds: {
-        left: layer.left ?? 0,
-        top: layer.top ?? 0,
-        right: layer.right ?? layer.left ?? 0,
-        bottom: layer.bottom ?? layer.top ?? 0,
-      },
+      bounds,
       opacity: layer.opacity ?? 1,
       blendMode: layer.blendMode ?? 'normal',
       hasPixels: layer.canvas !== undefined || layer.imageData !== undefined,
       hasEffects: hasLayerEffects(layer),
+      clipped: layer.clipping === true,
       childCount: layer.children?.length ?? 0,
     };
     if (layer.text !== undefined) {
       info.text = extractText(layer.text);
     }
+    // Effects + masks travel with the layer so placeholders re-render with
+    // the exact Photoshop styling (stroke/shadow/glow/overlay/mask clip).
+    const effects = extractLayerEffects(layer.effects);
+    if (effects) info.effects = effects;
+    const maskCanvas = extractMaskCanvas(layer.mask);
+    if (maskCanvas) {
+      info.maskCanvas = maskCanvas;
+      info.maskOffset = {
+        top: layer.mask?.top ?? bounds.top,
+        left: layer.mask?.left ?? bounds.left,
+      };
+    }
+    const realMaskCanvas = extractMaskCanvas(layer.realMask);
+    if (realMaskCanvas && !info.maskCanvas) {
+      info.maskCanvas = realMaskCanvas;
+      info.maskOffset = {
+        top: layer.realMask?.top ?? bounds.top,
+        left: layer.realMask?.left ?? bounds.left,
+      };
+    }
+    info.clipped = layer.clipping === true;
     out.push(info);
     if (layer.children) {
       flattenLayers(layer.children, path, side, out);
