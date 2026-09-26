@@ -3,6 +3,29 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6.2] - 2026-09-26
+
+### Fixed
+
+- **"Maximum update depth exceeded" crash when selecting the first
+  placeholder (Step 2).** Root cause: `BatchRunner` mirrored the persisted
+  imposition settings into local component state with two sync effects
+  (store→options and card-size auto-derivation→store, guarded by an echo
+  ref). When the component mounted (which happens exactly when the first
+  placeholder is chosen, because `readyToGenerate` becomes true), the
+  derivation effect fired with the design's true size; the store update
+  succeeded but the mirrored local state never committed, so the effect
+  re-fired every render with stale values — an infinite setState loop that
+  crashed the wizard. Fix: **the persisted store is now the single source of
+  truth** for imposition settings. The local mirror, both sync effects and
+  the echo guard were removed; the derivation effect writes the derived
+  card size straight to the store (one idempotent write, after which the
+  sync check passes and the effect bails). Also guards against non-finite
+  design dimensions/derived sizes.
+- Tests: full-wizard regression test that mounts `PsdStudioPage`, navigates
+  to Step 2, selects a placeholder and asserts no crash plus a correct
+  DPI-derived card size persisted to the store (154 total).
+
 ## [0.6.1] - 2026-09-26
 
 ### Fixed

@@ -6,8 +6,6 @@ import { usePsdStore } from '@/stores/psdStore';
 import { useDataStore } from '@/stores/dataStore';
 import { runBatch, type BatchOptions, type BatchState } from '@/services/batchService';
 import {
-  DEFAULT_IMPOSITION_SETTINGS,
-  type ImpositionSettings,
   computeSheetLayout,
   deriveCardSizeFromDesign,
   isCardSizeSyncedWithDesign,
@@ -23,9 +21,17 @@ interface BatchRunnerProps {
   photoMatches: PhotoMatchResult;
 }
 
+/** Output options that are local to the batch panel (not persisted). */
+type LocalBatchOptions = Omit<BatchOptions, 'imposition'>;
+
 /**
  * Batch generation panel: output options, run/pause/resume/cancel,
  * live progress with ETA and error list, ZIP download when done.
+ *
+ * Imposition settings have a SINGLE source of truth: the persisted
+ * `usePsdStore.impositionSettings`. This component never keeps a local
+ * copy — mirroring them into component state previously caused a
+ * store↔state echo loop ("Maximum update depth exceeded", v0.6.1).
  */
 export function BatchRunner({ project, excelData, photoMatches }: BatchRunnerProps): JSX.Element {
   const control = usePsdStore((state) => state.batchControl);
@@ -33,17 +39,16 @@ export function BatchRunner({ project, excelData, photoMatches }: BatchRunnerPro
   const setBatchControl = usePsdStore((state) => state.setBatchControl);
   const setBatchState = usePsdStore((state) => state.setBatchState);
   const mappings = useDataStore((state) => state.mappings);
-  const impositionSettings = usePsdStore((state) => state.impositionSettings);
+  const imposition = usePsdStore((state) => state.impositionSettings);
   const setImpositionSettings = usePsdStore((state) => state.setImpositionSettings);
   const restoreImpositionSettings = usePsdStore((state) => state.restoreImpositionSettings);
 
-  const [options, setOptions] = useState<BatchOptions>({
+  const [options, setOptions] = useState<LocalBatchOptions>({
     format: 'jpg',
     quality: 0.92,
     naming: '{Name}_{Row}',
     sides: 'both',
     outputMode: 'cards',
-    imposition: DEFAULT_IMPOSITION_SETTINGS,
   });
 
   // Restore persisted imposition settings once at mount.
@@ -51,18 +56,6 @@ export function BatchRunner({ project, excelData, photoMatches }: BatchRunnerPro
     void restoreImpositionSettings();
   }, [restoreImpositionSettings]);
 
-  // Keep the batch options in sync with the persisted imposition settings.
-  // Skipped right after this component itself updates the store (card-size
-  // auto-derivation) so the store echo cannot overwrite the derived size.
-  const lastWrittenRef = useRef<ImpositionSettings | null>(null);
-  useEffect(() => {
-    if (impositionSettings === lastWrittenRef.current) return;
-    setOptions((current) =>
-      current.imposition === impositionSettings
-        ? current
-        : { ...current, imposition: impositionSettings }
-    );
-  }, [impositionSettings]);
   const [zipUrl, setZipUrl] = useState<string | null>(null);
   const [isZipping, setIsZipping] = useState(false);
   const controlRef = useRef<'running' | 'paused' | 'cancelled' | 'done'>('done');
@@ -71,22 +64,28 @@ export function BatchRunner({ project, excelData, photoMatches }: BatchRunnerPro
   // Card size is ALWAYS locked to the uploaded front PSD: pixels ÷ DPI × 72
   // = points (a 300-DPI 1056×663 px card derives to a true 86×54 mm card,
   // NOT raw pixel numbers). The card-direction selector swaps width/height
-  // at that same true scale. Derived values are WRITTEN THROUGH to the
-  // persisted store (not just local state) so restored IndexedDB settings
-  // cannot clobber them back to stale sizes.
-  const designSize = project.front
-    ? {
-        width: project.front.width,
-        height: project.front.height,
-        dpi: project.front.horizontalResolution,
-      }
-    : null;
-  const impositionUnit = options.imposition.unit;
-  const cardDirection = options.imposition.cardOrientation;
-  const cardWidth = options.imposition.cardWidth;
-  const cardHeight = options.imposition.cardHeight;
+  // at that same true scale. When the stored size does not match the design
+  // (fresh project, unit switch, stale/corrupt persisted value), it is
+  // re-derived and written to the store — one idempotent write, after which
+  // the sync check passes and the effect bails.
+  const designSize = useMemo(
+    () =>
+      project.front
+        ? {
+            width: project.front.width,
+            height: project.front.height,
+            dpi: project.front.horizontalResolution,
+          }
+        : null,
+    [project.front]
+  );
+  const impositionUnit = imposition.unit;
+  const cardDirection = imposition.cardOrientation;
+  const cardWidth = imposition.cardWidth;
+  const cardHeight = imposition.cardHeight;
   useEffect(() => {
     if (!designSize) return;
+    if (!Number.isFinite(designSize.width) || !Number.isFinite(designSize.height)) return;
     const current = { cardWidth, cardHeight, unit: impositionUnit, cardOrientation: cardDirection };
     if (isCardSizeSyncedWithDesign(current, designSize.width, designSize.height, designSize.dpi)) {
       return;
@@ -98,17 +97,17 @@ export function BatchRunner({ project, excelData, photoMatches }: BatchRunnerPro
       impositionUnit,
       designSize.dpi
     );
-    const updated: ImpositionSettings = {
-      ...options.imposition,
-      cardWidth: width,
-      cardHeight: height,
-    };
-    setOptions((previous) => ({ ...previous, imposition: updated }));
-    // Persist so the store-sync effect (and the next session) agree.
-    lastWrittenRef.current = updated;
-    setImpositionSettings(updated);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [designSize, cardWidth, cardHeight, cardDirection, impositionUnit]);
+    if (!Number.isFinite(width) || !Number.isFinite(height)) return;
+    setImpositionSettings({ ...imposition, cardWidth: width, cardHeight: height });
+  }, [
+    designSize,
+    cardWidth,
+    cardHeight,
+    cardDirection,
+    impositionUnit,
+    imposition,
+    setImpositionSettings,
+  ]);
 
   // --- Live imposed-sheet preview with REAL card images -------------------
   const previewContainer = previewCanvasRef.current;
@@ -181,25 +180,20 @@ export function BatchRunner({ project, excelData, photoMatches }: BatchRunnerPro
   useEffect(() => {
     if (!isPreviewActive) return;
     if (!previewContainer) return;
-    const canvas = renderJobPreview(
-      sampleCanvases.front,
-      sampleCanvases.back,
-      options.imposition,
-      620
-    );
+    const canvas = renderJobPreview(sampleCanvases.front, sampleCanvases.back, imposition, 620);
     if (!canvas) return;
     canvas.style.maxWidth = '100%';
     canvas.style.height = 'auto';
     previewContainer.replaceChildren(canvas);
     return () => previewContainer.replaceChildren();
-  }, [isPreviewActive, options.imposition, sampleCanvases, previewContainer]);
+  }, [isPreviewActive, imposition, sampleCanvases, previewContainer]);
 
   // Summary of how many sheets the job will produce.
   const sheetSummary = useMemo(() => {
     if (!isPreviewActive) return null;
-    const layout = computeSheetLayout(options.imposition);
+    const layout = computeSheetLayout(imposition);
     if (!layout) return null;
-    if (options.imposition.arrangement === 'interleaved') {
+    if (imposition.arrangement === 'interleaved') {
       const frontRowsPerSheet = Math.max(1, Math.floor(layout.rows / 2));
       const perSheet = frontRowsPerSheet * layout.columns;
       const sheets = Math.ceil(excelData.rows.length / perSheet) || 0;
@@ -208,7 +202,7 @@ export function BatchRunner({ project, excelData, photoMatches }: BatchRunnerPro
     const frontSheets = Math.ceil(excelData.rows.length / layout.perSheet) || 0;
     const backSheets = project.back ? frontSheets : 0;
     return `${layout.perSheet} cards per sheet · ${frontSheets} front + ${backSheets} back sheet(s)`;
-  }, [isPreviewActive, options.imposition, excelData.rows.length, project.back]);
+  }, [isPreviewActive, imposition, excelData.rows.length, project.back]);
 
   const setControl = useCallback(
     (value: 'running' | 'paused' | 'cancelled' | 'done') => {
@@ -229,21 +223,30 @@ export function BatchRunner({ project, excelData, photoMatches }: BatchRunnerPro
       errors: [],
     });
 
-    await runBatch(project, excelData, mappings, photoMatches, options, () => controlRef.current, {
-      onProgress: (state: BatchState) => {
-        setBatchState(state);
-        if (state.control !== 'running') setControl(state.control);
-      },
-      onComplete: (zip) => {
-        setIsZipping(false);
-        if (zip) {
-          const url = URL.createObjectURL(zip);
-          setZipUrl(url);
-        }
-        setControl('done');
-      },
-    });
-  }, [project, excelData, mappings, photoMatches, options, setBatchState, setControl]);
+    const batchOptions: BatchOptions = { ...options, imposition };
+    await runBatch(
+      project,
+      excelData,
+      mappings,
+      photoMatches,
+      batchOptions,
+      () => controlRef.current,
+      {
+        onProgress: (state: BatchState) => {
+          setBatchState(state);
+          if (state.control !== 'running') setControl(state.control);
+        },
+        onComplete: (zip) => {
+          setIsZipping(false);
+          if (zip) {
+            const url = URL.createObjectURL(zip);
+            setZipUrl(url);
+          }
+          setControl('done');
+        },
+      }
+    );
+  }, [project, excelData, mappings, photoMatches, options, imposition, setBatchState, setControl]);
 
   const isRunning = control === 'running' || control === 'paused';
   const progress = batchState
@@ -389,9 +392,9 @@ export function BatchRunner({ project, excelData, photoMatches }: BatchRunnerPro
             <h3 className="text-xs font-semibold">Sheet layout — everything is adjustable</h3>
           </div>
           <ImpositionPanel
-            settings={options.imposition}
+            settings={imposition}
             disabled={isRunning}
-            onChange={(imposition: ImpositionSettings) => setImpositionSettings(imposition)}
+            onChange={setImpositionSettings}
           />
           <div className="flex items-start gap-2">
             <FileStack className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />

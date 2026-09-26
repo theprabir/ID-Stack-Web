@@ -1,7 +1,7 @@
 {
   "name": "id-stack",
   "private": true,
-  "version": "0.6.1",
+  "version": "0.6.2",
   "type": "module",
   "description": "ID Stack — Professional ID Card Design & Batch Printing Software — 100% client-side",
   "license": "MIT",
