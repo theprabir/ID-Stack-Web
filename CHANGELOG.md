@@ -3,6 +3,56 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.4.2] - 2026-09-26
+
+### Fixed
+- **Blank output root cause (layer paint order).** `compositeDesign` iterated
+  ag-psd layers reversed, but ag-psd returns layers **bottom-most first** —
+  so the opaque Background raster painted LAST, covering all content. Now
+  iterates forward (bottom → top), matching Photoshop semantics
+  (`psdCompositeService.ts`)
+- **CMYK text colours.** PSD text fills arrive as CMYK `{c,m,y,k}` on a 0–255
+  scale; `agColorToCss` (`psdService.ts`) now converts them with the standard
+  ink formula — verified pixel-exact against the rasterised text
+
+### Added
+- **True CMYK JPEG export.** jpeg-js only writes 3-component YCbCr, so a local
+  4-component Adobe CMYK encoder was written (`cmykJpegEncoder.ts`): baseline
+  SOF0 with 4 components (C/M/Y/K ids 1–4, 1×1 sampling), two quantisation
+  tables, the four standard Huffman tables, no colour transform, and an Adobe
+  APP14 marker (transform=0) written directly into the header. Per the Adobe
+  convention the CMYK ink values are stored **inverted** (255 − ink) so every
+  conforming decoder (Photoshop, Acrobat, Ghostscript, jpeg-js) reads them
+  correctly. Verified in-browser: 4-component SOF, transform=0, decodes to a
+  bitmap in Chrome, ~590 ms for 638×1011 at q92 (190 KB)
+- **Direct CMYK PDF export** (`encodeCmykPdf` in `cmykExportService.ts`):
+  pdf-lib document with a DeviceCMYK image XObject (FlateDecode), an ICCBased
+  colour space embedding the bundled CMYK profile (N=4), and a GTS_PDFX
+  OutputIntent — genuine print-shop CMYK with no Photoshop round-trip.
+  Verified in-browser: ICCBased + OutputIntent + GTS_PDFX present, ~710 ms,
+  724 KB for 638×1011
+- **ICC colour engine** (`@kittl/little-cms` WASM): true sRGB→CMYK transform
+  using Ghostscript's `default_cmyk.icc` (bundled at
+  `src/assets/profiles/`; the Compact-ICC-Profiles micro profile lacks the B2A
+  tag needed for the forward direction)
+- **In-browser font loading** (`fontService.ts` + `FontManager.tsx`):
+  drag-drop/pick .ttf/.otf/.woff/.woff2, registered via the FontFace API,
+  persisted in IndexedDB and restored on startup. PSD font names
+  (PostScript style, e.g. `ArialMT`) match loaded families by exact normalised
+  name or base family (so `Arial` covers `Arial-BoldMT`); composite text
+  rendering uses the resolved family. Verified in-browser end-to-end
+- PNG export removed from the batch pipeline — JPG (CMYK) and PDF (CMYK) are
+  the print-ready outputs
+- Tests: 4-component JPEG structure + decode round-trips (white/black/K-only,
+  edge-clamped non-multiple-of-8 sizes), APP14 patcher, font name matching
+  (13 new; 100 total)
+
+### Changed
+- `BatchOptions.format` is now `'jpg' | 'pdf'`; BatchRunner shows
+  "JPG (CMYK)" / "PDF (CMYK)" with JPG as default
+- Bundled ICC profile is Ghostscript's generic CMYK (not FOGRA/SWOP
+  certified); PDF OutputConditionIdentifier is `CUSTOM_CMYK`
+
 ## [0.4.1] - 2026-09-25
 
 ### Fixed

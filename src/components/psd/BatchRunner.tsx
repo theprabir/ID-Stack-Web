@@ -25,7 +25,7 @@ export function BatchRunner({ project, excelData, photoMatches }: BatchRunnerPro
   const mappings = useDataStore((state) => state.mappings);
 
   const [options, setOptions] = useState<BatchOptions>({
-    format: 'png',
+    format: 'jpg',
     quality: 0.92,
     naming: '{Name}_{Row}',
     sides: 'both',
@@ -99,11 +99,11 @@ export function BatchRunner({ project, excelData, photoMatches }: BatchRunnerPro
             value={options.format}
             disabled={isRunning}
             onChange={(event) =>
-              setOptions((current) => ({ ...current, format: event.target.value as 'png' | 'jpg' }))
+              setOptions((current) => ({ ...current, format: event.target.value as 'jpg' | 'pdf' }))
             }
           >
-            <option value="png">PNG</option>
-            <option value="jpg">JPG</option>
+            <option value="jpg">JPG (CMYK)</option>
+            <option value="pdf">PDF (CMYK)</option>
           </Select>
         </div>
         <div>

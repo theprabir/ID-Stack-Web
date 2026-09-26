@@ -77,7 +77,7 @@ export interface PsdDesign {
   fileName: string;
   width: number;
   height: number;
-  /** Flattened layer tree (top-most first, as in Photoshop) */
+  /** Flattened layer list, bottom-most first (Photoshop file order) */
   layers: PsdLayerInfo[];
   /** Flattened visible composite of the design (blob URL) */
   compositeUrl: string;

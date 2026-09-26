@@ -4,7 +4,7 @@ import { usePsdStore } from '@/stores/psdStore';
 import { useDataStore, PREVIEW_ROW_COUNT } from '@/stores/dataStore';
 import { matchPhotos } from '@/services/photoService';
 import { getPreview } from '@/services/excelService';
-import { PsdUploader, LayerPicker, PsdCardPreview, BatchRunner } from '@/components/psd';
+import { PsdUploader, LayerPicker, PsdCardPreview, BatchRunner, FontManager } from '@/components/psd';
 import { DataPreview } from '@/components/data';
 import { ColumnMapping } from '@/components/data/ColumnMapping';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui';
@@ -93,6 +93,7 @@ export function PsdStudioPage(): JSX.Element {
 
           <LayerPicker side="front" />
           <LayerPicker side="back" />
+          <FontManager />
         </div>
 
         {/* Right column: data, mapping, preview, generation */}

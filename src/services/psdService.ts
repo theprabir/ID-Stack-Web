@@ -12,7 +12,11 @@ import type { PsdDesign, PsdLayerInfo, PsdLayerKind, SideType } from '@/types/ps
 // but gates the color mode behind a whitelist; the patch extends it.
 applyPsdColorModePatch();
 
-/** Convert an ag-psd Color union to a CSS color string ('' when unknown) */
+/**
+ * Convert an ag-psd Color union to a CSS color string ('' when unknown).
+ * CMYK fills use the same naive conversion ag-psd applies when rasterising
+ * CMYK pixels, so re-rendered text matches the Photoshop raster exactly.
+ */
 export function agColorToCss(color: Color | undefined): string {
   if (!color) return '';
   if ('r' in color && 'g' in color && 'b' in color) {
@@ -30,6 +34,16 @@ export function agColorToCss(color: Color | undefined): string {
         .toString(16)
         .padStart(2, '0');
     return `#${hex(color.fr)}${hex(color.fg)}${hex(color.fb)}`;
+  }
+  // CMYK text fill: {c, m, y, k} on a 0–255 scale (Photoshop engine data).
+  // R = 255·(1−C)·(1−K) etc. — matches ag-psd's rasterised text pixels.
+  if ('c' in color && 'm' in color && 'y' in color && 'k' in color) {
+    const { c, m, y, k } = color as { c: number; m: number; y: number; k: number };
+    const channel = (component: number): string =>
+      Math.max(0, Math.min(255, Math.round(255 * (1 - component / 255) * (1 - k / 255))))
+        .toString(16)
+        .padStart(2, '0');
+    return `#${channel(c)}${channel(m)}${channel(y)}`;
   }
   return '';
 }

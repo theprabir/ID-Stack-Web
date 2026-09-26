@@ -1,8 +1,7 @@
 /**
- * PSD compositing service.
  * Re-renders a parsed PSD design onto a canvas with placeholder layers
  * substituted by row data (text) or photos — everything else is drawn
- * from the original layer rasters, untouched, in original order with
+ * from the original layer rasters, untouched, bottom-most first with
  * original opacity/blend modes. Text keeps the extracted PSD style
  * (font, size, color, tracking, justification).
  */
@@ -10,6 +9,7 @@ import type { PsdDesign, PsdPlaceholder, PsdLayerInfo } from '@/types/psd';
 import { sideKeyOf } from '@/types/psd';
 import type { DataRow, PhotoRecord } from '@/types/data';
 import { loadImageElement } from './psdService';
+import { resolveFontFamily } from './fontService';
 
 /** A value lookup: placeholder key → string for the current row */
 export type RowResolver = (key: string) => string;
@@ -87,7 +87,9 @@ function drawTextLayer(
   if (!text) return;
 
   const fontSize = (text.fontSize ?? 18) * scale;
-  const family = text.fontFamily ? `"${text.fontFamily}"` : 'sans-serif';
+  // Prefer a user-loaded font matched to the PSD font name; falls back to
+  // the PSD name (browser-installed) or generic sans-serif.
+  const family = resolveFontFamily(text.fontFamily);
   const weight = text.bold ? 'bold' : 'normal';
   const style = text.italic ? 'italic' : 'normal';
   context.font = `${style} ${weight} ${fontSize}px ${family}`;
@@ -230,8 +232,11 @@ export async function compositeDesign(
   );
   const resolver = createRowResolver(options.mappings, options.row);
 
-  // Top-most first (ag-psd order). Paint back-to-front, so reverse.
-  const layers = [...design.layers].reverse();
+  // Paint in stored order: ag-psd returns children bottom-most first (file
+  // order), so iterating forwards paints the background first and content
+  // above it. Reversing here would paint the opaque background LAST and hide
+  // every other layer (v0.4.2 blank-output fix).
+  const layers = design.layers;
 
   for (const layer of layers) {
     if (layer.hidden) continue;

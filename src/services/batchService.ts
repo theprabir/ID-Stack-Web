@@ -1,21 +1,21 @@
 /**
  * Batch generation service.
- * Composites the front/back designs for every data row, yields PNG/JPEG
- * blobs and packages them into a ZIP. Supports pause/resume/cancel and
- * reports progress with an ETA. Runs on the main thread in chunks
- * (requestAnimationFrame/idle yields) so the UI stays responsive; a
- * Web Worker port is behind the same interface for Phase 6.
+ * Composites the front/back designs for every data row, yields CMYK JPEG or
+ * CMYK PDF blobs and packages them into a ZIP. Supports pause/resume/cancel
+ * and reports progress with an ETA. Runs on the main thread in chunks
+ * (requestAnimationFrame/idle yields) so the UI stays responsive.
  */
 import JSZip from 'jszip';
 import type { PsdProject, PsdDesign, SideType } from '@/types/psd';
 import type { ExcelData, PhotoMatchResult, PhotoRecord } from '@/types/data';
-import { compositeDesign, canvasToBlob } from './psdCompositeService';
+import { compositeDesign } from './psdCompositeService';
+import { encodeCmykJpeg, encodeCmykPdf } from './cmykExportService';
 import { buildName } from './batchNaming';
 
 /** Output settings for a batch run */
 export interface BatchOptions {
-  /** Output image format */
-  format: 'png' | 'jpg';
+  /** Output image format (v0.4.2: PNG removed, all outputs are CMYK) */
+  format: 'jpg' | 'pdf';
   /** JPEG quality 0-1 (jpg only) */
   quality: number;
   /** File name template: {Name}, {ID} and {Row} are supported */
@@ -108,8 +108,7 @@ export async function runBatch(
     return;
   }
 
-  const mime = options.format === 'png' ? 'image/png' : 'image/jpeg';
-  const extension = options.format === 'png' ? 'png' : 'jpg';
+  const extension = options.format === 'pdf' ? 'pdf' : 'jpg';
 
   let current = 0;
   for (const row of data.rows) {
@@ -129,10 +128,15 @@ export async function runBatch(
           row,
           getPhoto: () => photo,
         });
-        const blob = await canvasToBlob(canvas, mime, options.quality);
-        const sideSuffix = designs.length > 1 ? `_${side === 'front' ? 'Front' : 'Back'}` : '';
         const base = buildName(options.naming, row);
-        zip.file(`${base}${sideSuffix}.${extension}`, blob);
+        const sideSuffix = designs.length > 1 ? `_${side === 'front' ? 'Front' : 'Back'}` : '';
+        if (options.format === 'pdf') {
+          const bytes = await encodeCmykPdf(canvas);
+          zip.file(`${base}${sideSuffix}.${extension}`, bytes);
+        } else {
+          const bytes = await encodeCmykJpeg(canvas, options.quality);
+          zip.file(`${base}${sideSuffix}.${extension}`, bytes);
+        }
       }
     } catch (error) {
       errors.push({

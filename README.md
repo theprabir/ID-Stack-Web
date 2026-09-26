@@ -9,7 +9,9 @@
 - Excel data import with placeholder mapping
 - Batch photo import with auto-matching
 - Batch generation of hundreds of ID cards in seconds
+- **CMYK export:** ICC-corrected CMYK JPEG (Adobe APP14 transform=0) and direct CMYK PDF (embedded ICC profile + GTS_PDFX OutputIntent)
 - PSD file import (Photoshop designs)
+- Custom font upload (.ttf/.otf/.woff/.woff2) — loaded in-browser, persisted offline, auto-matched to PSD text layers
 - Pre-designed template library
 - Print-ready PDF export with imposition (multiple cards per sheet)
 - Same-sheet duplex layout (fronts row 1, backs row 2)
@@ -93,7 +95,7 @@ Use [GitHub Issues](https://github.com/theprabir/ID-Stack-Web/issues) to report 
 
 ## 📊 Project Status
 **Current Phase:** 4 & 5 (PSD Pipeline + Batch Generation) — COMPLETE
-**Status:** v0.4.0 — PSD-first workflow: parse layered designs, pick placeholder layers, map Excel columns, generate all cards as ZIP
+**Status:** v0.4.2 — CMYK everywhere: true 4-component CMYK JPEG + direct CMYK PDF export (ICC-based, print-shop ready), blank-output fix, in-browser custom font loading
 
 ### Completed
 - **Phases 4 & 5 — PSD-First Pipeline (the core workflow):**

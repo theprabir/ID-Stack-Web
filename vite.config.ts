@@ -109,6 +109,13 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     css: false,
     include: ['tests/**/*.test.{ts,tsx}'],
+    server: {
+      // @kittl/little-cms ships extensionless ESM internal imports that Node's
+      // loader rejects; inline it so Vite resolves (and rewrites) them.
+      deps: {
+        inline: ['@kittl/little-cms', '@kittl/little-cms/formats', '@kittl/little-cms/flags'],
+      },
+    },
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],
