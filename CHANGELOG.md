@@ -3,6 +3,32 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.5.1] - 2026-09-26
+
+### Added
+
+- **Duplex pairing for sheet output.** New toggle in the imposition panel:
+  when enabled, back-side cards are automatically mirrored per row within
+  each sheet-sized block (front slot 1 pairs with back slot N, slot 2 with
+  N−1, …) so long-edge duplex printing puts each back exactly behind its
+  front. Single-column layouts pass through unchanged.
+- **Per-slot card numbering.** Optional sequence number printed on every
+  card slot of an imposed sheet. Fully user-controlled: on/off, corner
+  position (4 options), font size, colour, margin from the card edge,
+  prefix (e.g. `#`) and start value — numbering runs continuously across
+  sheets and every occupied slot counts. Mirrored in the live preview.
+- **Card numbers UI** (`ImpositionPanel`): dedicated "Card numbers" section
+  exposing every option above, plus a "Duplex pairing" checkbox.
+
+### Changed
+
+- Card numbers on imposed sheets now use their own colour setting instead
+  of inheriting the sheet-numbering colour.
+- Imposition settings (paper, spacing, marks, numbering, card numbers,
+  duplex) persist per browser in IndexedDB and are restored on the next
+  session; stored settings are merged over defaults so new options stay
+  valid.
+
 ## [0.5.0] - 2026-09-26
 
 ### Phase 6 — Imposition Engine

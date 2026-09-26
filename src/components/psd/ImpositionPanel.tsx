@@ -293,6 +293,128 @@ export function ImpositionPanel({ settings, onChange, disabled }: ImpositionPane
         )}
       </div>
 
+      {/* Per-slot card numbers */}
+      <div className="rounded-md border p-2">
+        <div className="mb-2 flex items-center pb-1">
+          <Checkbox
+            id="imp-cardnum-enabled"
+            checked={settings.cardNumbers.enabled}
+            disabled={disabled}
+            onChange={(event) =>
+              patch({
+                cardNumbers: { ...settings.cardNumbers, enabled: event.target.checked },
+              })
+            }
+          />
+          <Label htmlFor="imp-cardnum-enabled" className="ml-1.5 text-xs font-medium">
+            Card numbers (per slot)
+          </Label>
+        </div>
+        {settings.cardNumbers.enabled && (
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <div>
+              <Label htmlFor="imp-cardnum-pos" className="mb-1 block text-xs text-muted-foreground">
+                Position
+              </Label>
+              <Select
+                id="imp-cardnum-pos"
+                value={settings.cardNumbers.position}
+                disabled={disabled}
+                onChange={(event) =>
+                  patch({
+                    cardNumbers: {
+                      ...settings.cardNumbers,
+                      position: event.target.value as ImpositionSettings['cardNumbers']['position'],
+                    },
+                  })
+                }
+                className="h-9 text-xs"
+              >
+                <option value="top-left">Top left</option>
+                <option value="top-right">Top right</option>
+                <option value="bottom-left">Bottom left</option>
+                <option value="bottom-right">Bottom right</option>
+              </Select>
+            </div>
+            <NumberField
+              id="imp-cardnum-size"
+              label="Size (pt)"
+              value={settings.cardNumbers.fontSize}
+              disabled={disabled}
+              step={1}
+              onChange={(value) =>
+                patch({ cardNumbers: { ...settings.cardNumbers, fontSize: value } })
+              }
+            />
+            <div>
+              <Label htmlFor="imp-cardnum-color" className="mb-1 block text-xs text-muted-foreground">
+                Colour
+              </Label>
+              <Input
+                id="imp-cardnum-color"
+                type="color"
+                value={settings.cardNumbers.color}
+                disabled={disabled}
+                onChange={(event) =>
+                  patch({ cardNumbers: { ...settings.cardNumbers, color: event.target.value } })
+                }
+                className="h-9 w-full cursor-pointer p-0.5"
+              />
+            </div>
+            <NumberField
+              id="imp-cardnum-margin"
+              label={`Margin (${unit})`}
+              value={settings.cardNumbers.margin}
+              disabled={disabled}
+              step={0.5}
+              onChange={(value) =>
+                patch({ cardNumbers: { ...settings.cardNumbers, margin: value } })
+              }
+            />
+            <div>
+              <Label htmlFor="imp-cardnum-prefix" className="mb-1 block text-xs text-muted-foreground">
+                Prefix
+              </Label>
+              <Input
+                id="imp-cardnum-prefix"
+                type="text"
+                value={settings.cardNumbers.prefix}
+                disabled={disabled}
+                maxLength={6}
+                onChange={(event) =>
+                  patch({ cardNumbers: { ...settings.cardNumbers, prefix: event.target.value } })
+                }
+                className="h-9 text-xs"
+              />
+            </div>
+            <NumberField
+              id="imp-cardnum-start"
+              label="Start at"
+              value={settings.cardNumbers.start}
+              disabled={disabled}
+              step={1}
+              min={0}
+              onChange={(value) =>
+                patch({ cardNumbers: { ...settings.cardNumbers, start: value } })
+              }
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Duplex pairing */}
+      <div className="flex items-center pb-1">
+        <Checkbox
+          id="imp-duplex"
+          checked={settings.duplex}
+          disabled={disabled}
+          onChange={(event) => patch({ duplex: event.target.checked })}
+        />
+        <Label htmlFor="imp-duplex" className="ml-1.5 text-xs">
+          Duplex pairing (mirror backs for long-edge duplex printing)
+        </Label>
+      </div>
+
       {/* Live fit summary */}
       <p className="text-xs text-muted-foreground" aria-live="polite">
         {layout

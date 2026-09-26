@@ -98,7 +98,8 @@ Use [GitHub Issues](https://github.com/theprabir/ID-Stack-Web/issues) to report 
 
 ## 📊 Project Status
 **Current Phase:** 6 (Imposition Engine) — COMPLETE
-**Status:** v0.5.0 — Imposed multi-card sheets (custom paper/units, bleed, gap, margin, crop marks, positioned numbering), one 2-page PDF per person, bundled Arial-compatible font, faithful placeholder text rendering
+**Patch:** 0.5.1 (duplex pairing, per-slot card numbering, persisted imposition settings)
+**Status:** v0.5.1 — v0.5.0 imposition (custom paper/units, bleed, gap, margin, crop marks, positioned numbering) plus duplex back pairing for long-edge duplex printing, per-slot card numbering (position/size/colour/margin/prefix/start) and imposition settings persisted in IndexedDB; one 2-page PDF per person, bundled Arial-compatible font, faithful placeholder text rendering
 
 ### Completed
 - **Phases 4 & 5 — PSD-First Pipeline (the core workflow):**

@@ -58,6 +58,13 @@ export function hexToRgb(hex: string): [number, number, number] {
   return [((value >> 16) & 0xff) / 255, ((value >> 8) & 0xff) / 255, (value & 0xff) / 255];
 }
 
+/** Escape a string for safe inclusion in a PDF literal text operator */
+function escapePdfText(text: string): string {
+  return text.replace(/([()\\])/g, '\\$1');
+}
+
+
+
 /** Points-per-unit factor for the given unit */
 function unitToPtFactor(unit: ImpositionSettings['unit']): number {
   if (unit === 'mm') return 72 / 25.4;
@@ -104,11 +111,15 @@ export async function buildSheetsPdf(
 
   const numberFont: PDFFont = await pdf.embedFont(StandardFonts.Helvetica);
   const [nr, ng, nb] = hexToRgb(settings.numbering.color);
+  const cardNumRgb = hexToRgb(settings.cardNumbers?.color ?? '#000000');
   const markRgb = hexToRgb(settings.cropMarkColor);
   const markLengthPt = settings.cropMarkLength * unitToPtFactor(settings.unit);
   const markOffsetPt = settings.cropMarkOffset * unitToPtFactor(settings.unit);
 
   let cardCounter = startCardNumber;
+  const cardNum = settings.cardNumbers;
+  const cardNumEnabled = cardNum?.enabled === true;
+  const cardUnitPt = unitToPtFactor(settings.unit);
 
   for (let sheetIndex = 0; sheetIndex < sheets.length; sheetIndex += 1) {
     const page = pdf.addPage([layout.pageWidth, layout.pageHeight]);
@@ -142,6 +153,28 @@ export async function buildSheetsPdf(
       imageRefs[imageName] = imageRef;
 
       contentLines.push(`q ${cellWidth.toFixed(2)} 0 0 ${cellHeight.toFixed(2)} ${cellLeft.toFixed(2)} ${cellBottom.toFixed(2)} cm /${imageName} Do Q`);
+
+      // --- Per-slot card number ---
+      if (cardNumEnabled) {
+        const label = `${cardNum.prefix}${cardCounter + cardNum.start - 1}`;
+        const size = cardNum.fontSize;
+        const textWidth = numberFont.widthOfTextAtSize(label, size);
+        const marginPt = Math.max(0, cardNum.margin) * cardUnitPt;
+        // Trim-box corners in PDF coordinates (y up).
+        const trimLeft = slot.x;
+        const trimRight = slot.x + slot.width;
+        const trimTop = layout.pageHeight - slot.y;
+        const trimBottom = layout.pageHeight - (slot.y + slot.height);
+        let numX: number;
+        let numBaseline: number;
+        if (cardNum.position.endsWith('left')) numX = trimLeft + marginPt;
+        else numX = trimRight - marginPt - textWidth;
+        if (cardNum.position.startsWith('top')) numBaseline = trimTop - marginPt - size;
+        else numBaseline = trimBottom + marginPt;
+        contentLines.push(
+          `BT ${cardNumRgb[0].toFixed(3)} ${cardNumRgb[1].toFixed(3)} ${cardNumRgb[2].toFixed(3)} rg /__NumberFont ${size} Tf ${numX.toFixed(2)} ${numBaseline.toFixed(2)} Td (${escapePdfText(label)}) Tj ET`
+        );
+      }
 
       // --- Crop marks for this cell ---
       if (settings.cropMarks) {
@@ -195,7 +228,7 @@ export async function buildSheetsPdf(
       const fontRef = (numberFont as unknown as { ref: PDFRef }).ref;
       imageRefs.__NumberFontPlaceholder = fontRef;
       contentLines.push(
-        `BT ${nr.toFixed(3)} ${ng.toFixed(3)} ${nb.toFixed(3)} rg /__NumberFont ${size} Tf ${x.toFixed(2)} ${baseline.toFixed(2)} Td (${text.replace(/([()\\])/g, '\\$1')}) Tj ET`
+        `BT ${nr.toFixed(3)} ${ng.toFixed(3)} ${nb.toFixed(3)} rg /__NumberFont ${size} Tf ${x.toFixed(2)} ${baseline.toFixed(2)} Td (${escapePdfText(text)}) Tj ET`
       );
     }
 
@@ -272,6 +305,9 @@ export function renderSheetPreview(
 
   const markLengthPt = settings.cropMarkLength * unitToPtFactor(settings.unit);
   const markOffsetPt = settings.cropMarkOffset * unitToPtFactor(settings.unit);
+  const cardNum = settings.cardNumbers;
+  const cardNumEnabled = cardNum?.enabled === true;
+  let cardCounter = cardNum?.start ?? 1;
 
   for (let index = 0; index < layout.slots.length; index += 1) {
     const slot = layout.slots[index];
@@ -289,6 +325,24 @@ export function renderSheetPreview(
       context.strokeStyle = 'rgba(59, 130, 246, 0.55)';
       context.lineWidth = 1;
       context.strokeRect(slot.x * scale, slot.y * scale, slot.width * scale, slot.height * scale);
+
+      // Per-slot card number (mirrors the PDF placement).
+      if (cardNumEnabled) {
+        const label = `${cardNum.prefix}${cardCounter}`;
+        const size = cardNum.fontSize;
+        const marginPt = Math.max(0, cardNum.margin) * unitToPtFactor(settings.unit);
+        context.font = `${size}px Helvetica, Arial, sans-serif`;
+        context.fillStyle = cardNum.color;
+        const metrics = context.measureText(label);
+        const numLeft = cardNum.position.endsWith('left')
+          ? slot.x + marginPt
+          : slot.x + slot.width - marginPt - metrics.width;
+        const numTop = cardNum.position.startsWith('top')
+          ? slot.y + marginPt
+          : slot.y + slot.height - marginPt - size;
+        context.fillText(label, numLeft * scale, (numTop + size) * scale);
+        cardCounter += 1;
+      }
     } else {
       // Empty slot: dashed outline.
       context.strokeStyle = '#d1d5db';

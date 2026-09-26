@@ -12,7 +12,7 @@ import { compositeDesign } from './psdCompositeService';
 import { encodeCmykJpeg, encodeCmykPdf, encodeCmykPdfDoubleSided } from './cmykExportService';
 import { buildSheetsPdf } from './impositionService';
 import type { ImpositionSettings } from './impositionTypes';
-import { computeSheetLayout } from './impositionTypes';
+import { computeSheetLayout, pairBacksForDuplex } from './impositionTypes';
 import { buildName } from './batchNaming';
 
 /** Output settings for a batch run */
@@ -214,7 +214,12 @@ export async function runBatch(
   if (isSheetMode && sheetLayout) {
     const perSheet = sheetLayout.perSheet;
     for (const { side } of designs) {
-      const cards = sheetCanvases[side];
+      let cards = sheetCanvases[side];
+      // Duplex pairing: mirror back-sheet columns per row so long-edge duplex
+      // printing lands each back exactly behind its front.
+      if (side === 'back' && options.imposition.duplex) {
+        cards = pairBacksForDuplex(cards, perSheet, sheetLayout.columns);
+      }
       const sheets: HTMLCanvasElement[][] = [];
       for (let index = 0; index < cards.length; index += perSheet) {
         sheets.push(cards.slice(index, index + perSheet));

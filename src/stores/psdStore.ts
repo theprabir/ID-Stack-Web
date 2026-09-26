@@ -1,8 +1,18 @@
 import { create } from 'zustand';
 import type { PsdProject, PsdPlaceholder, PsdLayerInfo, SideType } from '@/types/psd';
 import { parsePsdFile } from '@/services/psdService';
-import { savePsdProjectRecord, type PsdProjectRecord } from '@/services/storageService';
+import {
+  savePsdProjectRecord,
+  loadFromIndexedDB,
+  saveToIndexedDB,
+  type PsdProjectRecord,
+} from '@/services/storageService';
 import type { BatchState } from '@/services/batchService';
+import type { ImpositionSettings } from '@/services/impositionTypes';
+import { DEFAULT_IMPOSITION_SETTINGS } from '@/services/impositionTypes';
+
+/** IndexedDB key for the current project's imposition settings */
+const IMPOSITION_SETTINGS_KEY = 'psd-imposition-settings';
 
 /** Batch state/control slice embedded in the PSD store */
 export interface PsdStoreBatchSlice {
@@ -32,6 +42,12 @@ interface PsdState extends PsdStoreBatchSlice {
   renamePlaceholderKey: (layerId: string, key: string) => void;
   /** Persist the project (PSD bytes + placeholders) to IndexedDB. */
   saveProject: () => Promise<void>;
+  /** Imposition settings (persisted per project, survive reloads) */
+  impositionSettings: ImpositionSettings;
+  /** Update imposition settings (in memory + IndexedDB) */
+  setImpositionSettings: (settings: ImpositionSettings) => void;
+  /** Restore imposition settings from IndexedDB (call at startup) */
+  restoreImpositionSettings: () => Promise<void>;
   /** Reset everything. */
   resetProject: () => void;
 }
@@ -55,8 +71,28 @@ export const usePsdStore = create<PsdState>()((set, get) => ({
   lastSaved: null,
   batchState: null,
   batchControl: 'done',
+  impositionSettings: DEFAULT_IMPOSITION_SETTINGS,
   setBatchState: (batchState) => set({ batchState }),
   setBatchControl: (batchControl) => set({ batchControl }),
+
+  setImpositionSettings: (settings) => {
+    set({ impositionSettings: settings });
+    void saveToIndexedDB(IMPOSITION_SETTINGS_KEY, settings).catch(() => {
+      // Persistence failure must not break the UI — settings stay in memory.
+    });
+  },
+
+  restoreImpositionSettings: async () => {
+    try {
+      const stored = await loadFromIndexedDB<ImpositionSettings>(IMPOSITION_SETTINGS_KEY);
+      if (stored && typeof stored === 'object' && stored.paper && stored.numbering) {
+        // Merge over defaults so newly added fields always have values.
+        set({ impositionSettings: { ...DEFAULT_IMPOSITION_SETTINGS, ...stored } });
+      }
+    } catch {
+      // Missing/corrupt settings fall back to defaults.
+    }
+  },
 
   loadPsd: async (file, side) => {
     set({ isParsing: true, parseError: null });

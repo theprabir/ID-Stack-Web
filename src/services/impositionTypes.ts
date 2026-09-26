@@ -91,8 +91,32 @@ export interface ImpositionSettings {
   /** Crop mark stroke colour */
   cropMarkColor: string;
   numbering: NumberingSettings;
-  /** Double-sided: back sheet content is mirrored for long-edge duplex */
+  /** Per-slot card numbering: each card shows its sequence number */
+  cardNumbers: CardNumberSettings;
+  /**
+   * Double-sided duplex pairing: when true, back-side sheets are laid out
+   * mirrored per row (row order reversed) so long-edge duplex printing puts
+   * each back behind its front.
+   */
   duplex: boolean;
+}
+
+/** Per-card numbering options (printed on every card slot) */
+export interface CardNumberSettings {
+  /** Show a sequence number on each card slot */
+  enabled: boolean;
+  /** Corner of the card the number is printed in */
+  position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+  /** Font size in points */
+  fontSize: number;
+  /** Text colour as hex */
+  color: string;
+  /** Margin from the card edges (unit units) */
+  margin: number;
+  /** Optional prefix (e.g. "#") */
+  prefix: string;
+  /** Start value (default 1; continuous across sheets) */
+  start: number;
 }
 
 /** One card slot on a sheet (all values in PDF points) */
@@ -178,8 +202,54 @@ export const DEFAULT_IMPOSITION_SETTINGS: ImpositionSettings = {
     color: '#333333',
     prefix: '',
   },
+  cardNumbers: {
+    enabled: false,
+    position: 'bottom-right',
+    fontSize: 6,
+    color: '#333333',
+    margin: 2,
+    prefix: '#',
+    start: 1,
+  },
   duplex: true,
 };
+
+/**
+ * Order card canvases for a back sheet so long-edge duplex printing places
+ * each back exactly behind its front. Front sheets are filled row-major
+ * (left→right, top→bottom); a long-edge-duplex back is ALSO row-major on the
+ * sheet, but the printer flips the sheet left-right, so to pair front
+ * (row r, col c) with its back we must place the back at the MIRRORED column
+ * (cols+1−c) of the same row.
+ *
+ * @param fronts - Front canvases in row-major slot order
+ * @param perSheet - Cards per sheet
+ * @param columns - Grid columns
+ * @returns Back canvases in row-major slot order (mirrored per row)
+ */
+export function pairBacksForDuplex(
+  fronts: HTMLCanvasElement[],
+  perSheet: number,
+  columns: number
+): HTMLCanvasElement[] {
+  const backs: HTMLCanvasElement[] = new Array(fronts.length);
+  // Work sheet by sheet: fronts come as one long row-major list across all
+  // sheets; mirror the column inside each sheet-sized block. The back list is
+  // consumed in the same order the fronts were produced (row-major), so back
+  // card #k pairs with front card #k — it is only REPOSITIONED to the
+  // mirrored slot on its sheet.
+  for (let index = 0; index < fronts.length; index += 1) {
+    const sheetBlock = Math.floor(index / perSheet);
+    const slotInBlock = index % perSheet;
+    const slotRow = Math.floor(slotInBlock / columns);
+    const slotCol = slotInBlock % columns;
+    const mirroredCol = columns - 1 - slotCol;
+    const backSlotInBlock = slotRow * columns + mirroredCol;
+    const front = fronts[index];
+    if (front) backs[sheetBlock * perSheet + backSlotInBlock] = front;
+  }
+  return backs;
+}
 
 /**
  * Compute the sheet geometry for a card size on a paper size.

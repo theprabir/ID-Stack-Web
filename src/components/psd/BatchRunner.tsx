@@ -26,6 +26,9 @@ export function BatchRunner({ project, excelData, photoMatches }: BatchRunnerPro
   const setBatchControl = usePsdStore((state) => state.setBatchControl);
   const setBatchState = usePsdStore((state) => state.setBatchState);
   const mappings = useDataStore((state) => state.mappings);
+  const impositionSettings = usePsdStore((state) => state.impositionSettings);
+  const setImpositionSettings = usePsdStore((state) => state.setImpositionSettings);
+  const restoreImpositionSettings = usePsdStore((state) => state.restoreImpositionSettings);
 
   const [options, setOptions] = useState<BatchOptions>({
     format: 'jpg',
@@ -35,6 +38,18 @@ export function BatchRunner({ project, excelData, photoMatches }: BatchRunnerPro
     outputMode: 'cards',
     imposition: DEFAULT_IMPOSITION_SETTINGS,
   });
+
+  // Restore persisted imposition settings once at mount.
+  useEffect(() => {
+    void restoreImpositionSettings();
+  }, [restoreImpositionSettings]);
+
+  // Keep the batch options in sync with the persisted imposition settings.
+  useEffect(() => {
+    setOptions((current) =>
+      current.imposition === impositionSettings ? current : { ...current, imposition: impositionSettings }
+    );
+  }, [impositionSettings]);
   const [zipUrl, setZipUrl] = useState<string | null>(null);
   const [isZipping, setIsZipping] = useState(false);
   const controlRef = useRef<'running' | 'paused' | 'cancelled' | 'done'>('done');
@@ -272,9 +287,7 @@ export function BatchRunner({ project, excelData, photoMatches }: BatchRunnerPro
           <ImpositionPanel
             settings={options.imposition}
             disabled={isRunning}
-            onChange={(imposition: ImpositionSettings) =>
-              setOptions((current) => ({ ...current, imposition }))
-            }
+            onChange={(imposition: ImpositionSettings) => setImpositionSettings(imposition)}
           />
           <div className="flex items-start gap-2">
             <FileStack className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
