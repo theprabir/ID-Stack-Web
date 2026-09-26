@@ -117,8 +117,9 @@ function drawTextLayer(
   const boxHeight = (bounds.bottom - bounds.top) * scale;
 
   const metrics = context.measureText('Mg');
-  const ascent = (metrics.fontBoundingBoxAscent ?? metrics.actualBoundingBoxAscent ?? fontSize * 0.8);
-  const descent = (metrics.fontBoundingBoxDescent ?? metrics.actualBoundingBoxDescent ?? fontSize * 0.2);
+  const ascent = metrics.fontBoundingBoxAscent ?? metrics.actualBoundingBoxAscent ?? fontSize * 0.8;
+  const descent =
+    metrics.fontBoundingBoxDescent ?? metrics.actualBoundingBoxDescent ?? fontSize * 0.2;
 
   const lines = wrapLines(context, content, boxWidth);
   // Leading is baseline-to-baseline (Photoshop). "Auto" leading in Photoshop

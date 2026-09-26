@@ -193,7 +193,11 @@ export function ensureAdobeApp14Transform0(bytes: Uint8Array): Uint8Array {
     }
     const isHeaderMarker = (marker >= 0xe0 && marker <= 0xef) || marker === 0xfe;
     const isFrameMarker =
-      (marker >= MARKER_SOF_BASE && marker <= MARKER_SOF_MAX && marker !== MARKER_DHT && marker !== MARKER_JPG && marker !== MARKER_DAC) ||
+      (marker >= MARKER_SOF_BASE &&
+        marker <= MARKER_SOF_MAX &&
+        marker !== MARKER_DHT &&
+        marker !== MARKER_JPG &&
+        marker !== MARKER_DAC) ||
       marker === MARKER_SOS;
     if (!isHeaderMarker || isFrameMarker) break;
     const length = ((bytes[offset + 2] ?? 0) << 8) | (bytes[offset + 3] ?? 0);
@@ -220,7 +224,10 @@ export function ensureAdobeApp14Transform0(bytes: Uint8Array): Uint8Array {
  * @param quality - JPEG quality 0–1 (clamped)
  * @returns CMYK JPEG bytes
  */
-export async function encodeCmykJpeg(canvas: HTMLCanvasElement, quality = 0.92): Promise<Uint8Array> {
+export async function encodeCmykJpeg(
+  canvas: HTMLCanvasElement,
+  quality = 0.92
+): Promise<Uint8Array> {
   await initCmykEngine();
   const cmyk = await canvasToCmykBytes(canvas);
   return encodeCmykJpegBytes(
@@ -279,7 +286,10 @@ async function buildCmykPdf(canvases: HTMLCanvasElement[]): Promise<Uint8Array> 
     // (Copied into a plain Uint8Array — pdf-lib's instanceof check rejects
     // cross-realm typed arrays, e.g. from jsdom's TextEncoder in tests.)
     const content = `q ${width} 0 0 ${height} 0 0 cm /Im0 Do Q`;
-    const contentStream = pdf.context.flateStream(new Uint8Array(new TextEncoder().encode(content)), {});
+    const contentStream = pdf.context.flateStream(
+      new Uint8Array(new TextEncoder().encode(content)),
+      {}
+    );
     const contentRef = pdf.context.register(contentStream);
 
     const resources = pdf.context.obj({
@@ -324,6 +334,9 @@ export async function encodeCmykPdf(canvas: HTMLCanvasElement): Promise<Uint8Arr
  * @param back - Back-face canvas
  * @returns PDF file bytes (page 1 = front, page 2 = back)
  */
-export function encodeCmykPdfDoubleSided(front: HTMLCanvasElement, back: HTMLCanvasElement): Promise<Uint8Array> {
+export function encodeCmykPdfDoubleSided(
+  front: HTMLCanvasElement,
+  back: HTMLCanvasElement
+): Promise<Uint8Array> {
   return buildCmykPdf([front, back]);
 }

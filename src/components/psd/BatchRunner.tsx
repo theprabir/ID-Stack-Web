@@ -1,12 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Play, Pause, Square, Download, Loader2, Grid3x3, FileStack } from 'lucide-react';
 import type { PsdProject } from '@/types/psd';
-import type { ExcelData, PhotoMatchResult } from '@/types/data';
+import type { ExcelData, PhotoMatchResult, DataRow } from '@/types/data';
 import { usePsdStore } from '@/stores/psdStore';
 import { useDataStore } from '@/stores/dataStore';
 import { runBatch, type BatchOptions, type BatchState } from '@/services/batchService';
-import { DEFAULT_IMPOSITION_SETTINGS, type ImpositionSettings } from '@/services/impositionTypes';
-import { renderSheetPreview } from '@/services/impositionService';
+import {
+  DEFAULT_IMPOSITION_SETTINGS,
+  type ImpositionSettings,
+  computeSheetLayout,
+  deriveCardSizeFromDesign,
+} from '@/services/impositionTypes';
+import { renderJobPreview } from '@/services/impositionService';
+import { compositeDesign } from '@/services/psdCompositeService';
 import { ImpositionPanel } from './ImpositionPanel';
 import { Button, Input, Select, Label } from '@/components/ui';
 
@@ -47,7 +53,9 @@ export function BatchRunner({ project, excelData, photoMatches }: BatchRunnerPro
   // Keep the batch options in sync with the persisted imposition settings.
   useEffect(() => {
     setOptions((current) =>
-      current.imposition === impositionSettings ? current : { ...current, imposition: impositionSettings }
+      current.imposition === impositionSettings
+        ? current
+        : { ...current, imposition: impositionSettings }
     );
   }, [impositionSettings]);
   const [zipUrl, setZipUrl] = useState<string | null>(null);
@@ -55,56 +63,133 @@ export function BatchRunner({ project, excelData, photoMatches }: BatchRunnerPro
   const controlRef = useRef<'running' | 'paused' | 'cancelled' | 'done'>('done');
   const previewCanvasRef = useRef<HTMLDivElement | null>(null);
 
-  // Seed the imposition card size from the PSD design (once per project).
+  // Card size is ALWAYS auto-detected from the uploaded PSD design: its pixel
+  // dimensions convert to the active unit at 72 dpi. The card-direction
+  // selector only normalises which side is width vs height (portrait = tall,
+  // landscape = wide); the PSD's aspect is preserved either way. Any manual
+  // edit of the direction (or unit) re-derives from the design immediately.
   const designSize = project.front
     ? { width: project.front.width, height: project.front.height }
     : null;
+  const impositionUnit = options.imposition.unit;
+  const cardDirection = options.imposition.cardOrientation;
+  const lastDerivedRef = useRef<string | null>(null);
   useEffect(() => {
     if (!designSize) return;
-    setOptions((current) => {
-      const imposition = current.imposition;
-      // Only auto-seed while the user has not customised the card size away
-      // from the previous seed (compares against the previous design size).
-      if (
-        imposition.cardWidth === 0 ||
-        imposition.cardWidth === undefined ||
-        imposition.cardHeight === 0 ||
-        imposition.cardHeight === undefined
-      ) {
-        return {
-          ...current,
-          imposition: {
-            ...imposition,
-            cardWidth: Number((designSize.width / 72 * 25.4).toFixed(2)),
-            cardHeight: Number((designSize.height / 72 * 25.4).toFixed(2)),
-          },
-        };
-      }
-      return current;
-    });
-  }, [designSize]);
+    const signature = `${designSize.width}x${designSize.height}|${cardDirection}|${impositionUnit}`;
+    if (lastDerivedRef.current === signature) return; // already derived for this combo
+    lastDerivedRef.current = signature;
+    const { width, height } = deriveCardSizeFromDesign(
+      designSize.width,
+      designSize.height,
+      cardDirection,
+      impositionUnit
+    );
+    setOptions((current) => ({
+      ...current,
+      imposition: { ...current.imposition, cardWidth: width, cardHeight: height },
+    }));
+  }, [designSize, cardDirection, impositionUnit]);
 
-  // Live sheet preview (front cards) when sheet mode is active.
+  // --- Live imposed-sheet preview with REAL card images -------------------
   const previewContainer = previewCanvasRef.current;
+  const isPreviewActive = options.outputMode === 'sheets' && options.format === 'pdf';
+
+  // Render a handful of sample cards (first rows) for the preview.
+  const [sampleCanvases, setSampleCanvases] = useState<{
+    front: HTMLCanvasElement[];
+    back: HTMLCanvasElement[];
+  }>({ front: [], back: [] });
+  const [isRenderingPreview, setIsRenderingPreview] = useState(false);
+
+  const previewRows = useMemo<DataRow[]>(() => excelData.rows.slice(0, 8), [excelData.rows]);
+  const previewRowKey = useMemo(
+    () => previewRows.map((row) => row.rowIndex).join(','),
+    [previewRows]
+  );
+  const mappingsKey = useMemo(() => JSON.stringify(mappings), [mappings]);
+
   useEffect(() => {
-    if (options.outputMode !== 'sheets' || options.format !== 'pdf') return;
+    if (!isPreviewActive) return;
+    if (!project.front && !project.back) return;
+    if (previewRows.length === 0) return;
+    let cancelled = false;
+    setIsRenderingPreview(true);
+    const run = async (): Promise<void> => {
+      try {
+        const front: HTMLCanvasElement[] = [];
+        const back: HTMLCanvasElement[] = [];
+        for (const row of previewRows) {
+          const photo = photoMatches.assignments.get(row.rowIndex);
+          if (project.front) {
+            front.push(
+              await compositeDesign(project.front, {
+                placeholders: project.placeholders.filter((p) => p.side === 'front'),
+                mappings,
+                row,
+                getPhoto: () => photo,
+                scale: 0.35,
+              })
+            );
+          }
+          if (project.back) {
+            back.push(
+              await compositeDesign(project.back, {
+                placeholders: project.placeholders.filter((p) => p.side === 'back'),
+                mappings,
+                row,
+                getPhoto: () => photo,
+                scale: 0.35,
+              })
+            );
+          }
+        }
+        if (!cancelled) setSampleCanvases({ front, back });
+      } catch {
+        if (!cancelled) setSampleCanvases({ front: [], back: [] });
+      } finally {
+        if (!cancelled) setIsRenderingPreview(false);
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPreviewActive, project.front, project.back, previewRowKey, mappingsKey, photoMatches]);
+
+  // Paint the preview canvas whenever any setting or sample card changes.
+  useEffect(() => {
+    if (!isPreviewActive) return;
     if (!previewContainer) return;
-    const canvas = renderSheetPreview([], options.imposition, 520);
+    const canvas = renderJobPreview(
+      sampleCanvases.front,
+      sampleCanvases.back,
+      options.imposition,
+      620
+    );
     if (!canvas) return;
     canvas.style.maxWidth = '100%';
     canvas.style.height = 'auto';
     previewContainer.replaceChildren(canvas);
     return () => previewContainer.replaceChildren();
-  }, [options.outputMode, options.format, options.imposition, previewContainer]);
+  }, [isPreviewActive, options.imposition, sampleCanvases, previewContainer]);
 
-  const sheetInfo = useMemo(() => {
-    if (options.outputMode !== 'sheets' || options.format !== 'pdf') return null;
-    const rows = excelData.rows.length;
-    const perSheet = options.imposition.paper ? undefined : undefined;
-    void perSheet;
-    return rows;
-  }, [options.outputMode, options.format, excelData.rows.length, options.imposition]);
-  void sheetInfo;
+  // Summary of how many sheets the job will produce.
+  const sheetSummary = useMemo(() => {
+    if (!isPreviewActive) return null;
+    const layout = computeSheetLayout(options.imposition);
+    if (!layout) return null;
+    if (options.imposition.arrangement === 'interleaved') {
+      const frontRowsPerSheet = Math.max(1, Math.floor(layout.rows / 2));
+      const perSheet = frontRowsPerSheet * layout.columns;
+      const sheets = Math.ceil(excelData.rows.length / perSheet) || 0;
+      return `${layout.columns} × ${frontRowsPerSheet} pairs per sheet · ${sheets} sheet(s) (one PDF: sheet_Print.pdf)`;
+    }
+    const frontSheets = Math.ceil(excelData.rows.length / layout.perSheet) || 0;
+    const backSheets = project.back ? frontSheets : 0;
+    return `${layout.perSheet} cards per sheet · ${frontSheets} front + ${backSheets} back sheet(s)`;
+  }, [isPreviewActive, options.imposition, excelData.rows.length, project.back]);
 
   const setControl = useCallback(
     (value: 'running' | 'paused' | 'cancelled' | 'done') => {
@@ -291,12 +376,25 @@ export function BatchRunner({ project, excelData, photoMatches }: BatchRunnerPro
           />
           <div className="flex items-start gap-2">
             <FileStack className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-            <div>
+            <div className="min-w-0 flex-1">
               <p className="text-xs text-muted-foreground">
-                Preview (empty slots are dashed; blue = trim line). Each side exports
-                as its own sheet PDF: sheet_Front.pdf / sheet_Back.pdf.
+                Live preview with real cards — updates instantly as you change any setting. Empty
+                slots are dashed; blue = trim line.
               </p>
-              <div ref={previewCanvasRef} className="mt-1 rounded border bg-surface-card p-1" />
+              {sheetSummary && (
+                <p className="mt-0.5 text-xs font-medium text-foreground">{sheetSummary}</p>
+              )}
+              <div ref={previewCanvasRef} className="mt-1 rounded border bg-surface-card p-1">
+                {isRenderingPreview && (
+                  <p
+                    className="flex items-center gap-1.5 p-2 text-xs text-muted-foreground"
+                    role="status"
+                  >
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                    Rendering preview cards…
+                  </p>
+                )}
+              </div>
             </div>
           </div>
         </div>

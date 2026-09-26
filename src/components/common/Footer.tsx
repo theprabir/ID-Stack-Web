@@ -11,7 +11,10 @@ export function Footer(): JSX.Element {
     <footer className="flex h-8 items-center justify-between border-t bg-surface-panel px-4 text-xs text-muted-foreground transition-colors duration-300">
       <span className="hidden sm:inline">ID Card Designer</span>
       <span className="flex items-center gap-4">
-        <span className="hidden items-center gap-1 lg:flex" title="All processing happens in your browser">
+        <span
+          className="hidden items-center gap-1 lg:flex"
+          title="All processing happens in your browser"
+        >
           <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
           100% client-side
         </span>

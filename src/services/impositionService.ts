@@ -22,7 +22,7 @@ import {
   type PDFRef,
 } from 'pdf-lib';
 import type { ImpositionSettings, SheetLayout } from './impositionTypes';
-import { computeSheetLayout } from './impositionTypes';
+import { computeSheetLayout, arrangeSheets } from './impositionTypes';
 import { initCmykEngine, canvasToCmykBytes } from './cmykExportService';
 import cmykProfileUrl from '@/assets/profiles/default_cmyk.icc?url';
 
@@ -63,8 +63,6 @@ function escapePdfText(text: string): string {
   return text.replace(/([()\\])/g, '\\$1');
 }
 
-
-
 /** Points-per-unit factor for the given unit */
 function unitToPtFactor(unit: ImpositionSettings['unit']): number {
   if (unit === 'mm') return 72 / 25.4;
@@ -74,10 +72,39 @@ function unitToPtFactor(unit: ImpositionSettings['unit']): number {
 }
 
 /**
+ * Compute the contain-fit rectangle for an image inside a slot.
+ *
+ * The card image is NEVER stretched: it is scaled uniformly until it fits
+ * inside the slot (bleed box) and centred. When the design aspect matches
+ * the slot aspect the fit is exact; otherwise it is letterboxed, which keeps
+ * portrait designs undistorted inside landscape boxes and vice versa.
+ */
+function fitRect(
+  imageWidth: number,
+  imageHeight: number,
+  boxX: number,
+  boxY: number,
+  boxWidth: number,
+  boxHeight: number
+): { x: number; y: number; width: number; height: number } {
+  const scale = Math.min(boxWidth / imageWidth, boxHeight / imageHeight);
+  const width = imageWidth * scale;
+  const height = imageHeight * scale;
+  return {
+    x: boxX + (boxWidth - width) / 2,
+    y: boxY + (boxHeight - height) / 2,
+    width,
+    height,
+  };
+}
+
+/**
  * Build a multi-sheet imposed CMYK PDF.
  *
  * @param sheets - One array of card canvases per sheet (row-major slot order;
- *                 missing slots are left empty)
+ *                 missing/empty slots are `null` so each canvas stays at its
+ *                 true grid position). Use `arrangeSheets` to produce
+ *                 interleaved (front + back below) or separate lists.
  * @param settings - Full imposition settings (paper, bleed, gap, margin,
  *                   crop marks, numbering — all user-controlled)
  * @param firstSheetNumber - Sheet number shown on the first page
@@ -86,13 +113,16 @@ function unitToPtFactor(unit: ImpositionSettings['unit']): number {
  * @throws Error when the cards cannot fit the selected paper
  */
 export async function buildSheetsPdf(
-  sheets: HTMLCanvasElement[][],
+  sheets: Array<Array<HTMLCanvasElement | null>>,
   settings: ImpositionSettings,
   firstSheetNumber = 1,
   startCardNumber = 1
 ): Promise<Uint8Array> {
   const layout = computeSheetLayout(settings);
-  if (!layout) throw new Error('The cards do not fit on the selected paper size. Reduce the card size, bleed, gap or margin.');
+  if (!layout)
+    throw new Error(
+      'The cards do not fit on the selected paper size. Reduce the card size, bleed, gap or margin.'
+    );
 
   await initCmykEngine();
   const profileBytes = await getCmykProfileBytes();
@@ -128,7 +158,11 @@ export async function buildSheetsPdf(
     const imageRefs: Record<string, PDFRef> = {};
 
     // --- Card placements (one image XObject per occupied slot) ---
-    for (let slotIndex = 0; slotIndex < Math.min(canvases.length, layout.slots.length); slotIndex += 1) {
+    for (
+      let slotIndex = 0;
+      slotIndex < Math.min(canvases.length, layout.slots.length);
+      slotIndex += 1
+    ) {
       const slot = layout.slots[slotIndex];
       const canvas = canvases[slotIndex];
       if (!slot || !canvas) continue;
@@ -152,7 +186,13 @@ export async function buildSheetsPdf(
       const imageName = `Im${sheetIndex}_${slotIndex}`;
       imageRefs[imageName] = imageRef;
 
-      contentLines.push(`q ${cellWidth.toFixed(2)} 0 0 ${cellHeight.toFixed(2)} ${cellLeft.toFixed(2)} ${cellBottom.toFixed(2)} cm /${imageName} Do Q`);
+      // Contain-fit the card inside the bleed box — never stretch. When the
+      // card orientation matches the design aspect this is exact; otherwise
+      // the image is centred and letterboxed (undistorted).
+      const fit = fitRect(canvas.width, canvas.height, cellLeft, cellBottom, cellWidth, cellHeight);
+      contentLines.push(
+        `q ${fit.width.toFixed(2)} 0 0 ${fit.height.toFixed(2)} ${fit.x.toFixed(2)} ${fit.y.toFixed(2)} cm /${imageName} Do Q`
+      );
 
       // --- Per-slot card number ---
       if (cardNumEnabled) {
@@ -183,7 +223,9 @@ export async function buildSheetsPdf(
         const top = cellBottom + cellHeight;
         const bottom = cellBottom;
         const w = Math.max(0.25, markLengthPt * 0.07).toFixed(2);
-        contentLines.push(`${markRgb[0].toFixed(3)} ${markRgb[1].toFixed(3)} ${markRgb[2].toFixed(3)} RG ${w} w`);
+        contentLines.push(
+          `${markRgb[0].toFixed(3)} ${markRgb[1].toFixed(3)} ${markRgb[2].toFixed(3)} RG ${w} w`
+        );
         const marks: [number, number, number, number][] = [
           [left - markOffsetPt - markLengthPt, top, left - markOffsetPt, top],
           [left, top + markOffsetPt + markLengthPt, left, top + markOffsetPt],
@@ -195,7 +237,9 @@ export async function buildSheetsPdf(
           [right, bottom - markOffsetPt - markLengthPt, right, bottom - markOffsetPt],
         ];
         for (const [x1, y1, x2, y2] of marks) {
-          contentLines.push(`${x1.toFixed(2)} ${y1.toFixed(2)} m ${x2.toFixed(2)} ${y2.toFixed(2)} l S`);
+          contentLines.push(
+            `${x1.toFixed(2)} ${y1.toFixed(2)} m ${x2.toFixed(2)} ${y2.toFixed(2)} l S`
+          );
         }
       }
 
@@ -268,7 +312,7 @@ export async function buildSheetsPdf(
  * @returns PDF bytes
  */
 export async function buildSheetPdf(
-  cardCanvases: HTMLCanvasElement[],
+  cardCanvases: Array<HTMLCanvasElement | null>,
   settings: ImpositionSettings,
   sheetNumber = 1
 ): Promise<Uint8Array> {
@@ -280,12 +324,13 @@ export async function buildSheetPdf(
  * produced by `buildSheetsPdf`).
  *
  * @param sheet - Card canvases for this sheet in row-major slot order
+ *                (entries may be `null` for empty slots)
  * @param settings - Imposition settings
  * @param maxWidthPx - Preview pixel width (canvas is scaled to fit)
  * @returns Preview canvas, or null when the layout does not fit
  */
 export function renderSheetPreview(
-  sheet: HTMLCanvasElement[],
+  sheet: Array<HTMLCanvasElement | null>,
   settings: ImpositionSettings,
   maxWidthPx = 560
 ): HTMLCanvasElement | null {
@@ -320,7 +365,16 @@ export function renderSheetPreview(
     const cellHeight = (slot.height + 2 * layout.bleedPt) * scale;
 
     if (cardCanvas) {
-      context.drawImage(cardCanvas, cellLeft, cellTop, cellWidth, cellHeight);
+      // Contain-fit (same rule as the PDF): never stretch the card.
+      const fit = fitRect(
+        cardCanvas.width,
+        cardCanvas.height,
+        cellLeft,
+        cellTop,
+        cellWidth,
+        cellHeight
+      );
+      context.drawImage(cardCanvas, fit.x, fit.y, fit.width, fit.height);
       // Trim box outline (blue = cut line).
       context.strokeStyle = 'rgba(59, 130, 246, 0.55)';
       context.lineWidth = 1;
@@ -366,8 +420,18 @@ export function renderSheetPreview(
         [right, top - (markOffsetPt + markLengthPt) * scale, right, top - markOffsetPt * scale],
         [left - (markOffsetPt + markLengthPt) * scale, bottom, left - markOffsetPt * scale, bottom],
         [left, bottom + markOffsetPt * scale, left, bottom + (markOffsetPt + markLengthPt) * scale],
-        [right + markOffsetPt * scale, bottom, right + (markOffsetPt + markLengthPt) * scale, bottom],
-        [right, bottom + markOffsetPt * scale, right, bottom + (markOffsetPt + markLengthPt) * scale],
+        [
+          right + markOffsetPt * scale,
+          bottom,
+          right + (markOffsetPt + markLengthPt) * scale,
+          bottom,
+        ],
+        [
+          right,
+          bottom + markOffsetPt * scale,
+          right,
+          bottom + (markOffsetPt + markLengthPt) * scale,
+        ],
       ];
       for (const [x1, y1, x2, y2] of marks) {
         context.beginPath();
@@ -390,14 +454,38 @@ export function renderSheetPreview(
     if (position.endsWith('left')) x = inset;
     else if (position.endsWith('right')) x = canvas.width - inset - metrics.width;
     else x = (canvas.width - metrics.width) / 2;
-    const baseline = position.startsWith('top')
-      ? inset + fontSize
-      : canvas.height - inset;
+    const baseline = position.startsWith('top') ? inset + fontSize : canvas.height - inset;
     context.fillText(text, x, baseline);
   }
 
   return canvas;
 }
 
-export { computeSheetLayout };
+/**
+ * Render a live preview of the first sheet for a whole job.
+ *
+ * Takes the job's front/back canvases, arranges them per the current
+ * settings (`arrangeSheets` — interleaved fronts+backs or separate sheets)
+ * and renders the first resulting sheet with real card images.
+ *
+ * @param fronts - Front canvases (any count; missing slots stay empty)
+ * @param backs - Back canvases (same order as fronts; may be empty)
+ * @param settings - Imposition settings
+ * @param maxWidthPx - Preview pixel width
+ * @returns Preview canvas, or null when the layout does not fit
+ */
+export function renderJobPreview(
+  fronts: HTMLCanvasElement[],
+  backs: HTMLCanvasElement[],
+  settings: ImpositionSettings,
+  maxWidthPx = 560
+): HTMLCanvasElement | null {
+  const layout = computeSheetLayout(settings);
+  if (!layout) return null;
+  const sheets = arrangeSheets(fronts, backs, layout, settings.arrangement, settings.duplex);
+  if (sheets.length === 0) return null;
+  return renderSheetPreview(sheets[0]!, settings, maxWidthPx);
+}
+
+export { computeSheetLayout, arrangeSheets };
 export type { ImpositionSettings, SheetLayout };

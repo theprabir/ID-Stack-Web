@@ -72,7 +72,11 @@ export function FontManager(): JSX.Element {
       </div>
 
       <label className="flex cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed p-3 text-xs text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground">
-        {isImporting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Type className="h-4 w-4" aria-hidden="true" />}
+        {isImporting ? (
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+        ) : (
+          <Type className="h-4 w-4" aria-hidden="true" />
+        )}
         Upload font files (.ttf, .otf, .woff, .woff2)
         <input
           type="file"
@@ -93,7 +97,10 @@ export function FontManager(): JSX.Element {
       ) : families.length > 0 ? (
         <ul className="mt-2 space-y-1">
           {families.map((family) => (
-            <li key={family} className="flex items-center justify-between rounded border bg-surface-card px-2 py-1.5 text-xs">
+            <li
+              key={family}
+              className="flex items-center justify-between rounded border bg-surface-card px-2 py-1.5 text-xs"
+            >
               <span style={{ fontFamily: `"${family}"` }}>{family}</span>
               <Button
                 variant="ghost"

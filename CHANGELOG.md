@@ -3,6 +3,40 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.5.3] - 2026-09-26
+
+### Changed
+
+- **Interleaved front/back sheets (the big fix).** Imposed sheet output no
+  longer puts all fronts and all backs on separate sheets. By default each
+  front is placed with its own back **directly below it** on the same sheet
+  (row 1 = Front1 Front2 …, row 2 = Back1 Back2 …, row 3 = Front3 Front4 …)
+  — exactly like the reference layout. Output is one combined PDF
+  (`sheet_Print.pdf`), ideal for cutting stacks that keep each person's
+  front and back together.
+- **No more stretched/distorted cards.** Card images are now contain-fitted
+  into their slot: they scale uniformly and are centred, never squashed.
+  When the card box aspect differs from the design aspect the card is
+  letterboxed — portrait designs stay portrait inside landscape boxes and
+  vice versa.
+- **Live preview shows real cards.** The imposed-sheet preview now renders
+  actual sample cards (first rows with real data and photos) instead of
+  empty dashed boxes, and repaints instantly on every setting change
+  (paper, size, orientation, arrangement, marks, numbering). A summary line
+  shows pairs/cards per sheet and how many sheets the job will produce.
+
+### Added
+
+- **Card direction control** in the imposition panel: portrait or landscape
+  card orientation, independent of the page orientation (page landscape/
+  portrait already existed). The layout grid re-computes for the chosen
+  direction; images remain undistorted via contain-fit.
+- **Arrangement control**: "Back below its front (one PDF)" (interleaved,
+  default) or "Fronts & backs on separate sheets" (previous behaviour; with
+  duplex pairing the backs are mirrored per row for long-edge duplex).
+- New tests: interleaved pairing, multi-sheet pairing, separate mode,
+  orientation layout maths and contain-fit geometry (8 tests).
+
 ## [0.5.2] - 2026-09-26
 
 ### Changed

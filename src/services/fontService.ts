@@ -9,7 +9,12 @@
  * - PSD font names (PostScript names like "ArialMT") are matched against
  *   loaded families so the composite service can request the right family.
  */
-import { saveFontRecord, deleteFontRecord, listFontRecords, type FontRecord } from './storageService';
+import {
+  saveFontRecord,
+  deleteFontRecord,
+  listFontRecords,
+  type FontRecord,
+} from './storageService';
 import arimoRegularUrl from '@/assets/fonts/arimo-regular.ttf?url';
 import arimoBoldUrl from '@/assets/fonts/arimo-bold.ttf?url';
 import arimoItalicUrl from '@/assets/fonts/arimo-italic.ttf?url';
@@ -86,7 +91,10 @@ export function normaliseFontName(name: string): string {
 export function baseFamilyKeyOf(name: string): string {
   return normaliseFontName(
     name
-      .replace(/-(Bold|Italic|Oblique|Regular|Light|Medium|Heavy|Black|Thin|Condensed|Extended).*$/i, '')
+      .replace(
+        /-(Bold|Italic|Oblique|Regular|Light|Medium|Heavy|Black|Thin|Condensed|Extended).*$/i,
+        ''
+      )
       .replace(/(Bold|Italic|Oblique|Regular|Light|Medium|Heavy|Black|Thin)$/i, '')
       .replace(/MT$/i, '')
   );

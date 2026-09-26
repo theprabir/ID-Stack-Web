@@ -98,8 +98,8 @@ Use [GitHub Issues](https://github.com/theprabir/ID-Stack-Web/issues) to report 
 
 ## 📊 Project Status
 **Current Phase:** 6 (Imposition Engine) — COMPLETE
-**Patch:** 0.5.2 (PSD Studio redesigned into a 3-step wizard; Data tab merged into it)
-**Status:** v0.5.2 — guided 3-step PSD Studio (Upload Designs & Data → Choose Placeholders → Generate) with back/next navigation and no data loss on navigation; v0.5.0–0.5.1 imposition (custom paper/units, bleed, gap, margin, crop marks, positioned numbering, duplex back pairing, per-slot card numbering, persisted imposition settings); one 2-page PDF per person, bundled Arial-compatible font, faithful placeholder text rendering
+**Patch:** 0.5.3 (interleaved front/back sheets, distortion-free contain-fit, card direction control, live real-card sheet preview)
+**Status:** v0.5.3 — guided 3-step PSD Studio (Upload Designs & Data → Choose Placeholders → Generate); imposed sheets with each back directly below its front (or separate duplex sheets), undistorted contain-fitted cards, portrait/landscape card + page direction, live preview with real cards; v0.5.0–0.5.1 imposition options (custom paper/units, bleed, gap, margin, crop marks, positioned numbering, per-slot card numbering, persisted settings); one 2-page PDF per person, bundled Arial-compatible font, faithful placeholder text rendering
 
 ### Completed
 - **Phases 4 & 5 — PSD-First Pipeline (the core workflow):**

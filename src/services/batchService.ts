@@ -12,7 +12,7 @@ import { compositeDesign } from './psdCompositeService';
 import { encodeCmykJpeg, encodeCmykPdf, encodeCmykPdfDoubleSided } from './cmykExportService';
 import { buildSheetsPdf } from './impositionService';
 import type { ImpositionSettings } from './impositionTypes';
-import { computeSheetLayout, pairBacksForDuplex } from './impositionTypes';
+import { computeSheetLayout, arrangeSheets } from './impositionTypes';
 import { buildName } from './batchNaming';
 
 /** Output settings for a batch run */
@@ -122,7 +122,10 @@ export async function runBatch(
   const isSheetMode = options.outputMode === 'sheets' && options.format === 'pdf';
   const sheetLayout = isSheetMode ? computeSheetLayout(options.imposition) : null;
   if (isSheetMode && !sheetLayout) {
-    errors.push({ rowIndex: -1, message: 'The cards do not fit on the selected paper size. Adjust the imposition settings.' });
+    errors.push({
+      rowIndex: -1,
+      message: 'The cards do not fit on the selected paper size. Adjust the imposition settings.',
+    });
     callbacks.onProgress({ control: 'done', current: 0, total, etaSeconds: 0, errors });
     callbacks.onComplete(null);
     return;
@@ -210,28 +213,38 @@ export async function runBatch(
     return;
   }
 
-  // Sheet mode: assemble imposed sheets per side into one PDF each.
+  // Sheet mode: arrange cards on sheets and export as PDF(s).
+  // - interleaved (default): fronts row 1, matching backs directly below in
+  //   row 2, … — one combined PDF (sheet_Print.pdf) for cutting.
+  // - separate: all fronts on front sheets, all backs on back sheets
+  //   (mirrored per row when duplex pairing is on) — sheet_Front.pdf /
+  //   sheet_Back.pdf for long-edge duplex printing.
   if (isSheetMode && sheetLayout) {
-    const perSheet = sheetLayout.perSheet;
-    for (const { side } of designs) {
-      let cards = sheetCanvases[side];
-      // Duplex pairing: mirror back-sheet columns per row so long-edge duplex
-      // printing lands each back exactly behind its front.
-      if (side === 'back' && options.imposition.duplex) {
-        cards = pairBacksForDuplex(cards, perSheet, sheetLayout.columns);
-      }
-      const sheets: HTMLCanvasElement[][] = [];
-      for (let index = 0; index < cards.length; index += perSheet) {
-        sheets.push(cards.slice(index, index + perSheet));
-      }
-      if (sheets.length === 0) continue;
+    const fronts = sheetCanvases.front;
+    const backs = sheetCanvases.back;
+    const sheets = arrangeSheets(
+      fronts,
+      backs,
+      sheetLayout,
+      options.imposition.arrangement,
+      options.imposition.duplex
+    );
+    if (sheets.length > 0) {
       try {
         const bytes = await buildSheetsPdf(sheets, options.imposition, 1);
-        zip.file(`sheet_${side === 'front' ? 'Front' : 'Back'}.${extension}`, bytes);
+        const fileName =
+          options.imposition.arrangement === 'interleaved'
+            ? 'sheet_Print.pdf'
+            : fronts.length > 0 && backs.length > 0
+              ? 'sheet_Front_Back.pdf'
+              : fronts.length > 0
+                ? 'sheet_Front.pdf'
+                : 'sheet_Back.pdf';
+        zip.file(fileName, bytes);
       } catch (error) {
         errors.push({
           rowIndex: -1,
-          message: `${side} sheet assembly failed: ${error instanceof Error ? error.message : 'unknown error'}`,
+          message: `Sheet assembly failed: ${error instanceof Error ? error.message : 'unknown error'}`,
         });
       }
     }

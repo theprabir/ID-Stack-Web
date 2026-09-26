@@ -1,5 +1,9 @@
 import type { ImpositionSettings, LengthUnit, NumberPosition } from '@/services/impositionTypes';
-import { DEFAULT_IMPOSITION_SETTINGS, PAPER_PRESETS, computeSheetLayout } from '@/services/impositionTypes';
+import {
+  DEFAULT_IMPOSITION_SETTINGS,
+  PAPER_PRESETS,
+  computeSheetLayout,
+} from '@/services/impositionTypes';
 import { Input, Select, Label, Checkbox } from '@/components/ui';
 
 interface ImpositionPanelProps {
@@ -50,7 +54,11 @@ function NumberField({
  * or custom + unit, bleed, gap, margin, crop marks, numbering position/size/
  * colour) is user-controlled. Shows the computed cards-per-sheet live.
  */
-export function ImpositionPanel({ settings, onChange, disabled }: ImpositionPanelProps): JSX.Element {
+export function ImpositionPanel({
+  settings,
+  onChange,
+  disabled,
+}: ImpositionPanelProps): JSX.Element {
   const patch = (partial: Partial<ImpositionSettings>): void =>
     onChange({ ...settings, ...partial });
 
@@ -154,6 +162,42 @@ export function ImpositionPanel({ settings, onChange, disabled }: ImpositionPane
           step={0.1}
           onChange={(value) => patch({ cardHeight: value })}
         />
+        <div>
+          <Label htmlFor="imp-card-orient" className="mb-1 block text-xs text-muted-foreground">
+            Card direction (size auto-set from PSD)
+          </Label>
+          <Select
+            id="imp-card-orient"
+            value={settings.cardOrientation}
+            disabled={disabled}
+            onChange={(event) =>
+              patch({
+                cardOrientation: event.target.value as ImpositionSettings['cardOrientation'],
+              })
+            }
+            className="h-9 text-xs"
+          >
+            <option value="portrait">Portrait (tall)</option>
+            <option value="landscape">Landscape (wide)</option>
+          </Select>
+        </div>
+        <div>
+          <Label htmlFor="imp-arrangement" className="mb-1 block text-xs text-muted-foreground">
+            Arrangement
+          </Label>
+          <Select
+            id="imp-arrangement"
+            value={settings.arrangement}
+            disabled={disabled}
+            onChange={(event) =>
+              patch({ arrangement: event.target.value as ImpositionSettings['arrangement'] })
+            }
+            className="h-9 text-xs"
+          >
+            <option value="interleaved">Back below its front (one PDF)</option>
+            <option value="separate">Fronts &amp; backs on separate sheets</option>
+          </Select>
+        </div>
         <NumberField
           id="imp-bleed"
           label={`Bleed (${unit})`}
@@ -347,7 +391,10 @@ export function ImpositionPanel({ settings, onChange, disabled }: ImpositionPane
               }
             />
             <div>
-              <Label htmlFor="imp-cardnum-color" className="mb-1 block text-xs text-muted-foreground">
+              <Label
+                htmlFor="imp-cardnum-color"
+                className="mb-1 block text-xs text-muted-foreground"
+              >
                 Colour
               </Label>
               <Input
@@ -372,7 +419,10 @@ export function ImpositionPanel({ settings, onChange, disabled }: ImpositionPane
               }
             />
             <div>
-              <Label htmlFor="imp-cardnum-prefix" className="mb-1 block text-xs text-muted-foreground">
+              <Label
+                htmlFor="imp-cardnum-prefix"
+                className="mb-1 block text-xs text-muted-foreground"
+              >
                 Prefix
               </Label>
               <Input
@@ -411,7 +461,7 @@ export function ImpositionPanel({ settings, onChange, disabled }: ImpositionPane
           onChange={(event) => patch({ duplex: event.target.checked })}
         />
         <Label htmlFor="imp-duplex" className="ml-1.5 text-xs">
-          Duplex pairing (mirror backs for long-edge duplex printing)
+          Duplex pairing (mirrors backs; applies to the separate-sheets layout)
         </Label>
       </div>
 
