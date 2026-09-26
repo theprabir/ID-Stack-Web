@@ -3,6 +3,44 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6.3] - 2026-09-26
+
+### Changed
+
+- **Redesigned Settings page.** The page previously showed three sparse
+  cards with plain controls. It now uses a cohesive, sectioned layout:
+  labelled section cards with icon badges (Appearance / Editor / Privacy &
+  data), aligned label-left/control-right setting rows with descriptions,
+  a visual **theme picker with mini UI-preview tiles** (a tiny mock of the
+  dark/light interface, selected state ringed with a check), and a privacy
+  summary grid (no server · local storage · no account). Fully responsive
+  from narrow panes to desktop; verified in-browser in both themes.
+
+### Fixed
+
+### Fixed
+
+- **Placeholder text size is now SELF-CALIBRATED against Photoshop's own
+  pixels — the definitive fix.** The v0.6.1 fix converted engine-data font
+  sizes points→pixels using the document DPI (a theoretical unit contract),
+  but real-world PSDs proved that contract unreliable: engine data written
+  by different Photoshop versions/localisations reports sizes in units that
+  don't match the rendered pixels, so substituted text could still render
+  several times too small or too large next to the raster labels.
+  The fix removes the guesswork entirely: at parse time the app measures
+  the INK HEIGHT of each text layer's original rasterized pixels (the exact
+  pixels Photoshop drew for that layer — the ground truth), measures how
+  tall the same text renders at a reference size in the resolved font, and
+  derives the font size from the ratio. The substituted placeholder text
+  therefore matches the design's original text size by construction, no
+  matter what unit conventions the engine data uses. Guards: multi-line
+  paragraphs and pixel-less layers keep the engine-data size; a sanity band
+  rejects pathological calibrations; per-font reference measurements are
+  cached so parsing stays fast.
+- Tests: end-to-end calibration tests via forged layer rasters (correct
+  calibration, engine fallback without pixels, empty-raster fallback,
+  sanity-band behaviour) — 4 new (158 total).
+
 ## [0.6.2] - 2026-09-26
 
 ### Fixed

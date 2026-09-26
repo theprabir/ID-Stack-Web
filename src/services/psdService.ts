@@ -73,7 +73,7 @@ function unitsValueToPx(value: unknown, dpi: number): number {
       case 'Inches':
         return raw * dpi;
       case 'Picas':
-        return (raw * 12 / 72) * dpi;
+        return ((raw * 12) / 72) * dpi;
       default: // 'Pixels' (and anything unknown) — already design pixels
         return raw;
     }
@@ -93,7 +93,10 @@ function unitsValueToPx(value: unknown, dpi: number): number {
  * @param dpi - Document resolution in pixels per inch (default 72)
  * @returns Normalised effects object, or undefined when nothing is enabled
  */
-export function extractLayerEffects(effects?: LayerEffectsInfo, dpi = 72): PsdLayerEffects | undefined {
+export function extractLayerEffects(
+  effects?: LayerEffectsInfo,
+  dpi = 72
+): PsdLayerEffects | undefined {
   if (!effects || effects.disabled === true) return undefined;
 
   const out: PsdLayerEffects = {};
@@ -222,6 +225,157 @@ function pointsToDesignPx(points: number, dpi: number): number {
 }
 
 /**
+ * Measure the INK HEIGHT of a layer's rasterized pixels: how far the
+ * topmost opaque row extends down to the bottommost opaque row, in layer
+ * pixels. This is the GROUND TRUTH for how tall the layer's rendered
+ * content is in the design — Photoshop itself drew these pixels.
+ *
+ * Used to self-calibrate placeholder text size: whatever the engine data's
+ * unit quirks, the re-rendered text must visually match the raster the PSD
+ * shows for the same layer.
+ *
+ * @param layer - ag-psd layer with canvas or imageData pixels
+ * @returns Ink height in pixels, or null when the layer has no pixels,
+ *          is empty (fully transparent), or is absurdly tall (multi-line
+ *          blocks whose ink height is not a single line height).
+ */
+function measureInkHeight(layer: Layer): number | null {
+  const canvas = layer.canvas;
+  if (!canvas || canvas.width === 0 || canvas.height === 0) return null;
+  // Never sample huge rasters — a multi-line paragraph's ink height spans
+  // several lines and would over-estimate the font size. Cap at 4× the
+  // width as a cheap multi-line/paragraph heuristic (single lines are wide
+  // relative to height; paragraphs are not).
+  if (canvas.height > canvas.width * 4) return null;
+  try {
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    if (!context) return null;
+    const { data, width } = context.getImageData(0, 0, canvas.width, canvas.height);
+    let top = -1;
+    let bottom = -1;
+    for (let y = 0; y < canvas.height && top === -1; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        if (data[(y * width + x) * 4 + 3]! > 8) {
+          top = y;
+          break;
+        }
+      }
+    }
+    if (top === -1) return null; // fully transparent
+    for (let y = canvas.height - 1; y >= 0 && bottom === -1; y -= 1) {
+      for (let x = 0; x < width; x += 1) {
+        if (data[(y * width + x) * 4 + 3]! > 8) {
+          bottom = y;
+          break;
+        }
+      }
+    }
+    const inkHeight = bottom - top + 1;
+    // Guard against degenerate values (a 1-2 px sliver is not a font).
+    return inkHeight >= 4 ? inkHeight : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Estimate the single-line ink height of a text string at 100 px font size
+ * in a given font: the distance from the topmost to the bottommost opaque
+ * pixel when drawn on a canvas. Measured ONCE PER FONT (cached) so the
+ * calibration loop stays cheap even for designs with many text layers.
+ *
+ * The ratio inkHeight/fontSize is the calibration constant that converts a
+ * measured raster ink height back into the font size Photoshop used.
+ *
+ * @param fontCss - Full canvas font string at 100 px size
+ * @returns Ink height in px at 100 px font size (≈ 70–100 for most fonts)
+ */
+function measureFontInkHeight100(fontCss: string): number {
+  const cached = fontInkCache.get(fontCss);
+  if (cached !== undefined) return cached;
+  const canvas = document.createElement('canvas');
+  canvas.width = 600;
+  canvas.height = 200;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  if (!context) return 75; // sane default (most fonts ≈ 0.72–0.78 em ink)
+  context.font = fontCss;
+  context.textBaseline = 'alphabetic';
+  context.fillStyle = '#000';
+  context.fillText('Hxpg', 10, 150); // includes ascender (H) + descender (p,g)
+  const { data, width } = context.getImageData(0, 0, canvas.width, canvas.height);
+  let top = -1;
+  let bottom = -1;
+  for (let y = 0; y < canvas.height && top === -1; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if (data[(y * width + x) * 4 + 3]! > 8) {
+        top = y;
+        break;
+      }
+    }
+  }
+  for (let y = canvas.height - 1; y >= 0 && bottom === -1; y -= 1) {
+    for (let x = 0; x < width; x += 1) {
+      if (data[(y * width + x) * 4 + 3]! > 8) {
+        bottom = y;
+        break;
+      }
+    }
+  }
+  const inkHeight = top === -1 || bottom === -1 ? 75 : bottom - top + 1;
+  fontInkCache.set(fontCss, inkHeight);
+  return inkHeight;
+}
+
+/** Per-font ink-height cache (key: canvas font string at 100 px) */
+const fontInkCache = new Map<string, number>();
+
+/**
+ * Self-calibrate a text layer's font size against Photoshop's own raster:
+ *
+ * 1. Measure the ink height of the layer's ORIGINAL rasterized pixels
+ *    (Photoshop's ground truth for how tall this text renders).
+ * 2. Measure how tall the same text renders at a reference 100 px in the
+ *    resolved font (via canvas).
+ * 3. fontPx = rasterInkHeight × (100 / referenceInkHeight100).
+ *
+ * This makes the substituted text's visual size INDEPENDENT of the engine
+ * data's unit conventions (points vs pixels vs scaled transforms): the
+ * raster IS what Photoshop displays, so matching it cannot be wrong.
+ * Only single-line text calibrates (multi-line ink spans several lines and
+ * would over-estimate); everything else keeps the engine-data size.
+ *
+ * @param layer - ag-psd layer (text + raster pixels)
+ * @param engineFontSizePx - Engine-data-derived font size in design px
+ * @param fontCssFamily - Resolved CSS font family for measurement
+ * @param bold - Faux bold flag (affects ink weight/height slightly)
+ * @param italic - Faux italic flag
+ * @returns Calibrated font size in design pixels, or the engine value when
+ *          calibration is impossible (no pixels, multi-line, degenerate)
+ */
+function calibrateFontSizeFromRaster(
+  layer: Layer,
+  engineFontSizePx: number | undefined,
+  fontCssFamily: string,
+  bold: boolean,
+  italic: boolean
+): number | undefined {
+  const rasterInk = measureInkHeight(layer);
+  if (rasterInk === null) return engineFontSizePx;
+  const referenceFont = `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}100px ${fontCssFamily}`;
+  const referenceInk100 = measureFontInkHeight100(referenceFont);
+  if (referenceInk100 <= 10) return engineFontSizePx; // measurement failed
+  const calibrated = (rasterInk * 100) / referenceInk100;
+  // Sanity guard: calibrated must be within a wide band of the engine value
+  // (units quirks produce 1×, 4.17×, 0.24×, … but never 50×). Outside the
+  // band the calibration itself is untrustworthy — keep the engine value.
+  if (engineFontSizePx !== undefined && engineFontSizePx > 0) {
+    const ratio = calibrated / engineFontSizePx;
+    if (ratio < 0.2 || ratio > 6) return engineFontSizePx;
+  }
+  return calibrated;
+}
+
+/**
  * Extract faithful text info from a text layer.
  *
  * UNIT CONTRACT: the Photoshop text engine stores fontSize/leading in
@@ -231,22 +385,40 @@ function pointsToDesignPx(points: number, dpi: number): number {
  * on a 300-DPI doc becomes 50 px, matching the raster scale of every other
  * layer. Getting this wrong renders placeholder text ~DPI/72× too small.
  */
-function extractText(text: LayerTextData, dpi: number): PsdLayerInfo['text'] {
+function extractText(text: LayerTextData, dpi: number, layer: Layer): PsdLayerInfo['text'] {
   const firstStyle = text.styleRuns?.[0]?.style ?? text.style;
   const fontName = firstStyle?.font?.name ?? undefined;
   const color = agColorToCss(firstStyle?.fillColor);
   const justification = text.paragraphStyle?.justification ?? 'left';
 
-  const fontSizePt = firstStyle?.fontSize !== undefined ? unitsValueToPx(firstStyle.fontSize, dpi) : undefined;
-  const leadingPt = firstStyle?.leading !== undefined ? unitsValueToPx(firstStyle.leading, dpi) : undefined;
+  const fontSizePt =
+    firstStyle?.fontSize !== undefined ? unitsValueToPx(firstStyle.fontSize, dpi) : undefined;
+  const leadingPt =
+    firstStyle?.leading !== undefined ? unitsValueToPx(firstStyle.leading, dpi) : undefined;
+
+  const bold = firstStyle?.fauxBold === true || /bold|black|heavy/i.test(fontName ?? '');
+  const italic = firstStyle?.fauxItalic === true || /italic|oblique/i.test(fontName ?? '');
+  const engineFontSizePx = fontSizePt !== undefined ? pointsToDesignPx(fontSizePt, dpi) : undefined;
+  // SELF-CALIBRATION: Photoshop's own rasterized pixels of this layer are
+  // the ground truth for how big the text should render. Engine-data unit
+  // conventions vary (points/pixels/transforms) and have repeatedly produced
+  // wrong sizes; matching the raster cannot be wrong. Falls back to the
+  // engine value when the layer has no usable pixels.
+  const fontSize = calibrateFontSizeFromRaster(
+    layer,
+    engineFontSizePx,
+    fontName ?? 'sans-serif',
+    bold,
+    italic
+  );
 
   return {
     content: text.text,
-    fontSize: fontSizePt !== undefined ? pointsToDesignPx(fontSizePt, dpi) : undefined,
+    fontSize,
     fontFamily: fontName,
     color: color || undefined,
-    bold: firstStyle?.fauxBold === true || /bold|black|heavy/i.test(fontName ?? ''),
-    italic: firstStyle?.fauxItalic === true || /italic|oblique/i.test(fontName ?? ''),
+    bold,
+    italic,
     underline: firstStyle?.underline === true,
     tracking: firstStyle?.tracking,
     leading: leadingPt !== undefined ? pointsToDesignPx(leadingPt, dpi) : undefined,
@@ -294,7 +466,7 @@ function flattenLayers(
       childCount: layer.children?.length ?? 0,
     };
     if (layer.text !== undefined) {
-      info.text = extractText(layer.text, dpi);
+      info.text = extractText(layer.text, dpi, layer);
     }
     // Effects + masks travel with the layer so placeholders re-render with
     // the exact Photoshop styling (stroke/shadow/glow/overlay/mask clip).
@@ -358,6 +530,19 @@ async function loadImageElement(url: string): Promise<HTMLImageElement> {
 export { loadImageElement };
 
 /**
+ * Test hook: exposes the module-private extractText (with raster
+ * self-calibration) so regression tests can verify the font-size maths
+ * without forging a full PSD file. Not part of the app's public API.
+ */
+export function extractTextForTest(
+  text: LayerTextData,
+  dpi: number,
+  layer: Layer
+): ReturnType<typeof extractText> {
+  return extractText(text, dpi, layer);
+}
+
+/**
  * Parse a .psd file into a design descriptor.
  *
  * @param file - The .psd file
@@ -394,8 +579,7 @@ export async function parsePsdFile(file: File, side: SideType): Promise<PsdDesig
     (psd.imageResources?.resolutionInfo?.horizontalResolution as number | undefined) ?? 72;
   // PPCM → PPI when the file declares centimetre units.
   const resolutionUnit = psd.imageResources?.resolutionInfo?.horizontalResolutionUnit;
-  const resolutionPpi =
-    resolutionUnit === 'PPCM' ? rawResolution * 2.54 : rawResolution;
+  const resolutionPpi = resolutionUnit === 'PPCM' ? rawResolution * 2.54 : rawResolution;
   const horizontalResolution =
     Number.isFinite(resolutionPpi) && resolutionPpi >= 36 && resolutionPpi <= 2400
       ? resolutionPpi
