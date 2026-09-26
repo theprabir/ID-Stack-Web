@@ -129,17 +129,6 @@ export async function canvasToCmykBytes(canvas: HTMLCanvasElement): Promise<Uint
   return result.value;
 }
 
-/** Flip a buffer's rows bottom-to-top (PDF images index rows from the bottom) */
-function flipRowsVertically(bytes: Uint8Array, width: number, height: number, components: number): Uint8Array {
-  const rowLength = width * components;
-  const out = new Uint8Array(bytes.length);
-  for (let y = 0; y < height; y += 1) {
-    const sourceRow = (height - 1 - y) * rowLength;
-    out.set(bytes.subarray(sourceRow, sourceRow + rowLength), y * rowLength);
-  }
-  return out;
-}
-
 /** JPEG segment markers used by the APP14 patcher */
 const MARKER_SOF_BASE = 0xc0;
 const MARKER_SOF_MAX = 0xcf;
@@ -256,9 +245,9 @@ export async function encodeCmykJpeg(canvas: HTMLCanvasElement, quality = 0.92):
 export async function encodeCmykPdf(canvas: HTMLCanvasElement): Promise<Uint8Array> {
   await initCmykEngine();
 
+  // Canvas and PDF image data are both top-row-first — no row reordering.
   const cmyk = await canvasToCmykBytes(canvas);
   const { width, height } = canvas;
-  const flipped = flipRowsVertically(cmyk, width, height, 4);
   const profileBytes = await getCmykProfileBytes();
 
   const pdf = await PDFDocument.create();
@@ -275,7 +264,7 @@ export async function encodeCmykPdf(canvas: HTMLCanvasElement): Promise<Uint8Arr
   const iccBased = pdf.context.obj([PDFName.of('ICCBased'), profileRef]);
 
   // CMYK image XObject, full canvas size, Flate-compressed raw samples.
-  const imageStream = pdf.context.flateStream(flipped, {
+  const imageStream = pdf.context.flateStream(cmyk, {
     Type: 'XObject',
     Subtype: 'Image',
     Width: PDFNumber.of(width),
@@ -286,8 +275,10 @@ export async function encodeCmykPdf(canvas: HTMLCanvasElement): Promise<Uint8Arr
   const imageRef = pdf.context.register(imageStream);
 
   // Page content draws the image full-bleed; resources reference it.
+  // (Copied into a plain Uint8Array — pdf-lib's instanceof check rejects
+  // cross-realm typed arrays, e.g. from jsdom's TextEncoder in tests.)
   const content = `q ${width} 0 0 ${height} 0 0 cm /Im0 Do Q`;
-  const contentStream = pdf.context.flateStream(new TextEncoder().encode(content), {});
+  const contentStream = pdf.context.flateStream(new Uint8Array(new TextEncoder().encode(content)), {});
   const contentRef = pdf.context.register(contentStream);
 
   const resources = pdf.context.obj({

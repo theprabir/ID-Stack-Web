@@ -47,6 +47,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   edge-clamped non-multiple-of-8 sizes), APP14 patcher, font name matching
   (13 new; 100 total)
 
+### Fixed
+- **Vertical flip in PDF export.** The PDF writer mirrored rows bottom-to-top
+  on the wrong assumption — PDF image data (like canvas ImageData) is stored
+  top-row-first, so the exported card appeared upside-down in Acrobat while
+  the JPEG was correct. Row reordering removed; a regression test with an
+  asymmetric red/blue mock canvas asserts the first stored row is the canvas
+  top (test count: 101)
+
 ### Changed
 - `BatchOptions.format` is now `'jpg' | 'pdf'`; BatchRunner shows
   "JPG (CMYK)" / "PDF (CMYK)" with JPG as default
