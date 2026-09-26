@@ -7,41 +7,40 @@
  * Dark theme is the default (html.dark). The dark palette follows Design.md:
  *   deepest #0F0F0F, panels #1A1A1A, cards/inputs #252525,
  *   text #FFFFFF / #A0A0A0 / #666666, accent #3B82F6, borders #333333, canvas #1E1E1E
- * Light palette:
- *   deepest #FFFFFF, panels #F5F5F5, cards/inputs #EBEBEB,
- *   text #111111 / #555555 / #999999, accent #2563EB, borders #D4D4D4, canvas #FAFAFA
+ * Light palette (modern cool-neutral): soft slate-tinted surfaces instead of
+ * flat grey, indigo-leaning accent, layered elevation (page → panel → card).
  */
 @layer base {
   :root {
-    /* Light theme (default root values) */
-    --background: 0 0% 100%;
-    --foreground: 0 0% 7%;
+    /* Light theme — slate-tinted neutrals, indigo accent */
+    --background: 220 14% 96%;
+    --foreground: 224 20% 12%;
 
-    --card: 0 0% 92%;
-    --card-foreground: 0 0% 7%;
+    --card: 0 0% 100%;
+    --card-foreground: 224 20% 12%;
     --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 7%;
+    --popover-foreground: 224 20% 12%;
 
-    --primary: 221 83% 42%; /* #2563EB */
+    --primary: 234 76% 55%; /* indigo #6366F1 */
     --primary-foreground: 0 0% 100%;
-    --secondary: 0 0% 93%;
-    --secondary-foreground: 0 0% 33%;
-    --muted: 0 0% 93%;
-    --muted-foreground: 0 0% 60%; /* #999999 */
-    --accent: 221 83% 42%; /* #2563EB */
+    --secondary: 220 14% 94%;
+    --secondary-foreground: 224 16% 32%;
+    --muted: 220 14% 94%;
+    --muted-foreground: 222 10% 46%;
+    --accent: 234 76% 55%; /* indigo */
     --accent-foreground: 0 0% 100%;
-    --destructive: 0 84% 60%;
+    --destructive: 0 74% 55%;
     --destructive-foreground: 0 0% 100%;
-    --border: 0 0% 83%; /* #D4D4D4 */
-    --input: 0 0% 92%;
-    --ring: 221 83% 42%;
+    --border: 220 13% 88%;
+    --input: 220 13% 88%;
+    --ring: 234 76% 55%;
 
-    --surface-deepest: 0 0% 100%; /* #FFFFFF */
-    --surface-panel: 0 0% 96%; /* #F5F5F5 */
-    --surface-card: 0 0% 92%; /* #EBEBEB */
-    --surface-canvas: 0 0% 98%; /* #FAFAFA */
+    --surface-deepest: 220 20% 98%; /* app background */
+    --surface-panel: 0 0% 100%; /* sidebars / cards on page */
+    --surface-card: 220 16% 97%; /* inset wells, inputs */
+    --surface-canvas: 220 16% 96%; /* canvas area */
 
-    --radius: 0.5rem;
+    --radius: 0.625rem;
   }
 
   .dark {
@@ -61,7 +60,7 @@
     --muted-foreground: 0 0% 63%; /* #A0A0A0 */
     --accent: 217 91% 60%; /* #3B82F6 */
     --accent-foreground: 0 0% 100%;
-    --destructive: 0 72% 51%;
+    --destructive: 0 74% 58%;
     --destructive-foreground: 0 0% 100%;
     --border: 0 0% 20%; /* #333333 */
     --input: 0 0% 15%;
@@ -71,6 +70,8 @@
     --surface-panel: 0 0% 10%; /* #1A1A1A */
     --surface-card: 0 0% 15%; /* #252525 */
     --surface-canvas: 0 0% 12%; /* #1E1E1E */
+
+    --radius: 0.625rem;
   }
 
   * {

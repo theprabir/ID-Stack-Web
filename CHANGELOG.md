@@ -7,6 +7,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Modernised the light theme.** Replaced the flat, grey-dominant palette
+  (pure white/grey cards, #2563EB accent) with a slate-tinted neutral scale
+  (soft indigo-grey page background, pure-white elevated cards and panels,
+  layered surface hierarchy) and an indigo accent (#6366F1). Slightly larger
+  base radius (0.625 rem) for a softer, contemporary feel. Dark theme is
+  unchanged.
+- **Redesigned the About page** to match the Settings page style: sectioned
+  cards with icon badges (ID Stack / Credits / Other projects), contact
+  link rows with icon tiles (GitHub, email prabirishere@gmail.com, Instagram
+  @theprabir), and a dedicated **Lipika** project card (lipika.co.in — the
+  author's Unicode ↔ Akruti/Sreelipi Odia converter) with description,
+  feature tags and a Visit button.
+- **Design-language consistency pass across pages.** PSD Studio and Library
+  now use the same page-header pattern as Settings/About (2xl title + muted
+  subtitle, consistent padding), and the Library empty state got a proper
+  framed icon tile and helpful copy.
+
+### Fixed
+
+### Changed
+
 - **Redesigned Settings page.** The page previously showed three sparse
   cards with plain controls. It now uses a cohesive, sectioned layout:
   labelled section cards with icon badges (Appearance / Editor / Privacy &

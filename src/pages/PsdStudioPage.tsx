@@ -91,9 +91,14 @@ export function PsdStudioPage(): JSX.Element {
     : null;
 
   return (
-    <div className="themed-scrollbar h-full overflow-auto p-4">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-lg font-semibold">PSD Studio</h1>
+    <div className="themed-scrollbar h-full overflow-auto p-6 sm:p-8">
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold">PSD Studio</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Design, map and generate ID cards from layered Photoshop files.
+          </p>
+        </div>
         <StudioStepper
           steps={STEPS}
           currentStep={step}
