@@ -9,7 +9,10 @@ import JSZip from 'jszip';
 import type { PsdProject, PsdDesign, SideType } from '@/types/psd';
 import type { ExcelData, PhotoMatchResult, PhotoRecord } from '@/types/data';
 import { compositeDesign } from './psdCompositeService';
-import { encodeCmykJpeg, encodeCmykPdf } from './cmykExportService';
+import { encodeCmykJpeg, encodeCmykPdf, encodeCmykPdfDoubleSided } from './cmykExportService';
+import { buildSheetsPdf } from './impositionService';
+import type { ImpositionSettings } from './impositionTypes';
+import { computeSheetLayout } from './impositionTypes';
 import { buildName } from './batchNaming';
 
 /** Output settings for a batch run */
@@ -22,6 +25,13 @@ export interface BatchOptions {
   naming: string;
   /** Export both faces (front/back suffixes) or front only */
   sides: 'both' | 'front' | 'back';
+  /**
+   * Output layout (v0.5.0): 'cards' = one file per card/person,
+   * 'sheets' = imposed multi-card sheets (PDF only).
+   */
+  outputMode: 'cards' | 'sheets';
+  /** Imposition settings (sheets mode only) */
+  imposition: ImpositionSettings;
 }
 
 export type BatchControl = 'running' | 'paused' | 'cancelled' | 'done';
@@ -109,6 +119,17 @@ export async function runBatch(
   }
 
   const extension = options.format === 'pdf' ? 'pdf' : 'jpg';
+  const isSheetMode = options.outputMode === 'sheets' && options.format === 'pdf';
+  const sheetLayout = isSheetMode ? computeSheetLayout(options.imposition) : null;
+  if (isSheetMode && !sheetLayout) {
+    errors.push({ rowIndex: -1, message: 'The cards do not fit on the selected paper size. Adjust the imposition settings.' });
+    callbacks.onProgress({ control: 'done', current: 0, total, etaSeconds: 0, errors });
+    callbacks.onComplete(null);
+    return;
+  }
+
+  // Rendered cards accumulate here in sheet mode (front and back kept apart).
+  const sheetCanvases: Record<SideType, HTMLCanvasElement[]> = { front: [], back: [] };
 
   let current = 0;
   for (const row of data.rows) {
@@ -121,21 +142,45 @@ export async function runBatch(
 
     try {
       const photo: PhotoRecord | undefined = photoMatches.assignments.get(row.rowIndex);
+      const base = buildName(options.naming, row);
+
+      // Render every requested side for this row.
+      const rendered: Partial<Record<SideType, HTMLCanvasElement>> = {};
       for (const { side, design } of designs) {
-        const canvas = await compositeDesign(design, {
+        rendered[side] = await compositeDesign(design, {
           placeholders: project.placeholders.filter((placeholder) => placeholder.side === side),
           mappings,
           row,
           getPhoto: () => photo,
         });
-        const base = buildName(options.naming, row);
-        const sideSuffix = designs.length > 1 ? `_${side === 'front' ? 'Front' : 'Back'}` : '';
-        if (options.format === 'pdf') {
-          const bytes = await encodeCmykPdf(canvas);
-          zip.file(`${base}${sideSuffix}.${extension}`, bytes);
-        } else {
-          const bytes = await encodeCmykJpeg(canvas, options.quality);
-          zip.file(`${base}${sideSuffix}.${extension}`, bytes);
+      }
+
+      if (isSheetMode) {
+        // Accumulate for imposition at the end.
+        for (const { side } of designs) {
+          const canvas = rendered[side];
+          if (canvas) sheetCanvases[side].push(canvas);
+        }
+      } else if (options.format === 'pdf' && designs.length === 2) {
+        // Double-sided PDF: one file per person, front = page 1, back = page 2.
+        const bytes = await encodeCmykPdfDoubleSided(
+          rendered.front as HTMLCanvasElement,
+          rendered.back as HTMLCanvasElement
+        );
+        zip.file(`${base}.${extension}`, bytes);
+      } else {
+        for (const { side, design } of designs) {
+          void design;
+          const canvas = rendered[side];
+          if (!canvas) continue;
+          const sideSuffix = designs.length > 1 ? `_${side === 'front' ? 'Front' : 'Back'}` : '';
+          if (options.format === 'pdf') {
+            const bytes = await encodeCmykPdf(canvas);
+            zip.file(`${base}${sideSuffix}.${extension}`, bytes);
+          } else {
+            const bytes = await encodeCmykJpeg(canvas, options.quality);
+            zip.file(`${base}${sideSuffix}.${extension}`, bytes);
+          }
         }
       }
     } catch (error) {
@@ -163,6 +208,28 @@ export async function runBatch(
     callbacks.onProgress({ control: 'cancelled', current, total, etaSeconds: 0, errors });
     callbacks.onComplete(null);
     return;
+  }
+
+  // Sheet mode: assemble imposed sheets per side into one PDF each.
+  if (isSheetMode && sheetLayout) {
+    const perSheet = sheetLayout.perSheet;
+    for (const { side } of designs) {
+      const cards = sheetCanvases[side];
+      const sheets: HTMLCanvasElement[][] = [];
+      for (let index = 0; index < cards.length; index += perSheet) {
+        sheets.push(cards.slice(index, index + perSheet));
+      }
+      if (sheets.length === 0) continue;
+      try {
+        const bytes = await buildSheetsPdf(sheets, options.imposition, 1);
+        zip.file(`sheet_${side === 'front' ? 'Front' : 'Back'}.${extension}`, bytes);
+      } catch (error) {
+        errors.push({
+          rowIndex: -1,
+          message: `${side} sheet assembly failed: ${error instanceof Error ? error.message : 'unknown error'}`,
+        });
+      }
+    }
   }
 
   const zipBlob = await zip.generateAsync({ type: 'blob' });

@@ -10,8 +10,11 @@
 - Batch photo import with auto-matching
 - Batch generation of hundreds of ID cards in seconds
 - **CMYK export:** ICC-corrected CMYK JPEG (Adobe APP14 transform=0) and direct CMYK PDF (embedded ICC profile + GTS_PDFX OutputIntent)
+- **Imposition engine:** N cards per sheet on A4/A3/Letter/Legal/Tabloid or custom paper (mm/cm/in/pt), user-set bleed, gap, margin, crop marks and positioned numbering; live sheet preview
+- **One PDF per person:** double-sided cards export as a single 2-page PDF (front + back)
 - PSD file import (Photoshop designs)
 - Custom font upload (.ttf/.otf/.woff/.woff2) — loaded in-browser, persisted offline, auto-matched to PSD text layers
+- Bundled Arial-compatible font (Arimo) so PSD text renders identically with zero setup
 - Pre-designed template library
 - Print-ready PDF export with imposition (multiple cards per sheet)
 - Same-sheet duplex layout (fronts row 1, backs row 2)
@@ -94,8 +97,8 @@ Contributions welcome! Please read the guidelines before submitting PRs to [thep
 Use [GitHub Issues](https://github.com/theprabir/ID-Stack-Web/issues) to report bugs or request features.
 
 ## 📊 Project Status
-**Current Phase:** 4 & 5 (PSD Pipeline + Batch Generation) — COMPLETE
-**Status:** v0.4.2 — CMYK everywhere: true 4-component CMYK JPEG + direct CMYK PDF export (ICC-based, print-shop ready), blank-output fix, in-browser custom font loading
+**Current Phase:** 6 (Imposition Engine) — COMPLETE
+**Status:** v0.5.0 — Imposed multi-card sheets (custom paper/units, bleed, gap, margin, crop marks, positioned numbering), one 2-page PDF per person, bundled Arial-compatible font, faithful placeholder text rendering
 
 ### Completed
 - **Phases 4 & 5 — PSD-First Pipeline (the core workflow):**

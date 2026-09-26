@@ -76,7 +76,19 @@ function wrapLines(context: CanvasRenderingContext2D, text: string, maxWidth: nu
   return lines.length > 0 ? lines : [''];
 }
 
-/** Draw one text layer with its extracted PSD style */
+/**
+ * Draw one text layer with its extracted PSD style.
+ *
+ * Faithfulness notes:
+ * - Baseline is "alphabetic"; the first baseline sits at the layer's top plus
+ *   the font's ascent (matching how Photoshop positions type in a box).
+ * - Leading is baseline-to-baseline, so line N's baseline = first baseline
+ *   + N × leading (Photoshop semantics), not a top-anchored line stack.
+ * - Vertical centring uses the real ascent/descent metrics, not a flat
+ *   lineHeight multiple.
+ * - Tracking (Photoshop = 1/100 em) is added between characters, and the
+ *   justification width includes it so centred/right text aligns exactly.
+ */
 function drawTextLayer(
   context: CanvasRenderingContext2D,
   layer: PsdLayerInfo,
@@ -87,14 +99,14 @@ function drawTextLayer(
   if (!text) return;
 
   const fontSize = (text.fontSize ?? 18) * scale;
-  // Prefer a user-loaded font matched to the PSD font name; falls back to
-  // the PSD name (browser-installed) or generic sans-serif.
+  // Prefer a user-loaded (or bundled) font matched to the PSD font name;
+  // falls back to the PSD name (browser-installed) or generic sans-serif.
   const family = resolveFontFamily(text.fontFamily);
   const weight = text.bold ? 'bold' : 'normal';
   const style = text.italic ? 'italic' : 'normal';
   context.font = `${style} ${weight} ${fontSize}px ${family}`;
   context.fillStyle = text.color || '#000000';
-  context.textBaseline = 'top';
+  context.textBaseline = 'alphabetic';
 
   const tracking = (text.tracking ?? 0) * fontSize * 0.01; // Photoshop tracking = 1/100 em
 
@@ -104,17 +116,32 @@ function drawTextLayer(
   const boxTop = bounds.top * scale;
   const boxHeight = (bounds.bottom - bounds.top) * scale;
 
+  const metrics = context.measureText('Mg');
+  const ascent = (metrics.fontBoundingBoxAscent ?? metrics.actualBoundingBoxAscent ?? fontSize * 0.8);
+  const descent = (metrics.fontBoundingBoxDescent ?? metrics.actualBoundingBoxDescent ?? fontSize * 0.2);
+
   const lines = wrapLines(context, content, boxWidth);
-  const leading = text.leading ?? fontSize * 1.2;
-  const lineHeight = leading * scale;
-  const startY = boxTop + Math.max(0, (boxHeight - lines.length * lineHeight) / 2);
+  // Leading is baseline-to-baseline (Photoshop). "Auto" leading in Photoshop
+  // is ~1.2 × font size; ag-psd reports the absolute value when authored.
+  const leading = (text.leading && text.leading > 0 ? text.leading : fontSize * 1.2) * scale;
+
+  // First baseline: top of box + ascent; vertically centre the text block
+  // using true ascent/descent so the visual middle matches the PSD.
+  const blockHeight = ascent + descent + (lines.length - 1) * leading;
+  let firstBaseline = boxTop + ascent;
+  if (lines.length * leading > boxHeight) {
+    // Text overflows the box: keep top-anchored (Photoshop box behaviour).
+    firstBaseline = boxTop + ascent;
+  } else {
+    firstBaseline = boxTop + Math.max(0, (boxHeight - blockHeight) / 2) + ascent;
+  }
 
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index] ?? '';
     if (line.length === 0) continue;
     const lineWidth = context.measureText(line).width + tracking * Math.max(0, line.length - 1);
     let x = boxLeft;
-    const y = startY + index * lineHeight;
+    const y = firstBaseline + index * leading;
     const justification = text.justification ?? 'left';
     if (justification === 'center' || justification.startsWith('justify')) {
       x = boxLeft + (boxWidth - lineWidth) / 2;
@@ -131,6 +158,12 @@ function drawTextLayer(
         context.fillText(character, cursor, y);
         cursor += context.measureText(character).width + tracking;
       }
+    }
+
+    // Underline: a thin bar just below the baseline (approx. Photoshop's).
+    if (text.underline) {
+      const underlineThickness = Math.max(1, fontSize * 0.05);
+      context.fillRect(x, y + underlineThickness, lineWidth, underlineThickness);
     }
   }
 }

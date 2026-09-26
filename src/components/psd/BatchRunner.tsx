@@ -1,10 +1,13 @@
-import { useCallback, useRef, useState } from 'react';
-import { Play, Pause, Square, Download, Loader2 } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Play, Pause, Square, Download, Loader2, Grid3x3, FileStack } from 'lucide-react';
 import type { PsdProject } from '@/types/psd';
 import type { ExcelData, PhotoMatchResult } from '@/types/data';
 import { usePsdStore } from '@/stores/psdStore';
 import { useDataStore } from '@/stores/dataStore';
 import { runBatch, type BatchOptions, type BatchState } from '@/services/batchService';
+import { DEFAULT_IMPOSITION_SETTINGS, type ImpositionSettings } from '@/services/impositionTypes';
+import { renderSheetPreview } from '@/services/impositionService';
+import { ImpositionPanel } from './ImpositionPanel';
 import { Button, Input, Select, Label } from '@/components/ui';
 
 interface BatchRunnerProps {
@@ -29,10 +32,64 @@ export function BatchRunner({ project, excelData, photoMatches }: BatchRunnerPro
     quality: 0.92,
     naming: '{Name}_{Row}',
     sides: 'both',
+    outputMode: 'cards',
+    imposition: DEFAULT_IMPOSITION_SETTINGS,
   });
   const [zipUrl, setZipUrl] = useState<string | null>(null);
   const [isZipping, setIsZipping] = useState(false);
   const controlRef = useRef<'running' | 'paused' | 'cancelled' | 'done'>('done');
+  const previewCanvasRef = useRef<HTMLDivElement | null>(null);
+
+  // Seed the imposition card size from the PSD design (once per project).
+  const designSize = project.front
+    ? { width: project.front.width, height: project.front.height }
+    : null;
+  useEffect(() => {
+    if (!designSize) return;
+    setOptions((current) => {
+      const imposition = current.imposition;
+      // Only auto-seed while the user has not customised the card size away
+      // from the previous seed (compares against the previous design size).
+      if (
+        imposition.cardWidth === 0 ||
+        imposition.cardWidth === undefined ||
+        imposition.cardHeight === 0 ||
+        imposition.cardHeight === undefined
+      ) {
+        return {
+          ...current,
+          imposition: {
+            ...imposition,
+            cardWidth: Number((designSize.width / 72 * 25.4).toFixed(2)),
+            cardHeight: Number((designSize.height / 72 * 25.4).toFixed(2)),
+          },
+        };
+      }
+      return current;
+    });
+  }, [designSize]);
+
+  // Live sheet preview (front cards) when sheet mode is active.
+  const previewContainer = previewCanvasRef.current;
+  useEffect(() => {
+    if (options.outputMode !== 'sheets' || options.format !== 'pdf') return;
+    if (!previewContainer) return;
+    const canvas = renderSheetPreview([], options.imposition, 520);
+    if (!canvas) return;
+    canvas.style.maxWidth = '100%';
+    canvas.style.height = 'auto';
+    previewContainer.replaceChildren(canvas);
+    return () => previewContainer.replaceChildren();
+  }, [options.outputMode, options.format, options.imposition, previewContainer]);
+
+  const sheetInfo = useMemo(() => {
+    if (options.outputMode !== 'sheets' || options.format !== 'pdf') return null;
+    const rows = excelData.rows.length;
+    const perSheet = options.imposition.paper ? undefined : undefined;
+    void perSheet;
+    return rows;
+  }, [options.outputMode, options.format, excelData.rows.length, options.imposition]);
+  void sheetInfo;
 
   const setControl = useCallback(
     (value: 'running' | 'paused' | 'cancelled' | 'done') => {
@@ -141,6 +198,28 @@ export function BatchRunner({ project, excelData, photoMatches }: BatchRunnerPro
             placeholder="{Name}_{Row}"
           />
         </div>
+        <div>
+          <Label htmlFor="batch-output-mode" className="mb-1 block text-xs text-muted-foreground">
+            Output layout
+          </Label>
+          <Select
+            id="batch-output-mode"
+            value={options.outputMode}
+            disabled={isRunning || options.format !== 'pdf'}
+            onChange={(event) =>
+              setOptions((current) => ({
+                ...current,
+                outputMode: event.target.value as 'cards' | 'sheets',
+              }))
+            }
+            className="h-10 text-xs"
+          >
+            <option value="cards">Cards (one file each)</option>
+            <option value="sheets" disabled={options.format !== 'pdf'}>
+              Sheets (imposed, PDF only)
+            </option>
+          </Select>
+        </div>
         <div className="flex items-end">
           {isRunning ? (
             <div className="flex w-full gap-1">
@@ -182,6 +261,33 @@ export function BatchRunner({ project, excelData, photoMatches }: BatchRunnerPro
           )}
         </div>
       </div>
+
+      {/* Imposition settings + live preview (sheets mode) */}
+      {options.outputMode === 'sheets' && options.format === 'pdf' && (
+        <div className="mb-3 space-y-2">
+          <div className="flex items-center gap-2">
+            <Grid3x3 className="h-4 w-4 text-primary" aria-hidden="true" />
+            <h3 className="text-xs font-semibold">Sheet layout — everything is adjustable</h3>
+          </div>
+          <ImpositionPanel
+            settings={options.imposition}
+            disabled={isRunning}
+            onChange={(imposition: ImpositionSettings) =>
+              setOptions((current) => ({ ...current, imposition }))
+            }
+          />
+          <div className="flex items-start gap-2">
+            <FileStack className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <div>
+              <p className="text-xs text-muted-foreground">
+                Preview (empty slots are dashed; blue = trim line). Each side exports
+                as its own sheet PDF: sheet_Front.pdf / sheet_Back.pdf.
+              </p>
+              <div ref={previewCanvasRef} className="mt-1 rounded border bg-surface-card p-1" />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Progress */}
       {batchState && (

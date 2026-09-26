@@ -232,30 +232,24 @@ export async function encodeCmykJpeg(canvas: HTMLCanvasElement, quality = 0.92):
 }
 
 /**
- * Export a canvas as a direct CMYK PDF.
+ * Build a CMYK PDF from one or more canvases: each canvas becomes one page
+ * exactly the size of the canvas (in points), drawn as a full-bleed CMYK
+ * image XObject (FlateDecode, ICCBased colour space holding the bundled
+ * profile) with a GTS_PDFX OutputIntent. Print shops receive a genuine CMYK
+ * document — no RGB round-trip, no Photoshop step.
  *
- * Layout: one page exactly the size of the canvas (in points), a full-bleed
- * CMYK image XObject (FlateDecode, DeviceCMYK with an ICCBased colour space
- * holding the bundled profile), and a GTS_PDFX OutputIntent. Print shops
- * receive a genuine CMYK document — no RGB round-trip, no Photoshop step.
- *
- * @param canvas - Source canvas (RGB content)
+ * @param canvases - Source canvases (one per page, in page order)
  * @returns PDF file bytes
  */
-export async function encodeCmykPdf(canvas: HTMLCanvasElement): Promise<Uint8Array> {
+async function buildCmykPdf(canvases: HTMLCanvasElement[]): Promise<Uint8Array> {
   await initCmykEngine();
 
-  // Canvas and PDF image data are both top-row-first — no row reordering.
-  const cmyk = await canvasToCmykBytes(canvas);
-  const { width, height } = canvas;
   const profileBytes = await getCmykProfileBytes();
-
   const pdf = await PDFDocument.create();
   pdf.setProducer(PDF_PRODUCER);
   pdf.setCreator('ID Stack');
-  const page = pdf.addPage([width, height]);
 
-  // ICCBased colour space [/ICCBased <ref to profile stream with N=4>]
+  // Shared ICCBased colour space [/ICCBased <ref to profile stream with N=4>]
   const profileStream = PDFRawStream.of(
     pdf.context.obj({ N: PDFNumber.of(4), Length: PDFNumber.of(profileBytes.length) }),
     profileBytes
@@ -263,31 +257,39 @@ export async function encodeCmykPdf(canvas: HTMLCanvasElement): Promise<Uint8Arr
   const profileRef = pdf.context.register(profileStream);
   const iccBased = pdf.context.obj([PDFName.of('ICCBased'), profileRef]);
 
-  // CMYK image XObject, full canvas size, Flate-compressed raw samples.
-  const imageStream = pdf.context.flateStream(cmyk, {
-    Type: 'XObject',
-    Subtype: 'Image',
-    Width: PDFNumber.of(width),
-    Height: PDFNumber.of(height),
-    ColorSpace: iccBased,
-    BitsPerComponent: PDFNumber.of(8),
-  });
-  const imageRef = pdf.context.register(imageStream);
+  for (const canvas of canvases) {
+    // Canvas and PDF image data are both top-row-first — no row reordering.
+    const cmyk = await canvasToCmykBytes(canvas);
+    const { width, height } = canvas;
 
-  // Page content draws the image full-bleed; resources reference it.
-  // (Copied into a plain Uint8Array — pdf-lib's instanceof check rejects
-  // cross-realm typed arrays, e.g. from jsdom's TextEncoder in tests.)
-  const content = `q ${width} 0 0 ${height} 0 0 cm /Im0 Do Q`;
-  const contentStream = pdf.context.flateStream(new Uint8Array(new TextEncoder().encode(content)), {});
-  const contentRef = pdf.context.register(contentStream);
+    const page = pdf.addPage([width, height]);
 
-  const resources = pdf.context.obj({
-    XObject: pdf.context.obj({ Im0: imageRef }),
-  });
-  const resourcesRef = pdf.context.register(resources);
+    // CMYK image XObject, full canvas size, Flate-compressed raw samples.
+    const imageStream = pdf.context.flateStream(cmyk, {
+      Type: 'XObject',
+      Subtype: 'Image',
+      Width: PDFNumber.of(width),
+      Height: PDFNumber.of(height),
+      ColorSpace: iccBased,
+      BitsPerComponent: PDFNumber.of(8),
+    });
+    const imageRef = pdf.context.register(imageStream);
 
-  page.node.set(PDFName.of('Resources'), resourcesRef);
-  page.node.set(PDFName.of('Contents'), contentRef);
+    // Page content draws the image full-bleed; resources reference it.
+    // (Copied into a plain Uint8Array — pdf-lib's instanceof check rejects
+    // cross-realm typed arrays, e.g. from jsdom's TextEncoder in tests.)
+    const content = `q ${width} 0 0 ${height} 0 0 cm /Im0 Do Q`;
+    const contentStream = pdf.context.flateStream(new Uint8Array(new TextEncoder().encode(content)), {});
+    const contentRef = pdf.context.register(contentStream);
+
+    const resources = pdf.context.obj({
+      XObject: pdf.context.obj({ Im0: imageRef }),
+    });
+    const resourcesRef = pdf.context.register(resources);
+
+    page.node.set(PDFName.of('Resources'), resourcesRef);
+    page.node.set(PDFName.of('Contents'), contentRef);
+  }
 
   // GTS_PDFX OutputIntent so print workflows recognise the CMYK target.
   const outputIntent = pdf.context.obj({
@@ -302,4 +304,26 @@ export async function encodeCmykPdf(canvas: HTMLCanvasElement): Promise<Uint8Arr
   pdf.catalog.set(PDFName.of('OutputIntents'), pdf.context.obj([outputIntentRef]));
 
   return pdf.save({ useObjectStreams: false });
+}
+
+/**
+ * Export a canvas as a direct CMYK PDF.
+ *
+ * @param canvas - Source canvas (RGB content)
+ * @returns PDF file bytes
+ */
+export async function encodeCmykPdf(canvas: HTMLCanvasElement): Promise<Uint8Array> {
+  return buildCmykPdf([canvas]);
+}
+
+/**
+ * Export two canvases as a single two-page CMYK PDF (front + back of one
+ * person's card) so each data row produces exactly one print-ready file.
+ *
+ * @param front - Front-face canvas
+ * @param back - Back-face canvas
+ * @returns PDF file bytes (page 1 = front, page 2 = back)
+ */
+export function encodeCmykPdfDoubleSided(front: HTMLCanvasElement, back: HTMLCanvasElement): Promise<Uint8Array> {
+  return buildCmykPdf([front, back]);
 }

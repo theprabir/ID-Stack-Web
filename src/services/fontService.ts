@@ -10,9 +10,37 @@
  *   loaded families so the composite service can request the right family.
  */
 import { saveFontRecord, deleteFontRecord, listFontRecords, type FontRecord } from './storageService';
+import arimoRegularUrl from '@/assets/fonts/arimo-regular.ttf?url';
+import arimoBoldUrl from '@/assets/fonts/arimo-bold.ttf?url';
+import arimoItalicUrl from '@/assets/fonts/arimo-italic.ttf?url';
+import arimoBoldItalicUrl from '@/assets/fonts/arimo-bolditalic.ttf?url';
 
 /** Supported font file extensions */
 const FONT_EXTENSIONS = ['.ttf', '.otf', '.woff', '.woff2'];
+
+/**
+ * Bundled Arial-metric-compatible font (Arimo, SIL OFL 1.1). Registered under
+ * the real family names PSD files reference so `ArialMT`/`Arial` text renders
+ * identically without any user upload.
+ */
+const BUNDLED_FACES: { family: string; url: string; weight: string; style: string }[] = [
+  { family: 'Arimo', url: arimoRegularUrl, weight: '400', style: 'normal' },
+  { family: 'Arimo', url: arimoBoldUrl, weight: '700', style: 'normal' },
+  { family: 'Arimo', url: arimoItalicUrl, weight: '400', style: 'italic' },
+  { family: 'Arimo', url: arimoBoldItalicUrl, weight: '700', style: 'italic' },
+  { family: 'Arial', url: arimoRegularUrl, weight: '400', style: 'normal' },
+  { family: 'Arial', url: arimoBoldUrl, weight: '700', style: 'normal' },
+  { family: 'Arial', url: arimoItalicUrl, weight: '400', style: 'italic' },
+  { family: 'Arial', url: arimoBoldItalicUrl, weight: '700', style: 'italic' },
+  { family: 'ArialMT', url: arimoRegularUrl, weight: '400', style: 'normal' },
+  { family: 'ArialMT', url: arimoBoldUrl, weight: '700', style: 'normal' },
+  { family: 'Arial-BoldMT', url: arimoBoldUrl, weight: '700', style: 'normal' },
+  { family: 'Arial-ItalicMT', url: arimoItalicUrl, weight: '400', style: 'italic' },
+  { family: 'Arial-BoldItalicMT', url: arimoBoldItalicUrl, weight: '700', style: 'italic' },
+];
+
+/** True once the bundled fonts have been fetched and registered */
+let bundledFontsLoaded = false;
 
 /** A font available to the app (loaded into the document) */
 export interface LoadedFont {
@@ -151,20 +179,50 @@ export function listLoadedFontFamilies(): string[] {
 }
 
 /**
- * Restore all persisted fonts from IndexedDB into the document.
- * Call once at app start (before previews render).
+ * Restore all persisted fonts from IndexedDB into the document and register
+ * the bundled Arial-compatible faces. Call once at app start (before any
+ * previews render).
  */
 export async function restoreFontsFromStorage(): Promise<string[]> {
   let records: FontRecord[] = [];
   try {
     records = await listFontRecords();
   } catch {
-    return [];
+    records = [];
   }
   for (const record of records) {
     registerFontFace(record.name, record.buffer);
   }
+  await ensureBundledFonts();
   return records.map((record) => record.name);
+}
+
+/**
+ * Register the bundled Arimo faces (once per session). They are also aliased
+ * under the `Arial`/`ArialMT` family names PSD files use, so text renders
+ * with matching metrics even when the user never uploads a font.
+ */
+export async function ensureBundledFonts(): Promise<void> {
+  if (bundledFontsLoaded) return;
+  bundledFontsLoaded = true;
+  for (const face of BUNDLED_FACES) {
+    try {
+      const response = await fetch(face.url);
+      if (!response.ok) continue;
+      const buffer = await response.arrayBuffer();
+      const fontFace = new FontFace(face.family, buffer, {
+        weight: face.weight,
+        style: face.style,
+      });
+      await fontFace.load();
+      document.fonts.add(fontFace);
+      loadedFamilies.set(face.family, fontFace);
+    } catch {
+      // Bundled font failed (e.g. offline before precache) — the browser
+      // falls back to its installed Arial; no user action needed.
+    }
+  }
+  notify();
 }
 
 /**

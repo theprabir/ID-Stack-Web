@@ -3,6 +3,53 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.5.0] - 2026-09-26
+
+### Phase 6 — Imposition Engine
+
+### Added
+- **Imposed sheet PDFs.** New "Sheets" output mode in the batch runner:
+  rendered cards are arranged on a physical paper size (A4/A3/Letter/Legal/
+  Tabloid or fully custom, portrait/landscape) as an N-per-sheet grid, with
+  each side exported as its own multi-page CMYK PDF (sheet_Front.pdf /
+  sheet_Back.pdf) carrying the ICCBased colour space and GTS_PDFX
+  OutputIntent
+- **Everything user-controlled** (`ImpositionPanel`):
+  - Paper preset or custom width/height, with mm / cm / inch / pt units
+  - Card trim size, bleed (all sides), gap between cards, sheet margin
+  - Crop marks on/off, mark length, mark offset from trim, mark colour
+  - Numbering: per-sheet / continuous / none, six positions (corners/centres
+    top & bottom), font size, colour, and optional prefix ("Sheet 1")
+  - Live cards-per-sheet readout with fit warnings, and a scale preview that
+    mirrors the PDF exactly (dashed empty slots, blue trim lines, crop marks,
+    number position)
+- **One PDF per person.** Double-sided PDF export now produces a single
+  two-page file per data row (page 1 = front, page 2 = back) instead of two
+  separate files — 3 persons → 3 two-page PDFs
+- **Imposition services**: `impositionTypes` (units, presets, layout math —
+  centred grid, uniform pitches, slot list) and `impositionService`
+  (`buildSheetsPdf` with one content stream + shared Resources per page,
+  crop-mark path operators, Helvetica sheet numbers; `renderSheetPreview`)
+- **Bundled Arial-compatible font** (Arimo, SIL OFL 1.1, ~500 KB per face):
+  registered at startup under `Arimo`, `Arial`, `ArialMT`, `Arial-BoldMT` etc.
+  so PSD text renders with correct metrics without any user upload; user
+  fonts still take precedence when uploaded
+- **Footer rework**: compact "ID Card Designer" tagline (hidden on mobile),
+  "100% client-side" badge (hidden below desktop width), "Created by Prabir
+  kumar Das" credit with a GitHub profile link — always visible
+- Tests: unit conversion, paper resolution, grid fitting/centring/row-major
+  order, fit failure, sheet PDF structure (page count, MediaBox, image count,
+  numbering text, crop-mark operators) (11 new; 111 total)
+
+### Fixed
+- **Placeholder text styling now matches the PSD preview**: alphabetic
+  baseline with real font ascent/descent metrics, Photoshop leading
+  (baseline-to-baseline) semantics, vertical centring from true metrics,
+  justification width includes tracking, and underlines are drawn as bars
+  under the baseline
+- pdf-lib content-stream encoding hardened against cross-realm typed arrays
+  (jsdom `TextEncoder`)
+
 ## [0.4.2] - 2026-09-26
 
 ### Fixed
