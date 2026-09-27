@@ -559,9 +559,9 @@ describe('placeholder text is never clipped (v0.6.4)', () => {
     expect(box.right - box.left).toBeGreaterThanOrEqual(76);
   });
 
-  it('a substituted value in a narrow box NEVER wraps — v0.6.5 compresses it to one line', async () => {
+  it('a single-line placeholder never wraps — hybrid fitting compresses it to one line', async () => {
     // THE "Charmaine Patel" BUG: the value exceeded its box, wrapped onto a
-    // second line and bled down over the layer beneath. v0.6.5 forces
+    // second line and bled down over the layer beneath. the calculated single-line capacity forces
     // single-line layout for substituted values and compresses horizontally
     // instead — the box width (60 px) is the compression zone.
     const design = designWithTextLayer({
@@ -690,7 +690,7 @@ describe('placeholder text is never clipped (v0.6.4)', () => {
   });
 });
 
-describe('auto-fit horizontal compression (v0.6.5)', () => {
+describe('hybrid text fitting + horizontal compression (v0.6.8)', () => {
   it('"Charmaine Patel" (14×6 = 84 px) compresses to the 60 px zone on ONE line', async () => {
     const design = designWithTextLayer({
       content: 'ID',
@@ -711,6 +711,44 @@ describe('auto-fit horizontal compression (v0.6.5)', () => {
     expect(box.left).toBeLessThanOrEqual(268);
     // Vertical glyph size is PRESERVED: 50 px font → 40 px ink (0.8 em).
     expect(box.bottom - box.top).toBeGreaterThanOrEqual(39);
+  });
+
+  it('a multi-line placeholder wraps naturally when height allows two lines, without compression when both lines fit', async () => {
+    const design = designWithTextLayer({
+      content: 'ID',
+      shapeType: 'box',
+      boxWidth: 72,
+      boxHeight: 120,
+      originX: 266,
+      originY: 511.47,
+      leading: 60,
+    });
+    const box = await inkBoxOf(design, { Name: 'Alice Johnson' });
+    // 72 px box / 60 px leading => capacity 2. The payload wraps at the
+    // authored width, so both words occupy separate lines. Neither natural
+    // line is wider than 72 px (5×6 and 7×6 in the observable rasteriser),
+    // therefore Horizontal Scale stays at 100 %.
+    expect(box.bottom - box.top).toBeGreaterThan(90);
+    expect(box.right - box.left).toBeLessThanOrEqual(72);
+  });
+
+  it('a multi-line placeholder compresses the final wrapped line when a long token still exceeds the box', async () => {
+    const design = designWithTextLayer({
+      content: 'ID',
+      shapeType: 'box',
+      boxWidth: 60,
+      boxHeight: 120,
+      originX: 266,
+      originY: 511.47,
+      leading: 60,
+    });
+    const box = await inkBoxOf(design, { Name: 'Alice Internationalization' });
+    // Capacity is 2. "Alice" wraps to line 1; the long second token remains
+    // on the final allowed line and is then compressed horizontally to the
+    // 60 px boundary. Vertical size/leading remain unchanged.
+    expect(box.bottom - box.top).toBeGreaterThan(90);
+    expect(box.right - box.left).toBeLessThanOrEqual(63);
+    expect(box.bottom - box.top).toBeGreaterThanOrEqual(99);
   });
 
   it('a fitting value keeps 100 % horizontal scale — pixel-identical to v0.6.4', async () => {

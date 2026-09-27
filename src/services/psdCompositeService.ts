@@ -187,35 +187,46 @@ function wrapLinesPreserving(
   context: CanvasRenderingContext2D,
   text: string,
   maxWidth: number,
-  trackingPx: number
+  trackingPx: number,
+  maxLines = Number.POSITIVE_INFINITY
 ): string[] {
   const paragraphs = text.split(/\r\n|\r|\n/);
   const widthOf = (value: string): number =>
     context.measureText(value).width + trackingPx * Math.max(0, value.length - 1);
   const lines: string[] = [];
+  const canWrap = Number.isFinite(maxWidth) && maxWidth > 0;
+  const lineCap = Number.isFinite(maxLines) ? Math.max(1, Math.floor(maxLines)) : Infinity;
+
   for (const paragraph of paragraphs) {
     if (paragraph.length === 0) {
       lines.push('');
       continue;
     }
-    if (maxWidth === Infinity) {
+    if (!canWrap) {
       lines.push(paragraph);
       continue;
     }
+
     // Split on spaces but KEEP the separators so multi-space runs survive.
     const pieces = paragraph.split(/(?<= )/);
     let current = '';
     for (const piece of pieces) {
       const candidate = current + piece;
-      if (widthOf(candidate.trimEnd()) > maxWidth && current.trim().length > 0) {
+      const wouldOverflow = widthOf(candidate.trimEnd()) > maxWidth;
+      const canCreateAnotherLine = lines.length < lineCap - 1;
+      if (wouldOverflow && current.trim().length > 0 && canCreateAnotherLine) {
         lines.push(current.trimEnd());
         current = piece.trimStart();
       } else {
+        // Once the calculated capacity is reached, keep the remaining payload
+        // on the final line. The hybrid fitter will horizontally compress that
+        // line instead of creating a third/fourth line outside the placeholder.
         current = candidate;
       }
     }
     lines.push(current.trimEnd());
   }
+
   return lines.length > 0 ? lines : [''];
 }
 
@@ -449,7 +460,7 @@ interface TextLayout {
    */
   lineAnchorX: number[];
   /**
-   * v0.6.5 auto-fit: the horizontal compression ratio (0 < ratio ≤ 1)
+   * hybrid auto-fit: the horizontal compression ratio (0 < ratio ≤ 1)
    * applied to the painted glyphs — 1 means the value fits its zone
    * naturally at 100 %. Painting wraps the line in a
    * `translate(anchor) → scale(ratio, 1)` transform so ONLY the x-axis
@@ -563,51 +574,63 @@ function resolveMirrorPropsAt(
     strikethrough: run.strikethrough ?? layerFallback.strikethrough,
   };
 } /**
- * v0.6.5 AUTO-FIT: single-line no-wrap + conditional horizontal compression
- * for SUBSTITUTED placeholder values (the "Charmaine Patel" bug).
+ * HYBRID TEXT FITTING: classify a placeholder from its authored geometry,
+ * wrap multi-line fields up to their calculated line capacity, then apply a
+ * single x-only compression ratio when any rendered line is wider than the
+ * placeholder's allowed width.
  *
- * PIPELINE (per the spec):
- * 1. FORCE NO-WRAP — a substituted value renders as single-line point text:
- *    it never enters the word-wrap logic at all (explicit newlines in the
- *    value itself still break lines). This is unconditional: even when the
- *    placeholder layer was authored as box text, the substituted value is
- *    not squeezed into the sample's box — it lays out unwrapped so its
- *    natural width can be measured, then squished to fit.
- * 2. CAPTURE BASELINE (100 % horizontal scale) — the natural, unscaled line
- *    width is exactly what computeTextLayout measures into `lineWidths`
- *    (compression is a paint-time transform, never fed back into layout).
- * 3. EVALUATE BOUNDS — each natural line width vs the placeholder's maximum
- *    allowed zone (see `autoFitMaxAllowedWidth`).
- * 4. SCALE CONDITIONALLY — ratio = maxAllowed / naturalWidth, clamped to
- *    (0, 1]; a value that fits keeps ratio = 1 and paints EXACTLY as
- *    before. The smallest per-line ratio wins so EVERY line fits.
- *
- * STYLE ISOLATION: the ratio is applied through a pure paint transform
- * (translate → scale(ratio, 1) → paint → restore). Every other style run —
- * font family/weight, VERTICAL size (font height is never scaled), colour,
- * engine/layer strokes, shadows, glows, overlays, underline, tracking,
- * leading and the baseline coordinate — flows through the ordinary
- * painting path unchanged. Shadows compress WITH the glyphs (they are cast
- * by the transformed shape), matching Photoshop's Horizontal Scale.
- *
- * @param lineWidths - Natural (100 % scale) painted width per line
- * @param substituted - True when the content replaced the sample string
- * @param maxAllowedWidth - Maximum allowed zone width in design×scale px
- * @returns The compression ratio (1 = no compression)
+ * The vertical metric is intentionally used for CLASSIFICATION/CAPACITY only.
+ * The fitting transform itself is horizontal-only, so font height and leading
+ * are never changed to solve overflow.
+ */
+function textFitMode(
+  text: NonNullable<PsdLayerInfo['text']>,
+  layerBounds: PsdLayerInfo['bounds'],
+  scale: number
+): { multiLine: boolean; capacity: number; lineHeight: number; boxWidth: number; boxHeight: number } {
+  const lineHeight = Math.max(1, (text.leading ?? (text.fontSize ?? 18) * 1.2) * scale);
+
+  // Photoshop's explicit box geometry is authoritative when available. Some
+  // PSDs encode an intended multi-line placeholder as point text while the
+  // layer's design bounds still describe the reserved area. Use those bounds
+  // as the fallback rectangle so a tall point-text field can become a
+  // multi-line field without changing its authored font or vertical scale.
+  const explicitBoxWidth = Math.max(0, (text.boxWidth ?? 0) * scale);
+  const explicitBoxHeight = Math.max(0, (text.boxHeight ?? 0) * scale);
+  const boundsWidth = Math.max(0, (layerBounds.right - layerBounds.left) * scale);
+  const boundsHeight = Math.max(0, (layerBounds.bottom - layerBounds.top) * scale);
+  const hasExplicitBox =
+    text.shapeType === 'box' && explicitBoxWidth > 1 && explicitBoxHeight > 0;
+  const boxWidth = hasExplicitBox ? explicitBoxWidth : boundsWidth;
+  const boxHeight = hasExplicitBox ? explicitBoxHeight : boundsHeight;
+  const capacity = boxHeight > 0 ? Math.max(1, Math.floor(boxHeight / lineHeight)) : 1;
+
+  return {
+    multiLine: capacity > 1 && boxWidth > 1,
+    capacity,
+    lineHeight,
+    boxWidth,
+    boxHeight,
+  };
+}
+
+/**
+ * v0.6.8 HYBRID AUTO-FIT: calculate one x-only compression ratio from the
+ * FINAL wrapped layout. Design-preview/sample text is never modified.
  */
 function computeAutoFitScale(
   lineWidths: number[],
   substituted: boolean,
   maxAllowedWidth: number
 ): number {
-  // Design-preview content (the original sample) is authored truth — it is
-  // never squished; only substituted VALUES auto-fit.
   if (!substituted) return 1;
   if (!(maxAllowedWidth > 0) || !Number.isFinite(maxAllowedWidth)) return 1;
+
   let worstRatio = 1;
   for (const width of lineWidths) {
-    if (!(width > maxAllowedWidth)) continue;
-    // Clamp: never blow a value UP (ratio ≤ 1), never squish to nothing.
+    if (!(width > maxAllowedWidth) || !Number.isFinite(width)) continue;
+    // Only Horizontal Scale is allowed to change. Never enlarge a fitting
+    // value and never collapse it to zero.
     const ratio = Math.max(0.05, Math.min(1, maxAllowedWidth / width));
     if (ratio < worstRatio) worstRatio = ratio;
   }
@@ -663,10 +686,22 @@ function computeTextLayout(
   const fontWeight = text.fontWeight ?? (text.bold ? 700 : 400);
 
   const bounds = layer.bounds;
-  const boxLeft = bounds.left * scale;
-  const boxTop = bounds.top * scale;
-  const boxWidth = Math.max(1, (bounds.right - bounds.left) * scale);
-  const boxHeight = Math.max(1, (bounds.bottom - bounds.top) * scale);
+  const fitMode = textFitMode(text, layer.bounds, scale);
+  // A tall point-text placeholder can still be an intended multi-line area.
+  // Once the hybrid classifier promotes it to multi-line, use the same box
+  // geometry for wrapping and justification anchors.
+  const isBox = fitMode.multiLine || (text.shapeType === 'box' && fitMode.boxWidth > 1);
+  // Box text has an authored Photoshop text box that is independent of the
+  // sample string's raster bounds. Use that geometry as the placeholder
+  // boundary; point text continues to use its layer bounds as the fallback.
+  const boxLeft = isBox ? (text.originX ?? bounds.left) * scale : bounds.left * scale;
+  const boxTop = isBox ? (text.originY ?? bounds.top) * scale : bounds.top * scale;
+  const boxWidth = isBox
+    ? Math.max(1, fitMode.boxWidth)
+    : Math.max(1, (bounds.right - bounds.left) * scale);
+  const boxHeight = isBox
+    ? Math.max(1, fitMode.boxHeight)
+    : Math.max(1, (bounds.bottom - bounds.top) * scale);
 
   // Text origin: engine transform position when available, else the layer
   // bounds' top-left (older persisted layers without originX/Y).
@@ -680,19 +715,13 @@ function computeTextLayout(
   const metrics = context.measureText('Mg');
   const ascent = metrics.fontBoundingBoxAscent ?? metrics.actualBoundingBoxAscent ?? fontSize * 0.8;
 
-  // Wrap width: box text wraps at the REAL text box (which extends beyond
-  // the sample's ink bounds); point text never width-wraps.
-  // v0.6.5 FORCE NO-WRAP: a SUBSTITUTED value always lays out unwrapped
-  // (single-line point-text behaviour — explicit newlines in the value
-  // still break lines). Auto-fit then compresses it horizontally to its
-  // zone; wrapping would instead bleed into the layers below.
-  const engineBoxWidth = (text.boxWidth ?? 0) * scale;
-  const wrapWidth = substituted
-    ? Number.POSITIVE_INFINITY
-    : text.shapeType === 'box' && engineBoxWidth > 1
-      ? engineBoxWidth
-      : Number.POSITIVE_INFINITY;
-  const lines = wrapLinesPreserving(context, content, wrapWidth, trackingPx);
+  // HYBRID FITTING: determine capacity from placeholder height / leading.
+  // Single-line fields suppress wrapping completely. Multi-line fields use
+  // the authored box width and wrap only up to the calculated line capacity.
+  // The final measured line widths then feed the x-only compression pass.
+  const wrapWidth = fitMode.multiLine ? fitMode.boxWidth : Number.POSITIVE_INFINITY;
+  const maxWrapLines = fitMode.multiLine ? fitMode.capacity : Number.POSITIVE_INFINITY;
+  const lines = wrapLinesPreserving(context, content, wrapWidth, trackingPx, maxWrapLines);
 
   // Line starts (content indices) for per-run styling.
   const lineStarts: number[] = [];
@@ -707,7 +736,11 @@ function computeTextLayout(
 
   // Leading: parsed (auto-leading already resolved to 1.2 × size at parse);
   // legacy layers without it fall back to 1.2 × size.
-  const leading = (text.leading && text.leading > 0 ? text.leading : fontSize * 1.2) * scale;
+  const leadingDesign =
+    text.leading && text.leading > 0
+      ? text.leading
+      : (oracle?.fontSize ?? text.fontSize ?? 18) * 1.2;
+  const leading = leadingDesign * scale;
 
   // First baseline: with an oracle, EXACTLY where Photoshop drew the
   // sample's first baseline (origin ink-top + parse-measured offset).
@@ -782,8 +815,8 @@ function computeTextLayout(
     }
   }
 
-  // v0.6.5 AUTO-FIT: measure → evaluate → conditionally compress (ONLY the
-  // horizontal scale; see computeAutoFitScale for the full pipeline).
+  // HYBRID AUTO-FIT: measure the FINAL wrapped/unwrapped lines, then evaluate
+  // whether the replacement needs x-only compression.
   const horizontalScale = computeAutoFitScale(lineWidths, substituted, maxAllowedWidth);
 
   return {
@@ -815,7 +848,7 @@ function computeTextLayout(
 
 /**
  * Maximum allowed zone width for one text layer (design×scale px) — the
- * v0.6.5 auto-fit boundary the substituted value must respect.
+ * Hybrid auto-fit boundary the substituted value must respect.
  *
  * - BOX text: the parsed text-box width (`boxWidth`) — the bounding
  *   container the design author allocated.
@@ -829,8 +862,12 @@ function computeTextLayout(
  */
 function autoFitMaxAllowedWidth(layer: PsdLayerInfo, scale: number, cardWidth: number): number {
   const text = layer.text!;
-  const engineBoxWidth = (text.boxWidth ?? 0) * scale;
-  if (text.shapeType === 'box' && engineBoxWidth > 1) return engineBoxWidth;
+  const fitMode = textFitMode(text, layer.bounds, scale);
+  // Any field classified as multi-line uses the placeholder rectangle as its
+  // hard horizontal boundary, including point-text layers whose design bounds
+  // encode the intended area.
+  if (fitMode.multiLine && fitMode.boxWidth > 1) return fitMode.boxWidth;
+  if (text.shapeType === 'box' && fitMode.boxWidth > 1) return fitMode.boxWidth;
   // Point text: the value may grow from its justification anchor until the
   // card edge (minus a small margin) — the zone it must stay inside.
   const justification = text.justification ?? 'left';
@@ -981,7 +1018,7 @@ function drawTextContent(
     const x = layout.lineX[index]! - offsetX;
     const y = layout.firstBaseline + index * layout.leading - offsetY - layout.baselineShift;
 
-    // v0.6.5 AUTO-FIT paint transform: squish ONLY the x-axis around the
+    // HYBRID AUTO-FIT paint transform: squish ONLY the x-axis around the
     // line's own justification anchor (left edge / centre / right edge),
     // so the value compresses IN PLACE — it never shifts position. Every
     // pass below (engine stroke, effect stroke, shadow, fill, inner

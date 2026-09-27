@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.6.8] - 2026-09-27
+
+### Fixed
+
+- **Hybrid placeholder text fitting.** Text placeholders now classify themselves
+  dynamically from the authored text-box height and leading: capacity is
+  `Math.floor(boxHeight / leading)`. Single-line fields suppress wrapping, while
+  fields with capacity greater than one wrap replacement data at the real PSD
+  text-box width before fitting. If a final wrapped line still exceeds the
+  allowed width, one paint-time Horizontal Scale transform compresses the
+  complete value just enough to fit. Font height, baseline, leading,
+  justification, font family/weight, colour, fills, strokes, shadows and other
+  layer effects remain untouched.
+- **PSD text-style oracle runtime error.** Fixed `candidate is not defined` in
+  the italic-veto branch by retaining the winning raster candidate after the
+  style-matching loop.
+- Removed an incomplete temporary `zz-probe` test file that prevented the
+  TypeScript test suite from parsing.
+
+### Added
+
+- Regression coverage for two-line wrapping and wrap-then-compress behaviour.
+
+
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 

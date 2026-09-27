@@ -402,7 +402,20 @@ function extractText(text: LayerTextData, dpi: number, layer: Layer): PsdLayerIn
   // LOST the font, size, colour and every other property — the "Charmaine
   // Patel" bug.
   const firstRunStyle: TextStyle | undefined = text.styleRuns?.[0]?.style;
-  const firstStyle: TextStyle | undefined = firstRunStyle ?? text.style;
+
+  /**
+   * ag-psd deduplicates shared text-engine properties into text.style.
+   * Individual style runs may therefore contain only a small subset of
+   * properties. Merge the run over the layer-level style instead of using
+   * the run as a complete replacement.
+   *
+   * This is especially important for autoLeading, font size, tracking,
+   * stroke settings, etc.
+   */
+  const firstStyle: TextStyle = {
+    ...(text.style ?? {}),
+    ...(firstRunStyle ?? {}),
+  };
   const fontName = coalesce(firstRunStyle?.font?.name, text.style?.font?.name) ?? undefined;
   const postScriptName = fontName ?? undefined;
   const color = agColorToCss(coalesce(firstRunStyle?.fillColor, text.style?.fillColor));
@@ -413,7 +426,8 @@ function extractText(text: LayerTextData, dpi: number, layer: Layer): PsdLayerIn
     typeof transform[0] === 'number' && Math.abs(transform[0]) > 0.01 ? transform[0] : 1;
   const transformScaleY =
     typeof transform[3] === 'number' && Math.abs(transform[3]) > 0.01 ? transform[3] : 1;
-  const autoLeading = firstStyle?.autoLeading === true;
+  const autoLeading =
+    coalesce(firstRunStyle?.autoLeading, text.style?.autoLeading) === true;
   const engineFontSizePx =
     coalesce(firstRunStyle?.fontSize, text.style?.fontSize) !== undefined
       ? engineValueToDesignPx(
