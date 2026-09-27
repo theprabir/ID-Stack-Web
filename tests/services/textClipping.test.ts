@@ -23,7 +23,7 @@ import type { PsdDesign, PsdLayerInfo, PsdPlaceholder } from '@/types/psd';
 /* ------------------------------------------------------------------ */
 
 interface FillRecord {
-  kind: 'rect' | 'text' | 'image' | 'clear';
+  kind: 'rect' | 'text' | 'image' | 'clear' | 'put';
   x: number;
   y: number;
   w: number;
@@ -32,6 +32,10 @@ interface FillRecord {
   alpha: number;
   /** For image records: the source canvas (replayed recursively) */
   source?: HTMLCanvasElement;
+  /** Source-crop rect for the 9-arg drawImage form (sx, sy, sw, sh) */
+  crop?: { x: number; y: number; w: number; h: number };
+  /** For put records: raw RGBA bytes written (putImageData ignores blending) */
+  px?: Uint8ClampedArray;
   /** Composite operation captured at call time */
   composite: GlobalCompositeOperation;
   text?: string;
@@ -184,14 +188,28 @@ class Mock2DContext {
     });
   }
 
-  drawImage(image: CanvasImageSource, dx: number, dy: number, dw?: number, dh?: number): void {
+  drawImage(
+    image: CanvasImageSource,
+    a1: number,
+    a2: number,
+    a3?: number,
+    a4?: number,
+    a5?: number,
+    a6?: number,
+    a7?: number,
+    a8?: number
+  ): void {
     const source = image as { width?: number; height?: number };
+    // 5-arg form: (dx, dy, dw, dh) — full source scaled into the rect.
+    // 9-arg form: (sx, sy, sw, sh, dx, dy, dw, dh) — source crop scaled in.
+    const isCrop = arguments.length >= 9;
     this.fills.push({
       kind: 'image',
-      x: dx,
-      y: dy,
-      w: dw ?? source.width ?? 0,
-      h: dh ?? source.height ?? 0,
+      x: isCrop ? a5! : a1,
+      y: isCrop ? a6! : a2,
+      w: isCrop ? a7! : (a3 ?? source.width ?? 0),
+      h: isCrop ? a8! : (a4 ?? source.height ?? 0),
+      crop: isCrop ? { x: a1, y: a2, w: a3 ?? 0, h: a4 ?? 0 } : undefined,
       color: '#ffffff',
       alpha: this.globalAlpha,
       source: image instanceof HTMLCanvasElement ? image : undefined,
@@ -212,6 +230,21 @@ class Mock2DContext {
     });
   }
 
+  putImageData(image: ImageData, dx: number, dy: number): void {
+    // Raw pixel write: bypasses compositing, exactly like the real API.
+    this.fills.push({
+      kind: 'put',
+      x: dx,
+      y: dy,
+      w: image.width,
+      h: image.height,
+      color: 'transparent',
+      alpha: 1,
+      px: new Uint8ClampedArray(image.data),
+      composite: 'source-over',
+    });
+  }
+
   getImageData(sx: number, sy: number, w: number, h: number): ImageData {
     const data = new Uint8ClampedArray(w * h * 4);
     const canvasWidth = this.canvas.width;
@@ -223,7 +256,47 @@ class Mock2DContext {
       const bottom = Math.min(h, Math.ceil(record.y - sy + record.h));
       if (record.kind === 'image') {
         if (record.composite === 'destination-in') {
-          // Mask semantics: keep existing pixels INSIDE the rect, erase outside.
+          // REAL destination-in semantics: result = destination × source
+          // alpha. With a source canvas, rasterise the source's own fill
+          // history (via its context) and multiply per pixel — a mask plane
+          // whose content varies (white/black mask bitmaps) must clip
+          // per-pixel, not per-rect. Without a source, fall back to the
+          // rect keep-window (the photo stroke paths).
+          if (record.source) {
+            const sourceContext = contextCache.get(record.source);
+            if (sourceContext) {
+              const sourceImage = sourceContext.getImageData(
+                0,
+                0,
+                record.source.width,
+                record.source.height
+              ) as unknown as { data: Uint8ClampedArray; width: number; height: number };
+              for (let y = 0; y < h; y += 1) {
+                for (let x = 0; x < w; x += 1) {
+                  const globalX = sx + x;
+                  const globalY = sy + y;
+                  const sourceX = Math.floor(globalX - record.x);
+                  const sourceY = Math.floor(globalY - record.y);
+                  const destinationIndex = (y * w + x) * 4;
+                  if (
+                    sourceX < 0 ||
+                    sourceY < 0 ||
+                    sourceX >= sourceImage.width ||
+                    sourceY >= sourceImage.height
+                  ) {
+                    data[destinationIndex + 3] = 0;
+                    continue;
+                  }
+                  const sourceAlpha =
+                    sourceImage.data[(sourceY * sourceImage.width + sourceX) * 4 + 3] ?? 0;
+                  data[destinationIndex + 3] = Math.floor(
+                    (data[destinationIndex + 3] ?? 0) * (sourceAlpha / 255)
+                  );
+                }
+              }
+            }
+            return;
+          }
           for (let y = 0; y < h; y += 1) {
             for (let x = 0; x < w; x += 1) {
               const inside =
@@ -235,11 +308,33 @@ class Mock2DContext {
         }
         // Source-over: replay the source canvas's own fill history,
         // translated by the draw position (offscreen layer compositing).
+        // With a source CROP, replay only fills inside the crop window
+        // (offset by −crop origin) — pixels outside it read transparent.
         const sourceContext = record.source
           ? contextCache.get(record.source)
           : undefined;
         if (sourceContext) {
           for (const sourceFill of sourceContext.fills) {
+            if (record.crop) {
+              const sLeft = sourceFill.x;
+              const sTop = sourceFill.y;
+              const sRight = sLeft + sourceFill.w;
+              const sBottom = sTop + sourceFill.h;
+              const left2 = Math.max(sLeft, record.crop.x);
+              const top2 = Math.max(sTop, record.crop.y);
+              const right2 = Math.min(sRight, record.crop.x + record.crop.w);
+              const bottom2 = Math.min(sBottom, record.crop.y + record.crop.h);
+              if (right2 <= left2 || bottom2 <= top2) continue;
+              paint({
+                ...sourceFill,
+                x: left2 - record.crop.x + record.x,
+                y: top2 - record.crop.y + record.y,
+                w: right2 - left2,
+                h: bottom2 - top2,
+                alpha: sourceFill.alpha * record.alpha,
+              });
+              continue;
+            }
             paint({
               ...sourceFill,
               x: sourceFill.x + record.x,
@@ -255,6 +350,17 @@ class Mock2DContext {
       for (let y = top; y < bottom && y < canvasHeight; y += 1) {
         for (let x = left; x < right && x < canvasWidth; x += 1) {
           const index = (y * w + x) * 4;
+          if (record.kind === 'put' && record.px) {
+            // Raw copy from the source image at the recorded origin.
+            const sourceX = Math.floor(record.x - sx) + (x - left);
+            const sourceY = Math.floor(record.y - sy) + (y - top);
+            const source = (sourceY * record.w + sourceX) * 4;
+            data[index] = record.px[source] ?? 0;
+            data[index + 1] = record.px[source + 1] ?? 0;
+            data[index + 2] = record.px[source + 2] ?? 0;
+            data[index + 3] = record.px[source + 3] ?? 0;
+            continue;
+          }
           if (record.kind === 'clear') {
             data[index] = 0;
             data[index + 1] = 0;
@@ -706,4 +812,62 @@ describe('auto-fit horizontal compression (v0.6.5)', () => {
     expect(Math.min(...lefts)).toBeLessThanOrEqual(268);
     expect(Math.max(...rights)).toBeLessThanOrEqual(266 + 60 + 12);
   });
+
+  it('a FULLY-WHITE (reveal-all) mask NEVER trims the substituted value — the "N in JOHNSON" bug', async () => {
+    // THE BUG (v0.6.7): every Photoshop text layer carries a reveal-all
+    // mask; ag-psd decodes masks as LUMINANCE with fully-opaque alpha, so
+    // the old unconditional `destination-in` drawImage intersected the
+    // value with the mask RECT — the SAMPLE's layer bounds (270–314 for
+    // "ID"). "Alice Johnson" was amputated mid-glyph at x = 314.
+    const design = designWithTextLayer({ content: 'ID' });
+    const mask = makeMaskCanvas(44, 36, '#ffffff'); // sample's 44×36 ink rect
+    design.layers[0]!.maskCanvas = mask;
+    const box = await inkBoxOf(design, { Name: 'Alice Johnson' });
+    // 13 chars × 6 px = 78 px starting at 270 — NOT cut at the sample's
+    // right edge (270 + 44 = 314). The full value must survive.
+    expect(box.right - box.left).toBeGreaterThanOrEqual(76);
+  });
+
+  it('a partially-white mask keeps the masked part and honours hide-outside', async () => {
+    // Real masking still works: white over 270–292 (keep), black beyond —
+    // the value is cut at 292 + 2 px antialias tolerance, NOT at 314.
+    const design = designWithTextLayer({ content: 'ID' });
+    const mask = makeMaskCanvas(44, 36, '#ffffff');
+    const context = mask.getContext('2d') as unknown as Mock2DContext;
+    context.fillStyle = '#000000';
+    context.fillRect(22, 0, 22, 36); // right half of the mask rect: hide
+    design.layers[0]!.maskCanvas = mask;
+    const box = await inkBoxOf(design, { Name: 'Alice Johnson' });
+    expect(box.left).toBe(270);
+    expect(box.right).toBeLessThanOrEqual(296);
+  });
+
+  it('a mask with defaultColor 255 (reveal outside the rect) keeps the overflow', async () => {
+    // A black-inside/reveal-outside mask (Photoshop defaultColor 255):
+    // the bitmap hides 270–314, but everything OUTSIDE the mask rect is
+    // revealed — the overflow past 314 must SURVIVE the mask application.
+    const design = designWithTextLayer({ content: 'ID' });
+    const mask = makeMaskCanvas(44, 36, '#000000');
+    design.layers[0]!.maskCanvas = mask;
+    design.layers[0]!.maskDefaultColor = 255;
+    const box = await inkBoxOf(design, { Name: 'Alice Johnson' });
+    // Ink past the rect (314…) is untouched by the plane; only 270–314
+    // itself is blacked out — the tail beyond must exist.
+    expect(box.right).toBeGreaterThanOrEqual(340);
+  });
 });
+
+/**
+ * Forge a mask canvas of the given size filled with a CSS colour (white =
+ * reveal-all like every Photoshop text layer; black = hide). Uses the mock
+ * context so the fill is observable by the rasteriser.
+ */
+function makeMaskCanvas(width: number, height: number, fill: string): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext('2d') as unknown as Mock2DContext;
+  context.fillStyle = fill;
+  context.fillRect(0, 0, width, height);
+  return canvas;
+}

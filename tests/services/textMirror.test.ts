@@ -78,8 +78,9 @@ describe('engine dedupe coalescing (font properties are never truncated)', () =>
       style: {
         font: { name: 'ArialMT' },
         fontSize: 50,
-        horizontalScale: 90,
-        verticalScale: 110,
+        // ag-psd stores Horizontal/Vertical Scale as FRACTIONS: 1 = 100 %.
+        horizontalScale: 0.9,
+        verticalScale: 1.1,
         baselineShift: 4,
         fontCaps: 1,
         strikethrough: true,
@@ -87,6 +88,8 @@ describe('engine dedupe coalescing (font properties are never truncated)', () =>
     };
     const layer = { name: 'Name', text } as unknown as Layer;
     const info = extractTextForTest(text, 300, layer);
+    // Fractions pass through VERBATIM — never divided by 100 (the unit
+    // misread that squished every substituted glyph to 1 % width).
     expect(info?.horizontalScale).toBeCloseTo(0.9, 3);
     expect(info?.verticalScale).toBeCloseTo(1.1, 3);
     expect(info?.baselineShift).toBeCloseTo(4, 1);
@@ -94,10 +97,12 @@ describe('engine dedupe coalescing (font properties are never truncated)', () =>
     expect(info?.strikethrough).toBe(true);
   });
 
-  it('omits identity transforms (100 % scale) instead of injecting defaults', () => {
+  it('omits identity transforms (scale 1 = 100 %) instead of injecting defaults', () => {
+    // Every real PSD stores horizontalScale: 1 on untouched text — this
+    // MUST NOT produce a 0.01 squish (the "data not showing" bug).
     const text: LayerTextData = {
       text: 'Plain',
-      style: { font: { name: 'ArialMT' }, fontSize: 50, horizontalScale: 100, verticalScale: 100 },
+      style: { font: { name: 'ArialMT' }, fontSize: 50, horizontalScale: 1, verticalScale: 1 },
     };
     const layer = { name: 'Name', text } as unknown as Layer;
     const info = extractTextForTest(text, 300, layer);
@@ -110,7 +115,7 @@ describe('engine dedupe coalescing (font properties are never truncated)', () =>
       text: 'AbC',
       style: { font: { name: 'ArialMT' }, fontSize: 30 },
       styleRuns: [
-        { length: 1, style: { fontCaps: 1, horizontalScale: 120 } },
+        { length: 1, style: { fontCaps: 1, horizontalScale: 1.2 } },
         { length: 2, style: {} },
       ],
     };
@@ -119,7 +124,7 @@ describe('engine dedupe coalescing (font properties are never truncated)', () =>
     const first = info?.runs?.find((run) => run.from === 0 && run.to === 1);
     const rest = info?.runs?.find((run) => run.from === 1);
     expect(first?.fontCaps).toBe(1);
-    expect(first?.horizontalScale).toBe(120);
+    expect(first?.horizontalScale).toBeCloseTo(1.2, 3);
     // Dedupe-hoisted layer values flow into run 2 via the layer fallback.
     expect(rest?.fontFamily).toBe('ArialMT');
     expect(rest?.fontCaps).toBeUndefined();

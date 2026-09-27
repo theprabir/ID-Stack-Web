@@ -212,6 +212,33 @@ export function extractLayerEffects(
   return any ? out : undefined;
 }
 
+/**
+ * True when a decoded mask bitmap is FULLY WHITE — Photoshop's "reveal all"
+ * mask (every newly created text layer has one). The mask is a no-op in
+ * Photoshop, so it must never clip re-rendered placeholder content.
+ *
+ * ag-psd decodes mask bitmaps as LUMINANCE in RGB with fully-opaque alpha
+ * (its reader's setupGrayscale + resetAlpha) — detection MUST read the RGB
+ * channels; an alpha-based check would classify every mask as reveal-all.
+ * Substituted values wider than the original sample extend past the
+ * sample's layer bounds, where the mask has no bitmap data (its background
+ * defaultColor governs) — rect-clipping there amputated the string tail
+ * (the "N in JOHNSON" / "L in PATEL" trim).
+ */
+export function isRevealAllMaskCanvas(mask: HTMLCanvasElement): boolean {
+  const context = mask.getContext('2d');
+  if (!context) return false;
+  try {
+    const { data } = context.getImageData(0, 0, mask.width, mask.height);
+    for (let index = 0; index < data.length; index += 4) {
+      if (data[index] !== 255 || data[index + 1] !== 255 || data[index + 2] !== 255) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Extract a layer's mask pixel data (layer + vector masks) as a canvas */
 function extractMaskCanvas(mask?: LayerMaskData): HTMLCanvasElement | undefined {
   if (!mask || mask.disabled === true) return undefined;
@@ -320,7 +347,11 @@ function buildTextStyleOracle(
   // the wide 0.2–6 band absorbs any real transform scale).
   const engineFontSizePx =
     engineFontSize !== undefined ? engineValueToDesignPx(engineFontSize, dpi, 1) : undefined;
-  const match = calibrateStyleFromRaster(layer.canvas, content, fontFamily, engineFontSizePx);
+  // The engine's own slant claim — PostScript name lexemes + fauxItalic.
+  // Feeds the oracle's italic veto (the "regular shows italic" bug).
+  const engineItalic =
+    engineStyle?.fauxItalic === true || /italic|oblique/i.test(fontFamily ?? '');
+  const match = calibrateStyleFromRaster(layer.canvas, content, fontFamily, engineFontSizePx, engineItalic);
   if (!match) return undefined;
   const raster = measureCanvasInk(layer.canvas);
   if (!raster) return undefined;
@@ -332,6 +363,7 @@ function buildTextStyleOracle(
     fontSize: match.fontSize,
     bold: match.bold,
     italic: match.italic,
+    vetoItalic: match.vetoItalic === true ? true : undefined,
     color: inkColorToHex(raster.meanColor) ?? undefined,
     // Ink box in DESIGN coordinates: layer canvas origin = (layer.left, layer.top).
     inkBox: {
@@ -428,15 +460,24 @@ function extractText(text: LayerTextData, dpi: number, layer: Layer): PsdLayerIn
     layer.left ?? 0,
     layer.top ?? 0,
     dpi
-  );
-
-  // Engine Horizontal/Vertical Scale (Photoshop character panel, %: 100 =
-  // authored). Per-run value coalesced with the layer style (dedupe).
-  const engineHorizontalScale = coalesce(
+  ); // Engine Horizontal/Vertical Scale (Photoshop character panel). UNIT
+  // CONTRACT: ag-psd reports these as FRACTIONS — 1 = 100 % (verified: every
+  // real PSD stores 1 on untouched text; 0.5 = 50 % squish). Treating them
+  // as percent (÷100) squished every substituted glyph to 1 % width — the
+  // "data not showing" bug. Identity (1) is omitted entirely.
+  const engineHorizontalScaleRaw = coalesce(
     firstRunStyle?.horizontalScale,
     text.style?.horizontalScale
   );
-  const engineVerticalScale = coalesce(firstRunStyle?.verticalScale, text.style?.verticalScale);
+  const engineVerticalScaleRaw = coalesce(firstRunStyle?.verticalScale, text.style?.verticalScale);
+  const engineHorizontalScale =
+    engineHorizontalScaleRaw !== undefined && engineHorizontalScaleRaw !== 1
+      ? engineHorizontalScaleRaw
+      : undefined;
+  const engineVerticalScale =
+    engineVerticalScaleRaw !== undefined && engineVerticalScaleRaw !== 1
+      ? engineVerticalScaleRaw
+      : undefined;
   const engineBaselineShiftPx =
     coalesce(firstRunStyle?.baselineShift, text.style?.baselineShift) !== undefined
       ? engineValueToDesignPx(
@@ -515,14 +556,8 @@ function extractText(text: LayerTextData, dpi: number, layer: Layer): PsdLayerIn
     oracle,
     justification: layerJustification,
     paragraphJustifications: hasParagraphRuns ? paragraphJustifications : undefined,
-    horizontalScale:
-      engineHorizontalScale !== undefined && engineHorizontalScale !== 100
-        ? engineHorizontalScale / 100
-        : undefined,
-    verticalScale:
-      engineVerticalScale !== undefined && engineVerticalScale !== 100
-        ? engineVerticalScale / 100
-        : undefined,
+    horizontalScale: engineHorizontalScale,
+    verticalScale: engineVerticalScale,
     baselineShift: engineBaselineShiftPx,
     fontCaps: engineFontCaps,
     strikethrough: engineStrikethrough || undefined,
@@ -604,6 +639,7 @@ function resolveStyleRuns(
       underline: style.underline,
       tracking: trackingPx,
       fontFamily: coalesce(style.font?.name, layerStyle?.font?.name) ?? undefined,
+      // Engine fractions (1 = 100 %) — passed through verbatim.
       horizontalScale: coalesce(style.horizontalScale, layerStyle?.horizontalScale),
       verticalScale: coalesce(style.verticalScale, layerStyle?.verticalScale),
       baselineShift:
@@ -704,23 +740,38 @@ function flattenLayers(
     }
     // Effects + masks travel with the layer so placeholders re-render with
     // the exact Photoshop styling (stroke/shadow/glow/overlay/mask clip).
+    // v0.6.7 (the "N in JOHNSON" trim): every Photoshop text layer carries
+    // a FULLY-WHITE "reveal all" layer mask. ag-psd decodes masks as
+    // LUMINANCE with fully-opaque alpha, so the old unconditional mask
+    // application rect-clipped re-rendered placeholder values at the
+    // sample's layer bounds. Reveal-all masks are a no-op in Photoshop —
+    // they are detected (white-everywhere) and NOT stored, and a real
+    // mask's background colour is carried so overflow outside the mask
+    // rect honours the mask's own default (hide/reveal).
     const effects = extractLayerEffects(layer.effects, dpi);
     if (effects) info.effects = effects;
-    const maskCanvas = extractMaskCanvas(layer.mask);
+    const maskDisabled = layer.mask?.disabled === true;
+    const maskCanvas = maskDisabled ? undefined : extractMaskCanvas(layer.mask);
     if (maskCanvas) {
-      info.maskCanvas = maskCanvas;
-      info.maskOffset = {
-        top: layer.mask?.top ?? bounds.top,
-        left: layer.mask?.left ?? bounds.left,
-      };
+      if (!isRevealAllMaskCanvas(maskCanvas)) {
+        info.maskCanvas = maskCanvas;
+        info.maskOffset = {
+          top: layer.mask?.top ?? bounds.top,
+          left: layer.mask?.left ?? bounds.left,
+        };
+        info.maskDefaultColor = layer.mask?.defaultColor ?? 0;
+      }
     }
-    const realMaskCanvas = extractMaskCanvas(layer.realMask);
+    const realMaskCanvas = maskDisabled ? undefined : extractMaskCanvas(layer.realMask);
     if (realMaskCanvas && !info.maskCanvas) {
-      info.maskCanvas = realMaskCanvas;
-      info.maskOffset = {
-        top: layer.realMask?.top ?? bounds.top,
-        left: layer.realMask?.left ?? bounds.left,
-      };
+      if (!isRevealAllMaskCanvas(realMaskCanvas)) {
+        info.maskCanvas = realMaskCanvas;
+        info.maskOffset = {
+          top: layer.realMask?.top ?? bounds.top,
+          left: layer.realMask?.left ?? bounds.left,
+        };
+        info.maskDefaultColor = layer.realMask?.defaultColor ?? 0;
+      }
     }
     info.clipped = layer.clipping === true;
     out.push(info);

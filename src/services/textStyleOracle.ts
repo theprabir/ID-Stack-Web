@@ -69,6 +69,14 @@ export interface StyleMatch {
   italic: boolean;
   /** Calibrated font size in the raster's pixel scale */
   fontSize: number;
+  /**
+   * TRUE when the matched variant is italic but the raster shows NO real
+   * slant — the classic upright-font substitution artefact (an upright
+   * font synthesised as italic still leans its whole box; a genuinely
+   * italic design raster does not read as upright). Callers must treat the
+   * style as UPRIGHT (and re-derive bold from engine data) when set.
+   */
+  vetoItalic?: boolean;
 }
 
 /**
@@ -81,6 +89,10 @@ export interface StyleMatch {
  * @param engineFontSizePx - Engine-data size for the sanity band
  * @param bandMin - Minimum trusted calibrated/engine ratio (default 0.2)
  * @param bandMax - Maximum trusted calibrated/engine ratio (default 6)
+ * @param engineItalic - The engine data's own slant claim (PostScript name
+ *        or fauxItalic). When the engine says UPRIGHT and the raster shows
+ *        no slant, an italic match is the font-substitution artefact and is
+ *        vetoed to upright (the "regular shows italic" bug).
  * @returns Best match, or null when no candidate is usable or the
  *          calibrated size falls outside the sanity band
  */
@@ -89,7 +101,8 @@ export function matchTextStyleFromInk(
   candidates: Array<(InkStats & { bold: boolean; italic: boolean }) | null>,
   engineFontSizePx: number | undefined,
   bandMin = 0.2,
-  bandMax = 6
+  bandMax = 6,
+  engineItalic = false
 ): StyleMatch | null {
   let best = -1;
   let bestScore = Number.POSITIVE_INFINITY;
@@ -117,7 +130,27 @@ export function matchTextStyleFromInk(
     if (ratio < bandMin || ratio > bandMax) return null;
   }
   const variant = STYLE_VARIANTS[best]!;
-  return { bold: variant.bold, italic: variant.italic, fontSize: bestSize };
+  // ITALIC VETO (the "regular name shows italic" bug): the match is a
+  // DENSITY/SIZE comparison. When the environment CANNOT produce a true
+  // italic (the design's italic font is missing; canvas falls back to an
+  // upright face), the italic REFERENCE renders unslanted too — the 3×
+  // slant term then zeroes out for BOTH variants and density alone picks
+  // italic for a genuinely UPRIGHT raster. Signals, all required:
+  // the matched variant is italic · the ENGINE claims upright (PostScript
+  // name without Italic/Oblique, no fauxItalic) · the RASTER shows no
+  // slant (≤ 0.02 — the design's own pixels are upright) · the italic
+  // REFERENCE rendered unslanted (≤ 0.06 — proof this environment has no
+  // real italic, i.e. the match is a substitution artefact). A live
+  // italic reference (slant ≥ 0.12) keeps the match trustworthy.
+  const vetoItalic =
+    variant.italic && !engineItalic && raster.slant <= 0.02 && candidate!.slant <= 0.06;
+  return {
+    bold: variant.bold,
+    italic: vetoItalic ? false : variant.italic,
+    fontSize: bestSize,
+    // Present (true) only when vetoed — absence means a trusted match.
+    ...(vetoItalic ? { vetoItalic: true as const } : {}),
+  };
 }
 
 /**
@@ -135,7 +168,8 @@ export function calibrateStyleFromRaster(
   rasterCanvas: HTMLCanvasElement,
   content: string,
   fontFamily: string,
-  engineFontSizePx: number | undefined
+  engineFontSizePx: number | undefined,
+  engineItalic = false
 ): StyleMatch | null {
   // Multi-line text: the ink box spans several lines — no calibration.
   if (/\r|\n/.test(content)) return null;
@@ -148,7 +182,7 @@ export function calibrateStyleFromRaster(
       ? { ...stats, bold: STYLE_VARIANTS[index]!.bold, italic: STYLE_VARIANTS[index]!.italic }
       : null
   );
-  return matchTextStyleFromInk(raster, candidates, engineFontSizePx);
+  return matchTextStyleFromInk(raster, candidates, engineFontSizePx, 0.2, 6, engineItalic);
 }
 
 /** Anchor offsets of a sample string measured with real font metrics.

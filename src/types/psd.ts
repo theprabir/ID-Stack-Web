@@ -94,6 +94,13 @@ export interface PsdTextStyleOracle {
   bold: boolean;
   /** Slant variant matched from the raster's centroid drift */
   italic: boolean;
+  /**
+   * TRUE when the raster match voted italic but was VETOED to upright —
+   * the engine data claims upright (PostScript name / fauxItalic) and the
+   * raster shows no slant. The paint style is upright; stored so the
+   * renderer can distinguish a true upright design from a vetoed one.
+   */
+  vetoItalic?: boolean;
   /** Fill colour measured from the raster's solid pixels */
   color?: string;
   /**
@@ -224,6 +231,12 @@ export interface PsdLayerInfo {
   maskCanvas?: HTMLCanvasElement;
   /** Mask bitmap's top/left position in design pixels (may differ from bounds) */
   maskOffset?: { top: number; left: number };
+  /**
+   * Mask background outside the mask rect (Photoshop `defaultColor`):
+   * 0 = hide (default), 255 = reveal. Substituted placeholder values that
+   * overflow the sample's layer bounds keep rendering in the reveal case.
+   */
+  maskDefaultColor?: number;
   /** True when this layer is a clipping base for layers above (Photoshop clipping mask) */
   clipped: boolean;
   /** Number of child layers (groups only) */

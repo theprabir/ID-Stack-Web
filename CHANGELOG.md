@@ -50,6 +50,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and gradient-fill rendering. The stray unused-import typecheck error in
   `AboutPage.tsx` that blocked `npm run build` is also fixed.
 
+- **"Data not showing" — engine Horizontal/Vertical Scale unit misread.**
+  ag-psd reports Horizontal/Vertical Scale as FRACTIONS (1 = 100 %), but the
+  v0.6.6 extraction treated them as percent and divided by 100, so every
+  real PSD's `horizontalScale: 1` became a 0.01 multiplier: substituted
+  placeholder values painted at 1 % width — invisible. Verified in-browser
+  against `ID Sample Front.psd` ("Charmaine Patel" painted 4 magenta px
+  before the fix, 5 404 after, centred on the box axis). The parser now
+  passes the fractions through verbatim and omits the identity (1) value;
+  regression tests pin the unit contract.
+
 ## [0.6.5] - 2026-09-27
 
 ### Fixed

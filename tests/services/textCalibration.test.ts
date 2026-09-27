@@ -118,6 +118,48 @@ describe('full-style text calibration (matchTextStyleFromInk)', () => {
     expect(match?.italic).toBe(true);
   });
 
+  it('VETOES an italic match when the environment cannot rasterise italic', () => {
+    // THE "REGULAR NAME SHOWS ITALIC" BUG: when the design's italic font
+    // is missing, canvas substitutes an UPRIGHT face — the italic REFERENCE
+    // then renders unslanted, the 3× slant term zeroes for both variants
+    // and DENSITY alone picks italic for an upright raster. All four
+    // signals must hold: matched italic + engine-upright + unslanted
+    // raster + UN_SLANTED italic reference (proof of substitution).
+    const substitutedRefs = [
+      { ...refsRegular, bold: false, italic: false },
+      { ...refsBold, bold: true, italic: false },
+      { ...refsRegular, bold: false, italic: true }, // italic → renders upright (slant 0.01)
+      { ...refsBold, bold: true, italic: true },
+    ];
+    const match = matchTextStyleFromInk(rasterRegular, substitutedRefs, 50, 0.2, 6, false);
+    expect(match?.italic).toBe(false);
+    expect(match?.vetoItalic).toBe(true);
+  });
+
+  it('does NOT veto an italic match when the engine claims italic', () => {
+    // A genuinely italic design (PostScript "-Italic" or fauxItalic) keeps
+    // the italic match even when this environment's rasterisation is odd.
+    const match = matchTextStyleFromInk(rasterItalic, candidates, 50, 0.2, 6, true);
+    expect(match?.italic).toBe(true);
+    expect(match?.vetoItalic).toBeUndefined();
+  });
+
+  it('does NOT veto when the RASTER really slants (engine claim was wrong)', () => {
+    // Upright-named raster that measurably slants — the design IS italic;
+    // the raster is ground truth, no veto.
+    const slantedRaster = { ...rasterRegular, slant: 0.25 };
+    const match = matchTextStyleFromInk(slantedRaster, candidates, 50, 0.2, 6, false);
+    expect(match?.italic).toBe(true);
+  });
+
+  it('does NOT veto when the italic reference slants normally (healthy environment)', () => {
+    // With a live italic reference (slant ≥ 0.12), a slanted raster's
+    // italic match is trusted — even if the engine name lacked "Italic".
+    const match = matchTextStyleFromInk(rasterItalic, candidates, 50, 0.2, 6, false);
+    expect(match?.italic).toBe(true);
+    expect(match?.vetoItalic).toBeUndefined();
+  });
+
   it('a size outside the sanity band rejects the calibration', () => {
     // Engine says 10 px but raster implies 10× that — ratio 10 > 6.
     const tiny = { ...refsRegular, inkHeight: 750 };

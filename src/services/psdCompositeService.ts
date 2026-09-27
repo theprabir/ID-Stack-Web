@@ -282,6 +282,92 @@ function makeCanvas(width: number, height: number): HTMLCanvasElement {
 }
 
 /**
+ * Detect a FULLY-WHITE ("reveal all") layer mask. Photoshop gives every
+ * newly created text layer a reveal-all mask — white everywhere, a no-op.
+ * ag-psd decodes mask bitmaps as LUMINANCE in RGB with fully-opaque alpha
+ * (setupGrayscale + resetAlpha in its reader), so such a mask must be
+ * detected from the RGB channels (a pure alpha-based `destination-in` would
+ * be a no-op anyway, but it degrades to a hard rectangle clip once the
+ * luminance is folded into alpha).
+ */
+function isRevealAllMask(mask: HTMLCanvasElement): boolean {
+  const context = mask.getContext('2d');
+  if (!context) return false;
+  try {
+    const { data } = context.getImageData(0, 0, mask.width, mask.height);
+    for (let index = 0; index < data.length; index += 4) {
+      if (data[index] !== 255 || data[index + 1] !== 255 || data[index + 2] !== 255) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Apply a layer/vector mask to rendered placeholder content
+ * (mask luminance: white = keep, black = hide — Photoshop semantics).
+ *
+ * THE "N IN JOHNSON" TRIM: masks are sampled ONLY inside the mask rect;
+ * outside it the mask is its `defaultColor` (Photoshop's mask background,
+ * 0 = hide / 255 = reveal). ag-psd decodes the bitmap as LUMINANCE with
+ * fully-opaque alpha, so a naive `drawImage` + `destination-in` (old path)
+ * intersected the content with the mask RECT — amputating any substituted
+ * value that extends past the original sample's layer bounds even when
+ * the visible mask was pure white (the common reveal-all case).
+ *
+ * 1. Reveal-all masks (white everywhere) are a no-op — the value keeps
+ *    its natural overflow, exactly like Photoshop.
+ * 2. Real (non-white) masks apply the RECT + fill first, then the decoded
+ *    bitmap per-pixel: LUMINANCE drives the keep factor with a hard
+ *    threshold at 128 (soft feather steps are approximated, never a
+ *    rectangle clip), alpha stays untouched (decode guarantee).
+ */
+function applyLayerMask(
+  content: HTMLCanvasElement,
+  mask: HTMLCanvasElement,
+  maskLeft: number,
+  maskTop: number,
+  maskWidth: number,
+  maskHeight: number,
+  defaultReveal: boolean
+): void {
+  if (isRevealAllMask(mask)) return;
+  const context = content.getContext('2d');
+  if (!context) return;
+  // Compose the FULL-CANVAS mask plane: background default outside the
+  // mask rect, decoded bitmap inside. Composing first (instead of the old
+  // erase-then-destination-in sequence) avoids `destination-in`'s erase-
+  // outside-source-rect semantics, which destroyed the outside-rect
+  // handling — and ONE composite touches every pixel exactly once.
+  const plane = makeCanvas(content.width, content.height);
+  const planeContext = plane.getContext('2d');
+  if (!planeContext) return;
+  planeContext.fillStyle = defaultReveal ? '#ffffff' : '#000000';
+  planeContext.fillRect(0, 0, plane.width, plane.height);
+  planeContext.drawImage(mask, maskLeft, maskTop, maskWidth, maskHeight);
+  try {
+    const image = planeContext.getImageData(0, 0, plane.width, plane.height);
+    const data = image.data;
+    for (let index = 0; index < data.length; index += 4) {
+      // ag-psd decodes masks as LUMINANCE with fully-opaque alpha, so the
+      // keep factor comes from the RGB channels: threshold at 50 % (masks
+      // in real ID templates are binary; antialiased edges stay crisp).
+      const keep =
+        (data[index] ?? 0) + (data[index + 1] ?? 0) + (data[index + 2] ?? 0) >= 384 ? 255 : 0;
+      data[index + 3] = keep;
+    }
+    planeContext.putImageData(image, 0, 0);
+  } catch {
+    return; // undecodable mask — leave the content untouched
+  }
+  context.save();
+  context.globalCompositeOperation = 'destination-in';
+  context.drawImage(plane, 0, 0);
+  context.restore();
+}
+
+/**
  * Draw an inner shadow / inner glow onto a layer canvas that already
  * contains the shape (text glyphs or photo).
  *
@@ -402,10 +488,15 @@ function resolveStyleAt(
   index: number,
   substituted: boolean
 ): { fontSize: number; color: string; bold: boolean; italic: boolean } {
+  // VETOED ITALIC (the "regular shows italic" bug): when the oracle's
+  // italic match was vetoed to upright, the matched BOLD is equally a
+  // substitution artefact (an upright face standing in for "…-BoldItalic"
+  // reads regular) — the engine data's own weight claim wins instead.
+  const vetoedItalic = oracle?.vetoItalic === true;
   const fallback: { fontSize: number; color: string; bold: boolean; italic: boolean } = {
     fontSize: oracle?.fontSize ?? text.fontSize ?? 18,
     color: text.color || '#000000',
-    bold: oracle?.bold ?? text.bold ?? familyBold,
+    bold: vetoedItalic ? (text.bold ?? familyBold) : (oracle?.bold ?? text.bold ?? familyBold),
     italic: oracle?.italic ?? text.italic ?? familyItalic,
   };
   if (substituted) return fallback;
@@ -465,10 +556,9 @@ function resolveMirrorPropsAt(
   if (!run) return layerFallback;
   return {
     fontCaps: run.fontCaps ?? layerFallback.fontCaps,
-    horizontalScale:
-      run.horizontalScale !== undefined ? run.horizontalScale / 100 : layerFallback.horizontalScale,
-    verticalScale:
-      run.verticalScale !== undefined ? run.verticalScale / 100 : layerFallback.verticalScale,
+    // Run scales are engine FRACTIONS (1 = 100 %) — pass through verbatim.
+    horizontalScale: run.horizontalScale ?? layerFallback.horizontalScale,
+    verticalScale: run.verticalScale ?? layerFallback.verticalScale,
     baselineShift: run.baselineShift ?? layerFallback.baselineShift,
     strikethrough: run.strikethrough ?? layerFallback.strikethrough,
   };
@@ -1261,23 +1351,26 @@ function drawTextLayer(
     substituted
   );
 
-  // Layer/vector mask: keep only the masked part of the rendered text
-  // (mask grayscale: white = keep). The mask bitmap is anchored at the
-  // LAYER bounds (offset in design px × scale) inside the canvas —
-  // unchanged semantics, now aligned to the union box origin.
+  // Layer/vector mask: keep only the masked part of the rendered text.
+  // THE "N IN JOHNSON" TRIM (v0.6.7): the old path drew the mask bitmap
+  // straight through `destination-in` — but ag-psd decodes masks as
+  // LUMINANCE with fully-opaque alpha, so that intersected the text with
+  // the mask RECT (the sample's layer bounds). A substituted value wider
+  // than the sample ("Alice Johnson" vs "ID") was amputated at that edge —
+  // a hard vertical cut mid-glyph with card space still visible to the
+  // right. applyLayerMask treats white (reveal-all) masks as a no-op and
+  // clips real masks to their rect + luminance instead.
   if (layer.maskCanvas) {
     const bounds = layer.bounds;
-    const maskTop = (layer.maskOffset?.top ?? bounds.top) * scale - canvasTop;
-    const maskLeft = (layer.maskOffset?.left ?? bounds.left) * scale - canvasLeft;
-    layerContext.globalCompositeOperation = 'destination-in';
-    layerContext.drawImage(
+    applyLayerMask(
+      layerCanvas,
       layer.maskCanvas,
-      maskLeft,
-      maskTop,
+      (layer.maskOffset?.left ?? bounds.left) * scale - canvasLeft,
+      (layer.maskOffset?.top ?? bounds.top) * scale - canvasTop,
       Math.max(1, (bounds.right - bounds.left) * scale),
-      Math.max(1, (bounds.bottom - bounds.top) * scale)
+      Math.max(1, (bounds.bottom - bounds.top) * scale),
+      (layer.maskDefaultColor ?? 0) > 127
     );
-    layerContext.globalCompositeOperation = 'source-over';
   }
 
   context.drawImage(layerCanvas, canvasLeft, canvasTop);
@@ -1408,12 +1501,19 @@ async function drawPhotoLayer(
   }
 
   // Layer/vector mask: keep only the masked part of the styled photo.
+  // v0.6.7: white (reveal-all) masks are a no-op; real masks clip at the
+  // mask rect + luminance (see applyLayerMask — the raw drawImage path
+  // rect-clipped substituted content at the sample's layer bounds).
   if (layer.maskCanvas) {
-    const maskTop = ((layer.maskOffset?.top ?? bounds.top) - bounds.top) * scale;
-    const maskLeft = ((layer.maskOffset?.left ?? bounds.left) - bounds.left) * scale;
-    layerContext.globalCompositeOperation = 'destination-in';
-    layerContext.drawImage(layer.maskCanvas, pad + maskLeft, pad + maskTop, dw, dh);
-    layerContext.globalCompositeOperation = 'source-over';
+    applyLayerMask(
+      layerCanvas,
+      layer.maskCanvas,
+      pad + ((layer.maskOffset?.left ?? bounds.left) - bounds.left) * scale,
+      pad + ((layer.maskOffset?.top ?? bounds.top) - bounds.top) * scale,
+      dw,
+      dh,
+      (layer.maskDefaultColor ?? 0) > 127
+    );
   }
 
   context.drawImage(layerCanvas, dx - pad, dy - pad);

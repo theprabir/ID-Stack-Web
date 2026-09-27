@@ -1,16 +1,24 @@
 import { ShieldCheck, Github } from 'lucide-react';
+import { VERSION } from '@/services/version';
 
 /**
  * Bottom status bar.
- * - Left: product tagline (hidden on the smallest screens to save space).
- * - Right: privacy badge (hidden on tablets/phones to avoid crowding) and
- *   the creator credit with a GitHub profile link — always visible.
+ * - Left: product tagline + version (v0.6.7 — auto-updates from
+ *   package.json on every release), hidden on the smallest screens.
+ * - Right: privacy badge (hidden below desktop width) and the creator
+ *   credit with a GitHub profile link — centred when the tagline is
+ *   hidden so the credit never leans left on phone-sized screens.
  */
 export function Footer(): JSX.Element {
   return (
     <footer className="flex h-8 items-center justify-between border-t bg-surface-panel px-4 text-xs text-muted-foreground transition-colors duration-300">
-      <span className="hidden sm:inline">ID Card Designer</span>
-      <span className="flex items-center gap-4">
+      <span className="hidden items-center gap-1.5 sm:flex">
+        <span>ID Card Designer</span>
+        <span className="rounded bg-muted px-1.5 py-px font-mono text-[10px] leading-tight text-muted-foreground">
+          v{VERSION}
+        </span>
+      </span>
+      <span className="flex items-center gap-4 max-sm:w-full max-sm:justify-center">
         <span
           className="hidden items-center gap-1 lg:flex"
           title="All processing happens in your browser"
