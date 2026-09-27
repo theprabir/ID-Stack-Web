@@ -343,6 +343,28 @@ interface InkBox {
   count: number;
 }
 
+/**
+ * Collect every TEXT fill recorded across the compositing graph: the card
+ * canvas plus (recursively) every offscreen layer canvas it drawImage's —
+ * text is painted on the offscreen canvas, not the card itself.
+ */
+function collectTextFills(canvas: HTMLCanvasElement): FillRecord[] {
+  const found: FillRecord[] = [];
+  const visited = new Set<HTMLCanvasElement>();
+  const walk = (target: HTMLCanvasElement): void => {
+    if (visited.has(target)) return;
+    visited.add(target);
+    const context = contextCache.get(target);
+    if (!context) return;
+    for (const fill of context.fills) {
+      if (fill.kind === 'text') found.push(fill);
+      if (fill.kind === 'image' && fill.source) walk(fill.source);
+    }
+  };
+  walk(canvas);
+  return found;
+}
+
 /** Bounding box of non-white pixels on the composited card */
 async function inkBoxOf(
   design: PsdDesign,
@@ -478,5 +500,58 @@ describe('placeholder text is never clipped (v0.6.4)', () => {
     expect(box.top).toBeLessThanOrEqual(682);
     // Left: origin 270 + measured originOffsetX 4 = 274.
     expect(box.left).toBe(274);
+  });
+
+  it('a substituted value paints in ONE style — never half upright, half italic', async () => {
+    // The sample PSD's value layers carry positional engine runs over the
+    // SAMPLE ("Name" → chars 0–3). Before the fix those runs split the
+    // substituted string at a sample boundary: "Bob" upright + " Smith"
+    // italic. A substituted value must take the single oracle style.
+    const design = designWithTextLayer(
+      {
+        content: 'Name',
+        runs: [
+          { from: 0, to: 4, italic: false, color: '#1e1e1e' }, // sample-only run
+          { from: 4, to: 8, italic: true, color: '#ff00ff' }, // boundary beyond sample
+        ],
+        oracle: {
+          fontSize: 50,
+          bold: true,
+          italic: true,
+          color: '#e91e63',
+          inkBox: { left: 270, top: 683, right: 398, bottom: 719 },
+          baselineOffset: 36,
+          originOffsetX: 4,
+        },
+      },
+      { bounds: { left: 270, top: 683, right: 398, bottom: 719 } }
+    );
+    const canvas = await compositeDesign(design, options({ Name: 'Bob Smith' }));
+    const textFills = collectTextFills(canvas);
+    expect(textFills.length).toBeGreaterThan(0);
+    // Every text fill must use the oracle colour — a run-split would paint
+    // part of the string with the sample run's colour instead.
+    for (const fill of textFills) {
+      expect(fill.color.toLowerCase()).toBe('#e91e63');
+    }
+  });
+
+  it('the ORIGINAL sample text still honours its positional runs', async () => {
+    // Substitution semantics must not erase real per-run styling: drawing
+    // the design as authored (empty substitution → sample content) paints
+    // each run segment in its own colour.
+    const design = designWithTextLayer({
+      content: 'AB',
+      runs: [
+        { from: 0, to: 1, color: '#ff0000' },
+        { from: 1, to: 2, color: '#0000ff' },
+      ],
+    });
+    const canvas = await compositeDesign(design, options({ Name: '' }));
+    const textFills = collectTextFills(canvas);
+    expect(textFills.length).toBeGreaterThanOrEqual(2);
+    const colours = new Set(textFills.map((fill) => fill.color.toLowerCase()));
+    expect(colours.has('#ff0000')).toBe(true);
+    expect(colours.has('#0000ff')).toBe(true);
   });
 });

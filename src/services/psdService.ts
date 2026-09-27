@@ -452,9 +452,13 @@ interface LayerStyleFallback {
 
 /**
  * Convert ag-psd style runs (length + partial style, unit-tagged sizes)
- * into resolved renderer-ready segments covering the full string. Styles
- * missing from a run fall back to the layer-level style; tracking converts
- * from thousandths-of-em to px per the run's own font size.
+ * into resolved renderer-ready segments covering the full string. A run
+ * carries ONLY the properties the engine explicitly set for it — anything
+ * absent stays undefined so the renderer falls back to the layer style or
+ * oracle. (Engine style runs are positional over the SAMPLE string; blank
+ * properties must never read as "upright/black defaults" or a substituted
+ * value would inherit a half-upright style split at a sample boundary.)
+ * Tracking converts from thousandths-of-em to px per the run's own size.
  */
 function resolveStyleRuns(
   styleRuns: { length: number; style: TextStyle }[],
@@ -474,19 +478,21 @@ function resolveStyleRuns(
     const runFontSizePx =
       style.fontSize !== undefined
         ? engineValueToDesignPx(style.fontSize, dpi, transformScale)
-        : fallback.fontSizePx;
+        : undefined;
     const trackingPx =
-      style.tracking !== undefined
-        ? (style.tracking / 1000) * (runFontSizePx ?? 0)
-        : fallback.trackingPx;
+      style.tracking !== undefined && runFontSizePx
+        ? (style.tracking / 1000) * runFontSizePx
+        : undefined;
     runs.push({
       from,
       to,
+      // Explicitly-set properties only — undefined falls back to the
+      // layer style / oracle at render time.
       fontSize: runFontSizePx,
-      color: agColorToCss(style.fillColor) || fallback.color,
-      bold: style.fauxBold ?? fallback.bold,
-      italic: style.fauxItalic ?? fallback.italic,
-      underline: style.underline ?? fallback.underline,
+      color: agColorToCss(style.fillColor) || undefined,
+      bold: style.fauxBold,
+      italic: style.fauxItalic,
+      underline: style.underline,
       tracking: trackingPx,
     });
   }
@@ -497,7 +503,7 @@ function resolveStyleRuns(
       from: 0,
       to: Number.MAX_SAFE_INTEGER,
       fontSize: fallback.fontSizePx,
-      color: fallback.color,
+      color: fallback.color || undefined,
       bold: fallback.bold,
       italic: fallback.italic,
       underline: fallback.underline,

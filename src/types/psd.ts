@@ -183,11 +183,15 @@ export interface PsdLayerInfo {
   childCount: number;
 }
 
-/** One per-character style segment resolved to renderer-ready values */
+/**
+ * One per-character style segment resolved to renderer-ready values.
+ * A property is set ONLY when the PSD engine explicitly styled those
+ * characters; undefined means "fall back to the layer style / oracle".
+ */
 export interface PsdTextRun {
-  /** First character index (0-based, inclusive) */
+  /** First character index (0-based, inclusive) over the ORIGINAL sample */
   from: number;
-  /** End character index (exclusive) */
+  /** End character index (exclusive) over the ORIGINAL sample */
   to: number;
   /** Font size in design px */
   fontSize?: number;

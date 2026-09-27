@@ -260,27 +260,30 @@ interface TextLayout {
 }
 
 /**
- * Style for one character index: the resolved run covering it (falls back
- * to the layer style / oracle when runs are absent or empty — the sample
- * PSD's deduplicated empty runs make the fallback the live path there).
+ * Style for one character index. SUBSTITUTION SEMANTICS: the engine's style
+ * runs are POSITIONAL over the ORIGINAL sample string. A substituted value
+ * is a wholesale replacement of that sample, so it never inherits the
+ * sample's positional runs — it takes the layer's single style (oracle
+ * first — its raster knows the true size/weight/slant/colour). Runs apply
+ * only while the ORIGINAL sample text itself is drawn.
  */
 function resolveStyleAt(
   text: NonNullable<PsdLayerInfo['text']>,
   oracle: PsdTextStyleOracle | undefined,
   familyBold: boolean,
   familyItalic: boolean,
-  index: number
+  index: number,
+  substituted: boolean
 ): { fontSize: number; color: string; bold: boolean; italic: boolean } {
-  const run = text.runs?.find((segment) => index >= segment.from && index < segment.to);
   const fallback: { fontSize: number; color: string; bold: boolean; italic: boolean } = {
     fontSize: oracle?.fontSize ?? text.fontSize ?? 18,
     color: text.color || '#000000',
     bold: oracle?.bold ?? text.bold ?? familyBold,
     italic: oracle?.italic ?? text.italic ?? familyItalic,
   };
+  if (substituted) return fallback;
+  const run = text.runs?.find((segment) => index >= segment.from && index < segment.to);
   if (!run) return fallback;
-  // Oracle wins on the PRIMARY sample layer (its raster knows the real
-  // size/weight/slant/colour); run values fill engine-only properties.
   return {
     fontSize: oracle?.fontSize ?? run.fontSize ?? fallback.fontSize,
     color: run.color || fallback.color,
@@ -322,7 +325,8 @@ function computeTextLayout(
   context: CanvasRenderingContext2D,
   layer: PsdLayerInfo,
   content: string,
-  scale: number
+  scale: number,
+  substituted: boolean
 ): TextLayout {
   const text = layer.text!;
   const oracle = text.oracle;
@@ -394,7 +398,7 @@ function computeTextLayout(
       continue;
     }
     const lineStartIndex = lineStarts[index] ?? 0;
-    const segments = buildLineSegments(text, line, lineStartIndex);
+    const segments = buildLineSegments(text, line, lineStartIndex, substituted);
     const width = segments.reduce((total, segment) => {
       context.font = fontCssFor(
         segment.style.bold,
@@ -445,18 +449,21 @@ interface GlyphSegment {
 }
 
 /**
- * Split a line into maximal same-style segments using the layer's resolved
- * runs. Without runs (or with ag-psd's empty deduplicated runs — the common
- * case) the whole line paints in the layer/oracle style as one segment.
+ * Split a line into maximal same-style segments. For SUBSTITUTED values the
+ * whole line is one segment in the layer/oracle style — the engine's
+ * positional runs describe the sample string, not the replacement. For the
+ * ORIGINAL sample text the layer's runs split the line faithfully (merging
+ * adjacent equal-style neighbours); absent/empty runs give one segment.
  */
 function buildLineSegments(
   text: NonNullable<PsdLayerInfo['text']>,
   line: string,
-  lineStartIndex: number
+  lineStartIndex: number,
+  substituted: boolean
 ): GlyphSegment[] {
   const styleAt = (index: number): GlyphSegment['style'] =>
-    resolveStyleAt(text, text.oracle, text.bold ?? false, text.italic ?? false, index);
-  if (!text.runs || text.runs.length === 0) {
+    resolveStyleAt(text, text.oracle, text.bold ?? false, text.italic ?? false, index, substituted);
+  if (substituted || !text.runs || text.runs.length === 0) {
     return [{ text: line, style: styleAt(lineStartIndex) }];
   }
   const segments: GlyphSegment[] = [];
@@ -505,7 +512,8 @@ function drawTextContent(
   offsetX: number,
   offsetY: number,
   scale: number,
-  family: string
+  family: string,
+  substituted: boolean
 ): void {
   const text = layer.text!;
   const effects = layer.effects;
@@ -523,7 +531,7 @@ function drawTextContent(
     const line = layout.lines[index] ?? '';
     if (line.length === 0) continue;
     const lineStartIndex = layout.lineStarts[index] ?? 0;
-    const segments = buildLineSegments(text, line, lineStartIndex);
+    const segments = buildLineSegments(text, line, lineStartIndex, substituted);
     const fontFor = (style: GlyphSegment['style']): string =>
       fontCssFor(style.bold, style.italic, style.fontSize * scale, family);
     const segmentWidth = (segment: GlyphSegment): number => {
@@ -719,10 +727,15 @@ function drawTextLayer(
 
   // Measure with the EXACT font string(s) used for drawing on the shared
   // measurement canvas so wrapping/justification agree with what is drawn.
+  // SUBSTITUTION SEMANTICS: an empty substitution means "design as
+  // authored" (the original sample is drawn — its positional style runs
+  // apply). Any non-empty value REPLACES the sample wholesale and takes the
+  // layer's single style; the sample's runs never split the replacement.
+  const substituted = content.length > 0 && content !== text.content;
   let layout: TextLayout;
   try {
     const measure = getMeasureContext();
-    layout = computeTextLayout(measure, layer, content, scale);
+    layout = computeTextLayout(measure, layer, content, scale, substituted);
   } catch {
     // Canvas 2D unavailable — nothing sensible can be drawn.
     return;
@@ -767,7 +780,8 @@ function drawTextLayer(
     canvasLeft,
     canvasTop,
     scale,
-    layout.family
+    layout.family,
+    substituted
   );
 
   // Layer/vector mask: keep only the masked part of the rendered text

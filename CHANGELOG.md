@@ -46,6 +46,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `outlineWidth`) renders under the fill when — and only when — the layer
   actually enables it (`strokeFlag`), so PSDs storing a dormant non-zero
   outlineWidth (the sample file) do not grow spurious outlines.
+- **Substituted values no longer inherit the sample's positional style
+  runs (the "half upright, half italic" bug).** Engine style runs are
+  POSITIONAL over the ORIGINAL sample string; the previous release applied
+  them to the substituted value, splitting it at a sample boundary ("Bob"
+  upright + " Smith" italic; "11/" upright + "9/01" italic). A substituted
+  value is a wholesale replacement of the sample, so it now takes the
+  layer's single style (oracle first — measured from the raster); runs
+  apply only when the ORIGINAL sample text itself is drawn. Run parsing
+  also stores only properties the engine EXPLICITLY set (absent
+  fauxBold/fauxItalic/underline no longer read as upright defaults).
+  Tests: 2 new substitution-semantics regressions (one-style substitution,
+  sample-run preservation) — 178 total.
 
 ### Added
 
