@@ -130,6 +130,8 @@ export function matchTextStyleFromInk(
     if (ratio < bandMin || ratio > bandMax) return null;
   }
   const variant = STYLE_VARIANTS[best]!;
+  const bestCandidate = candidates[best];
+  if (!bestCandidate) return null;
   // ITALIC VETO (the "regular name shows italic" bug): the match is a
   // DENSITY/SIZE comparison. When the environment CANNOT produce a true
   // italic (the design's italic font is missing; canvas falls back to an
@@ -143,7 +145,7 @@ export function matchTextStyleFromInk(
   // real italic, i.e. the match is a substitution artefact). A live
   // italic reference (slant ≥ 0.12) keeps the match trustworthy.
   const vetoItalic =
-    variant.italic && !engineItalic && raster.slant <= 0.02 && candidate!.slant <= 0.06;
+    variant.italic && !engineItalic && raster.slant <= 0.02 && bestCandidate.slant <= 0.06;
   return {
     bold: variant.bold,
     italic: vetoItalic ? false : variant.italic,
