@@ -65,6 +65,40 @@ export interface PsdLayerMask {
   left: number;
 }
 
+/** The render-time style oracle measured from the layer's ORIGINAL raster */
+export interface PsdTextStyleOracle {
+  /** Calibrated font size in design px (matches the raster ink height) */
+  fontSize: number;
+  /** Weight variant matched from the raster's ink density */
+  bold: boolean;
+  /** Slant variant matched from the raster's centroid drift */
+  italic: boolean;
+  /** Fill colour measured from the raster's solid pixels */
+  color?: string;
+  /**
+   * The original text's ink box in DESIGN pixel coordinates (absolute, not
+   * layer-relative): where the original string actually sat inside the
+   * layer bounds. Substituted text is anchored to the same left/baseline
+   * position so replacement values land exactly where the sample was.
+   */
+  inkBox: { left: number; top: number; right: number; bottom: number };
+  /**
+   * Distance from the ORIGINAL string's ink-box top to its first BASELINE
+   * (design px). The ink-box top alone cannot anchor a baseline: a
+   * descender-less sample ("ID") has no ink below the baseline, so aligning
+   * the substituted ink top to the original ink top would push the baseline
+   * too LOW. This offset (raster + font metrics, measured at parse time)
+   * reproduces Photoshop's true baseline for any substituted value.
+   */
+  baselineOffset?: number;
+  /**
+   * Horizontal offset from the text path origin to the original ink-box
+   * LEFT edge (design px). Substituted text starts at origin + this offset
+   * (left-justified text), matching where the sample actually started.
+   */
+  originOffsetX?: number;
+}
+
 /** A flattened layer description extracted from a parsed PSD.
  * Bounds are in PSD pixel space; styling preserves the design exactly.
  */
@@ -84,17 +118,54 @@ export interface PsdLayerInfo {
   /** Text content + full style for text layers */
   text?: {
     content: string;
+    /** Font size in DESIGN px (engine size × text-transform scale) */
     fontSize?: number;
     fontFamily?: string;
     color?: string;
     bold?: boolean;
     italic?: boolean;
     underline?: boolean;
+    /** Tracking in DESIGN px per gap (engine tracking = thousandths of em) */
     tracking?: number;
+    /** Baseline-to-baseline spacing in DESIGN px (auto-leading resolved) */
     leading?: number;
+    /** True when the PSD used auto-leading (leading = 1.2 × fontSize) */
+    autoLeading?: boolean;
     justification?: string;
-    /** Complete run list so mixed-style text can be re-rendered faithfully */
-    styleRuns?: { from: number; to: number; style: Record<string, unknown> }[];
+    /**
+     * Photoshop text shape: 'point' (no width wrapping, explicit newlines
+     * only, ink can extend freely) or 'box' (wraps at the box width).
+     * Defaults to 'point' when the engine data omits it.
+     */
+    shapeType?: 'point' | 'box';
+    /** Text box width in design px (box text only; 0 = unknown) */
+    boxWidth?: number;
+    /** Text box height in design px (box text only; 0 = unknown) */
+    boxHeight?: number;
+    /**
+     * Text-path origin in design px (engine-data transform tx/ty): where
+     * the text's first baseline starts. Box text is top-left anchored at
+     * the box, point text is baseline-anchored here.
+     */
+    originX?: number;
+    originY?: number;
+    /**
+     * RENDER-TIME STYLE ORACLE — the style measured from this layer's
+     * ORIGINAL rasterized pixels (size, weight, slant, colour). drawText
+     * consults it so substituted text always matches the original raster
+     * exactly, regardless of engine-data quirks or font fallback.
+     */
+    oracle?: PsdTextStyleOracle;
+    /**
+     * Resolved per-character style segments (font size/colour/weight/italic
+     * in design px / CSS values). Derived from engine styleRuns at parse
+     * time so the renderer never re-converts units.
+     */
+    runs?: PsdTextRun[];
+    /** Engine text stroke colour (drawn under the fill when strokeFlag) */
+    strokeColor?: string;
+    /** Engine text stroke width in design px (engine outlineWidth) */
+    strokeWidth?: number;
   };
   /** True when the layer has pixel content (raster/vector rendered by ag-psd) */
   hasPixels: boolean;
@@ -112,44 +183,20 @@ export interface PsdLayerInfo {
   childCount: number;
 }
 
-/**
- * A flattened layer description extracted from a parsed PSD.
- * Bounds are in PSD pixel space; styling preserves the design exactly.
- */
-export interface PsdLayerInfo {
-  /** Stable id derived from the layer path (e.g. "front/Name") */
-  id: string;
-  /** Layer name as authored in Photoshop */
-  name: string;
-  /** Nesting path (ancestor group names) for display + disambiguation */
-  path: string[];
-  kind: PsdLayerKind;
-  /** Whether the layer is visible in the PSD */
-  hidden: boolean;
-  bounds: { left: number; top: number; right: number; bottom: number };
-  opacity: number;
-  blendMode: string;
-  /** Text content + full style for text layers */
-  text?: {
-    content: string;
-    fontSize?: number;
-    fontFamily?: string;
-    color?: string;
-    bold?: boolean;
-    italic?: boolean;
-    underline?: boolean;
-    tracking?: number;
-    leading?: number;
-    justification?: string;
-    /** Complete run list so mixed-style text can be re-rendered faithfully */
-    styleRuns?: { from: number; to: number; style: Record<string, unknown> }[];
-  };
-  /** True when the layer has pixel content (raster/vector rendered by ag-psd) */
-  hasPixels: boolean;
-  /** True when the layer has non-default effects (shadow/glow/stroke) */
-  hasEffects: boolean;
-  /** Number of child layers (groups only) */
-  childCount: number;
+/** One per-character style segment resolved to renderer-ready values */
+export interface PsdTextRun {
+  /** First character index (0-based, inclusive) */
+  from: number;
+  /** End character index (exclusive) */
+  to: number;
+  /** Font size in design px */
+  fontSize?: number;
+  color?: string;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  /** Tracking in design px per gap */
+  tracking?: number;
 }
 
 /** A user-chosen placeholder layer on one side */

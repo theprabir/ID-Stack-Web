@@ -9,11 +9,25 @@ import type {
   Psd,
   LayerTextData,
   Color,
+  TextStyle,
   LayerEffectsInfo,
   LayerMaskData,
 } from 'ag-psd/dist/psd.d';
 import { readPsdPatched, applyPsdColorModePatch } from './psdColorModePatch';
-import type { PsdDesign, PsdLayerInfo, PsdLayerKind, SideType, PsdLayerEffects } from '@/types/psd';
+import type {
+  PsdDesign,
+  PsdLayerInfo,
+  PsdLayerKind,
+  SideType,
+  PsdLayerEffects,
+  PsdTextStyleOracle,
+} from '@/types/psd';
+import { measureCanvasInk, inkColorToHex } from './inkScan';
+import {
+  calibrateStyleFromRaster,
+  measureSampleAnchor,
+} from './textStyleOracle';
+import type { PsdTextRun } from '@/types/psd';
 
 // Enable CMYK PSD files (print standard). ag-psd converts CMYK→RGB internally
 // but gates the color mode behind a whitelist; the patch extends it.
@@ -217,219 +231,280 @@ function hasLayerEffects(layer: Layer): boolean {
 }
 
 /**
- * Convert a font measurement from points (Photoshop engine-data unit) to
- * design pixels at the document resolution. At 72 dpi this is the identity.
+ * Convert an engine text measurement (fontSize/leading/outlineWidth) to
+ * design px. UNIT CONTRACT: plain numbers are pre-scaled PIXELS as Photoshop
+ * drew them, still multiplied by the text transform's scale — verified
+ * against the sample PSD ("Name" bounds 36 px = cap of 50 px Arial at
+ * transform scale 1). Only genuine unit-tagged values ({units,value}, rare)
+ * convert through the document DPI.
  */
-function pointsToDesignPx(points: number, dpi: number): number {
-  return (points / 72) * dpi;
+function engineValueToDesignPx(
+  value: unknown,
+  dpi: number,
+  transformScaleX: number,
+  fallback = 0
+): number {
+  if (typeof value === 'number') return value * transformScaleX;
+  if (value && typeof value === 'object' && 'value' in (value as Record<string, unknown>)) {
+    return unitsValueToPx(value as { units: string; value: number }, dpi) * transformScaleX;
+  }
+  return fallback;
 }
 
 /**
- * Measure the INK HEIGHT of a layer's rasterized pixels: how far the
- * topmost opaque row extends down to the bottommost opaque row, in layer
- * pixels. This is the GROUND TRUTH for how tall the layer's rendered
- * content is in the design — Photoshop itself drew these pixels.
+ * Build the RENDER-TIME STYLE ORACLE for a text layer from its original
+ * raster: the size/weight/slant/colour AND the exact ink position that
+ * Photoshop actually rendered. Stored on the layer and applied VERBATIM at
+ * render time — never re-derived per substituted string. Returns undefined
+ * when the raster or environment cannot support calibration (caller falls
+ * back to engine-data values).
  *
- * Used to self-calibrate placeholder text size: whatever the engine data's
- * unit quirks, the re-rendered text must visually match the raster the PSD
- * shows for the same layer.
- *
- * @param layer - ag-psd layer with canvas or imageData pixels
- * @returns Ink height in pixels, or null when the layer has no pixels,
- *          is empty (fully transparent), or is absurdly tall (multi-line
- *          blocks whose ink height is not a single line height).
+ * Also measures (when the environment can rasterise text) how the sample
+ * string anchors relative to its ink box — ink-top→baseline and
+ * origin→ink-left — so ANY substituted value is placed on Photoshop's true
+ * baseline and start position, not merely sized like the sample.
  */
-function measureInkHeight(layer: Layer): number | null {
-  const canvas = layer.canvas;
-  if (!canvas || canvas.width === 0 || canvas.height === 0) return null;
-  // Never sample huge rasters — a multi-line paragraph's ink height spans
-  // several lines and would over-estimate the font size. Cap at 4× the
-  // width as a cheap multi-line/paragraph heuristic (single lines are wide
-  // relative to height; paragraphs are not).
-  if (canvas.height > canvas.width * 4) return null;
-  try {
-    const context = canvas.getContext('2d', { willReadFrequently: true });
-    if (!context) return null;
-    const { data, width } = context.getImageData(0, 0, canvas.width, canvas.height);
-    let top = -1;
-    let bottom = -1;
-    for (let y = 0; y < canvas.height && top === -1; y += 1) {
-      for (let x = 0; x < width; x += 1) {
-        if (data[(y * width + x) * 4 + 3]! > 8) {
-          top = y;
-          break;
-        }
-      }
-    }
-    if (top === -1) return null; // fully transparent
-    for (let y = canvas.height - 1; y >= 0 && bottom === -1; y -= 1) {
-      for (let x = 0; x < width; x += 1) {
-        if (data[(y * width + x) * 4 + 3]! > 8) {
-          bottom = y;
-          break;
-        }
-      }
-    }
-    const inkHeight = bottom - top + 1;
-    // Guard against degenerate values (a 1-2 px sliver is not a font).
-    return inkHeight >= 4 ? inkHeight : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Estimate the single-line ink height of a text string at 100 px font size
- * in a given font: the distance from the topmost to the bottommost opaque
- * pixel when drawn on a canvas. Measured ONCE PER FONT (cached) so the
- * calibration loop stays cheap even for designs with many text layers.
- *
- * The ratio inkHeight/fontSize is the calibration constant that converts a
- * measured raster ink height back into the font size Photoshop used.
- *
- * @param fontCss - Full canvas font string at 100 px size
- * @returns Ink height in px at 100 px font size (≈ 70–100 for most fonts)
- */
-function measureFontInkHeight100(fontCss: string): number {
-  const cached = fontInkCache.get(fontCss);
-  if (cached !== undefined) return cached;
-  const canvas = document.createElement('canvas');
-  canvas.width = 600;
-  canvas.height = 200;
-  const context = canvas.getContext('2d', { willReadFrequently: true });
-  if (!context) return 75; // sane default (most fonts ≈ 0.72–0.78 em ink)
-  context.font = fontCss;
-  context.textBaseline = 'alphabetic';
-  context.fillStyle = '#000';
-  context.fillText('Hxpg', 10, 150); // includes ascender (H) + descender (p,g)
-  const { data, width } = context.getImageData(0, 0, canvas.width, canvas.height);
-  let top = -1;
-  let bottom = -1;
-  for (let y = 0; y < canvas.height && top === -1; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      if (data[(y * width + x) * 4 + 3]! > 8) {
-        top = y;
-        break;
-      }
-    }
-  }
-  for (let y = canvas.height - 1; y >= 0 && bottom === -1; y -= 1) {
-    for (let x = 0; x < width; x += 1) {
-      if (data[(y * width + x) * 4 + 3]! > 8) {
-        bottom = y;
-        break;
-      }
-    }
-  }
-  const inkHeight = top === -1 || bottom === -1 ? 75 : bottom - top + 1;
-  fontInkCache.set(fontCss, inkHeight);
-  return inkHeight;
-}
-
-/** Per-font ink-height cache (key: canvas font string at 100 px) */
-const fontInkCache = new Map<string, number>();
-
-/**
- * Self-calibrate a text layer's font size against Photoshop's own raster:
- *
- * 1. Measure the ink height of the layer's ORIGINAL rasterized pixels
- *    (Photoshop's ground truth for how tall this text renders).
- * 2. Measure how tall the same text renders at a reference 100 px in the
- *    resolved font (via canvas).
- * 3. fontPx = rasterInkHeight × (100 / referenceInkHeight100).
- *
- * This makes the substituted text's visual size INDEPENDENT of the engine
- * data's unit conventions (points vs pixels vs scaled transforms): the
- * raster IS what Photoshop displays, so matching it cannot be wrong.
- * Only single-line text calibrates (multi-line ink spans several lines and
- * would over-estimate); everything else keeps the engine-data size.
- *
- * @param layer - ag-psd layer (text + raster pixels)
- * @param engineFontSizePx - Engine-data-derived font size in design px
- * @param fontCssFamily - Resolved CSS font family for measurement
- * @param bold - Faux bold flag (affects ink weight/height slightly)
- * @param italic - Faux italic flag
- * @returns Calibrated font size in design pixels, or the engine value when
- *          calibration is impossible (no pixels, multi-line, degenerate)
- */
-function calibrateFontSizeFromRaster(
+function buildTextStyleOracle(
   layer: Layer,
-  engineFontSizePx: number | undefined,
-  fontCssFamily: string,
-  bold: boolean,
-  italic: boolean
-): number | undefined {
-  const rasterInk = measureInkHeight(layer);
-  if (rasterInk === null) return engineFontSizePx;
-  const referenceFont = `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}100px ${fontCssFamily}`;
-  const referenceInk100 = measureFontInkHeight100(referenceFont);
-  if (referenceInk100 <= 10) return engineFontSizePx; // measurement failed
-  const calibrated = (rasterInk * 100) / referenceInk100;
-  // Sanity guard: calibrated must be within a wide band of the engine value
-  // (units quirks produce 1×, 4.17×, 0.24×, … but never 50×). Outside the
-  // band the calibration itself is untrustworthy — keep the engine value.
-  if (engineFontSizePx !== undefined && engineFontSizePx > 0) {
-    const ratio = calibrated / engineFontSizePx;
-    if (ratio < 0.2 || ratio > 6) return engineFontSizePx;
-  }
-  return calibrated;
+  fontFamily: string,
+  layerLeft: number,
+  layerTop: number,
+  dpi: number
+): PsdTextStyleOracle | undefined {
+  if (!layer.canvas) return undefined;
+  const content = layer.text?.text ?? '';
+  if (content.length === 0 || /\r|\n/.test(content)) return undefined;
+  const engineStyle = layer.text?.styleRuns?.[0]?.style ?? layer.text?.style;
+  const engineFontSize = engineStyle?.fontSize;
+  // Sanity band against the engine value in DESIGN px (identity transform;
+  // the wide 0.2–6 band absorbs any real transform scale).
+  const engineFontSizePx =
+    engineFontSize !== undefined
+      ? engineValueToDesignPx(engineFontSize, dpi, 1)
+      : undefined;
+  const match = calibrateStyleFromRaster(
+    layer.canvas,
+    content,
+    fontFamily,
+    engineFontSizePx
+  );
+  if (!match) return undefined;
+  const raster = measureCanvasInk(layer.canvas);
+  if (!raster) return undefined;
+  // Sample anchoring: how the ORIGINAL string sits relative to its ink box
+  // when drawn with real font metrics. Both offsets scale linearly with the
+  // font size (measured at 100 px → design px here).
+  const anchor = measureSampleAnchor(match.bold, match.italic, fontFamily, content);
+  return {
+    fontSize: match.fontSize,
+    bold: match.bold,
+    italic: match.italic,
+    color: inkColorToHex(raster.meanColor) ?? undefined,
+    // Ink box in DESIGN coordinates: layer canvas origin = (layer.left, layer.top).
+    inkBox: {
+      left: layerLeft + raster.inkLeft,
+      top: layerTop + raster.inkTop,
+      right: layerLeft + raster.inkRight,
+      bottom: layerTop + raster.inkBottom,
+    },
+    baselineOffset: anchor ? (anchor.baselineOffset100 * match.fontSize) / 100 : undefined,
+    originOffsetX: anchor ? (anchor.originOffsetX100 * match.fontSize) / 100 : undefined,
+  };
 }
 
 /**
  * Extract faithful text info from a text layer.
  *
- * UNIT CONTRACT: the Photoshop text engine stores fontSize/leading in
- * POINTS regardless of the document ruler unit, while layer bounds are in
- * design PIXELS. Both are normalised to design pixels here (using the
- * document DPI) so the composite renderer can draw px-for-px: a 12 pt font
- * on a 300-DPI doc becomes 50 px, matching the raster scale of every other
- * layer. Getting this wrong renders placeholder text ~DPI/72× too small.
+ * UNIT CONTRACT (verified against real PSDs and the ag-psd decoder): the
+ * text engine's plain-number fontSize is already in design PIXELS as drawn
+ * by Photoshop — but scaled by the text layer's own matrix. The drawn size
+ * is fontSize × transform[0] (verified: "Name" bounds 36 px tall = cap
+ * height of 50 px Arial; title bounds 62 px = cap+descender of 66.67 px
+ * Arial, both at transform scale 1). Point-unit fontSize (rare) converts
+ * through the document DPI. Treating plain numbers as points multiplies
+ * every size by DPI/72 (≈4.17× at 300 dpi) — the historical size bug.
+ *
+ * Auto-leading: the engine stores a sentinel leading (e.g. 620) with
+ * autoLeading=true; the REAL line spacing is 1.2 × font size (Photoshop's
+ * 120 % auto-leading), never the sentinel value.
  */
 function extractText(text: LayerTextData, dpi: number, layer: Layer): PsdLayerInfo['text'] {
   const firstStyle = text.styleRuns?.[0]?.style ?? text.style;
   const fontName = firstStyle?.font?.name ?? undefined;
   const color = agColorToCss(firstStyle?.fillColor);
-  const justification = text.paragraphStyle?.justification ?? 'left';
 
-  const fontSizePt =
-    firstStyle?.fontSize !== undefined ? unitsValueToPx(firstStyle.fontSize, dpi) : undefined;
-  const leadingPt =
-    firstStyle?.leading !== undefined ? unitsValueToPx(firstStyle.leading, dpi) : undefined;
+  // Text-path transform: [a, b, c, d, tx, ty] — a/d scale the drawn text.
+  const transform = text.transform ?? [1, 0, 0, 1, 0, 0];
+  const transformScaleX =
+    typeof transform[0] === 'number' && Math.abs(transform[0]) > 0.01 ? transform[0] : 1;
+  const transformScaleY =
+    typeof transform[3] === 'number' && Math.abs(transform[3]) > 0.01 ? transform[3] : 1;
+  const autoLeading = firstStyle?.autoLeading === true;
+  const engineFontSizePx =
+    firstStyle?.fontSize !== undefined
+      ? engineValueToDesignPx(firstStyle.fontSize, dpi, transformScaleX)
+      : undefined;
+  const engineBold = firstStyle?.fauxBold === true || /bold|black|heavy/i.test(fontName ?? '');
+  const engineItalic = firstStyle?.fauxItalic === true || /italic|oblique/i.test(fontName ?? '');
 
-  const bold = firstStyle?.fauxBold === true || /bold|black|heavy/i.test(fontName ?? '');
-  const italic = firstStyle?.fauxItalic === true || /italic|oblique/i.test(fontName ?? '');
-  const engineFontSizePx = fontSizePt !== undefined ? pointsToDesignPx(fontSizePt, dpi) : undefined;
-  // SELF-CALIBRATION: Photoshop's own rasterized pixels of this layer are
-  // the ground truth for how big the text should render. Engine-data unit
-  // conventions vary (points/pixels/transforms) and have repeatedly produced
-  // wrong sizes; matching the raster cannot be wrong. Falls back to the
-  // engine value when the layer has no usable pixels.
-  const fontSize = calibrateFontSizeFromRaster(
+  // Line spacing (design px): auto-leading = 1.2 × size (Photoshop 120 %);
+  // otherwise the engine's leading value (plain numbers already px-scaled).
+  const leading = autoLeading
+    ? (engineFontSizePx ?? 0) * 1.2
+    : firstStyle?.leading !== undefined
+      ? engineValueToDesignPx(firstStyle.leading, dpi, transformScaleX)
+      : undefined;
+
+  // Text shape: 'box' wraps at the box width; 'point' never width-wraps.
+  const shapeType = text.shapeType === 'box' ? 'box' : 'point';
+  // boxBounds = [left, top, right, bottom] relative to the text origin.
+  const boxBounds = text.boxBounds;
+  const boxWidth =
+    shapeType === 'box' && Array.isArray(boxBounds)
+      ? Math.max(0, ((boxBounds[2] ?? 0) - (boxBounds[0] ?? 0)) * transformScaleX)
+      : 0;
+  const boxHeight =
+    shapeType === 'box' && Array.isArray(boxBounds)
+      ? Math.max(0, ((boxBounds[3] ?? 0) - (boxBounds[1] ?? 0)) * transformScaleY)
+      : 0;
+
+  // RENDER-TIME STYLE ORACLE: measure Photoshop's own raster of this layer
+  // (size, weight, slant, colour, ink position) and store it on the layer.
+  // drawTextLayer applies the oracle VERBATIM — substituted text uses the
+  // original style and geometry; it is never re-derived per string.
+  const oracle = buildTextStyleOracle(
     layer,
-    engineFontSizePx,
     fontName ?? 'sans-serif',
-    bold,
-    italic
+    layer.left ?? 0,
+    layer.top ?? 0,
+    dpi
   );
+
+  // Resolved per-character style segments (renderer-ready design px/CSS).
+  // Runs of 0 length (ag-psd dedupe artefacts) and layer-style fallbacks are
+  // applied so the renderer can paint each segment verbatim.
+  const runs: PsdTextRun[] | undefined = text.styleRuns
+    ? resolveStyleRuns(
+        text.styleRuns,
+        text.style,
+        {
+          fontSizePx: engineFontSizePx,
+          color,
+          bold: engineBold,
+          italic: engineItalic,
+          underline: firstStyle?.underline === true,
+          trackingPx:
+            firstStyle?.tracking !== undefined
+              ? (firstStyle.tracking / 1000) * (engineFontSizePx ?? 0)
+              : undefined,
+        },
+        dpi,
+        transformScaleX
+      )
+    : undefined;
+
+  // Engine TEXT stroke (character panel outline): only when the layer
+  // actually enables it. The sample PSD stores strokeFlag=false with a
+  // non-zero outlineWidth — a stroke must NOT be drawn for it.
+  const strokeColorCss = agColorToCss(firstStyle?.strokeColor);
+  const engineStrokeWidth =
+    firstStyle?.outlineWidth !== undefined
+      ? engineValueToDesignPx(firstStyle.outlineWidth, dpi, transformScaleX)
+      : 0;
 
   return {
     content: text.text,
-    fontSize,
+    fontSize: oracle?.fontSize ?? engineFontSizePx,
     fontFamily: fontName,
-    color: color || undefined,
-    bold,
-    italic,
+    color: oracle?.color ?? (color || undefined),
+    bold: oracle?.bold ?? engineBold,
+    italic: oracle?.italic ?? engineItalic,
+    oracle,
+    justification: text.paragraphStyle?.justification ?? 'left',
     underline: firstStyle?.underline === true,
-    tracking: firstStyle?.tracking,
-    leading: leadingPt !== undefined ? pointsToDesignPx(leadingPt, dpi) : undefined,
-    justification,
-    // Preserve every run so re-rendered text keeps mixed styling.
-    styleRuns: text.styleRuns?.map((run) => ({
-      from: 0,
-      to: run.length,
-      style: run.style as unknown as Record<string, unknown>,
-    })),
+    tracking:
+      firstStyle?.tracking !== undefined
+        ? (firstStyle.tracking / 1000) * (engineFontSizePx ?? 0)
+        : undefined,
+    leading: leading !== undefined && leading > 0 ? leading : undefined,
+    autoLeading,
+    shapeType,
+    boxWidth,
+    boxHeight,
+    originX: transform[4],
+    originY: transform[5],
+    runs,
+    strokeColor: strokeColorCss || undefined,
+    strokeWidth:
+      firstStyle?.strokeFlag === true && engineStrokeWidth > 0 ? engineStrokeWidth : undefined,
   };
+}
+
+/** Layer-level text style values used as the fallback for style runs */
+interface LayerStyleFallback {
+  fontSizePx: number | undefined;
+  color: string;
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  trackingPx: number | undefined;
+}
+
+/**
+ * Convert ag-psd style runs (length + partial style, unit-tagged sizes)
+ * into resolved renderer-ready segments covering the full string. Styles
+ * missing from a run fall back to the layer-level style; tracking converts
+ * from thousandths-of-em to px per the run's own font size.
+ */
+function resolveStyleRuns(
+  styleRuns: { length: number; style: TextStyle }[],
+  layerStyle: TextStyle | undefined,
+  fallback: LayerStyleFallback,
+  dpi: number,
+  transformScale: number
+): PsdTextRun[] {
+  const runs: PsdTextRun[] = [];
+  let cursor = 0;
+  for (const run of styleRuns) {
+    const from = cursor;
+    const to = cursor + Math.max(0, run.length);
+    cursor = to;
+    if (to <= from) continue;
+    const style = run.style ?? {};
+    const runFontSizePx =
+      style.fontSize !== undefined
+        ? engineValueToDesignPx(style.fontSize, dpi, transformScale)
+        : fallback.fontSizePx;
+    const trackingPx =
+      style.tracking !== undefined
+        ? (style.tracking / 1000) * (runFontSizePx ?? 0)
+        : fallback.trackingPx;
+    runs.push({
+      from,
+      to,
+      fontSize: runFontSizePx,
+      color: agColorToCss(style.fillColor) || fallback.color,
+      bold: style.fauxBold ?? fallback.bold,
+      italic: style.fauxItalic ?? fallback.italic,
+      underline: style.underline ?? fallback.underline,
+      tracking: trackingPx,
+    });
+  }
+  if (cursor === 0 && layerStyle) {
+    // No usable runs — one segment covering "the whole string" (length is
+    // unknown here; the renderer clamps it to the content length).
+    runs.push({
+      from: 0,
+      to: Number.MAX_SAFE_INTEGER,
+      fontSize: fallback.fontSizePx,
+      color: fallback.color,
+      bold: fallback.bold,
+      italic: fallback.italic,
+      underline: fallback.underline,
+      tracking: fallback.trackingPx,
+    });
+  }
+  return runs;
 }
 
 /** Flatten the layer tree into a display list (top-most first) */

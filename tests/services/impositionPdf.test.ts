@@ -25,16 +25,22 @@ vi.mock('@kittl/little-cms/formats', () => ({ TYPE_RGB_8: 0, TYPE_CMYK_8: 0 }));
 vi.mock('@kittl/little-cms/flags', () => ({ FLAGS_NOOPTIMIZE: 0 }));
 vi.mock('@/assets/profiles/default_cmyk.icc?url', () => ({ default: 'mock://default_cmyk.icc' }));
 vi.mock('@/assets/fonts/arimo-regular.ttf?url', () => ({ default: 'mock://arimo.ttf' }));
-globalThis.fetch = vi.fn(async () => new Response(new ArrayBuffer(8), { status: 200 })) as unknown as typeof fetch;
+globalThis.fetch = vi.fn(
+  async () => new Response(new ArrayBuffer(8), { status: 200 })
+) as unknown as typeof fetch;
 
 import { buildSheetsPdf } from '@/services/impositionService';
 import { DEFAULT_IMPOSITION_SETTINGS, type ImpositionSettings } from '@/services/impositionTypes';
+import { PDFDocument, PDFName } from 'pdf-lib';
 
 /** Create a mock canvas of the given pixel size filled with a solid colour */
 function mockCanvas(width: number, height: number, gray: number): HTMLCanvasElement {
   const pixels = new Uint8ClampedArray(width * height * 4);
   for (let p = 0; p < pixels.length; p += 4) {
-    pixels[p] = gray; pixels[p + 1] = gray; pixels[p + 2] = gray; pixels[p + 3] = 255;
+    pixels[p] = gray;
+    pixels[p + 1] = gray;
+    pixels[p + 2] = gray;
+    pixels[p + 3] = 255;
   }
   return {
     width,
@@ -54,7 +60,13 @@ function ptSettings(): ImpositionSettings {
     gap: 10,
     margin: 10,
     cropMarks: true,
-    numbering: { mode: 'per-sheet', position: 'bottom-right', fontSize: 8, color: '#333333', prefix: 'S' },
+    numbering: {
+      mode: 'per-sheet',
+      position: 'bottom-right',
+      fontSize: 8,
+      color: '#333333',
+      prefix: 'S',
+    },
     duplex: false,
   };
 }
@@ -114,5 +126,34 @@ describe('impositionService — sheet PDF assembly', () => {
       .join('\n');
     // Crop marks are stroked line segments ("m ... l S").
     expect(inflated).toMatch(/m [\d.]+ [\d.]+ l S/);
+  });
+
+  it('registers the numbering font ONLY in /Font (never in /XObject)', async () => {
+    // Regression: the font was also registered into the XObject dict, which
+    // is invalid PDF — some viewers dropped the numbering text entirely.
+    const settings = ptSettings();
+    const bytes = await buildSheetsPdf([[mockCanvas(90, 50, 128)]], settings);
+    const doc = await PDFDocument.load(bytes);
+    const page = doc.getPage(0);
+    const res = doc.context.lookup(page.node.Resources()) as unknown as {
+      get: (name: PDFName) => unknown | undefined;
+    };
+    const fontDict = res.get(PDFName.of('Font'));
+    const xobjDict = res.get(PDFName.of('XObject'));
+    expect(fontDict).toBeDefined();
+    const lookupEntries = (ref: unknown): string[] => {
+      const dict = doc.context.lookup(ref as never) as unknown as
+        | {
+            entries: () => [PDFName, unknown][];
+          }
+        | undefined;
+      return dict ? dict.entries().map(([key]) => String(key)) : [];
+    };
+    expect(lookupEntries(fontDict)).toContain('/__NumberFont');
+    if (xobjDict) {
+      const xobjNames = lookupEntries(xobjDict);
+      expect(xobjNames).not.toContain('/__NumberFont');
+      expect(xobjNames).not.toContain('/__NumberFontPlaceholder');
+    }
   });
 });

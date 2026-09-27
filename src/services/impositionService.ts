@@ -268,9 +268,10 @@ export async function buildSheetsPdf(
         baseline = inset;
       }
       // Text is drawn via the content stream (BT/Tf/Td/Tj/ET) to keep the
-      // single-content-stream invariant; font is embedded in Resources.
-      const fontRef = (numberFont as unknown as { ref: PDFRef }).ref;
-      imageRefs.__NumberFontPlaceholder = fontRef;
+      // single-content-stream invariant. The font lives ONLY in the /Font
+      // dict below — registering it in XObject too is invalid PDF (viewers
+      // may drop the text) and was the cause of "missing numbering" in
+      // exported PDFs.
       contentLines.push(
         `BT ${nr.toFixed(3)} ${ng.toFixed(3)} ${nb.toFixed(3)} rg /__NumberFont ${size} Tf ${x.toFixed(2)} ${baseline.toFixed(2)} Td (${escapePdfText(text)}) Tj ET`
       );

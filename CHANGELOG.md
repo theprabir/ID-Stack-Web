@@ -3,7 +3,95 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6.4] - 2026-09-26
+
+### Fixed
+
+- **Placeholder text is no longer trimmed/clipped to the sample string's ink
+  box (the "Engineeri…" / "Alice" / "10▌" / "11/9▌" bug).** Root cause,
+  verified by parsing the sample PSD's actual engine data: the renderer drew
+  substituted values on an offscreen canvas sized to the ORIGINAL sample's
+  shrink-wrapped ink bounds ("ID" ≈ 44 px wide) and word-wrapped at that
+  same width — the design's real text box (`shapeType: 'box'`,
+  `boxBounds: [0,0,204,77.9]`) was never parsed. Longer values were clipped
+  mid-glyph and wrapped lines fell outside the one-line-tall canvas. The
+  renderer now parses the true text geometry and never clips at the sample's
+  ink box: the offscreen layer canvas GROWS to fit the measured content,
+  capped only by the card edges (the design canvas is the only clip, exactly
+  like Photoshop). Box text wraps at the parsed box width; point text never
+  width-wraps (explicit newlines only).
+- **Unit contract corrected (verified, not theoretical):** the text engine's
+  plain-number fontSize is already design PIXELS scaled by the text
+  transform ("Name" layer bounds 36 px tall = cap height of 50 px Arial;
+  title 62 px = cap+descender of 66.67 px Arial) — px = fontSize ×
+  transform[0]. The old `pointsToDesignPx(…, dpi)` path multiplied sizes by
+  DPI/72 (≈4.17× at 300 dpi) for every non-oracle render. Genuine unit-tagged
+  values (`{units,value}`) still convert through the document DPI.
+- **Auto-leading sentinel honoured:** engine `leading: 620.00037` with
+  `autoLeading: true` is a sentinel; the real line spacing is 1.2 × font
+  size (Photoshop's 120 %). The old code converted the sentinel through the
+  DPI (620 → 2583 px), throwing any wrapped line far off the canvas.
+- **True baseline anchoring:** with a style oracle, the first baseline now
+  sits exactly where Photoshop drew the sample's (oracle ink-box top +
+  parse-measured ink-top→baseline offset) instead of the font-ascent guess
+  (~10 px low at 50 px). Left-justified text also starts at the sample's
+  measured ink start (origin→ink-left offset).
+- **Per-run styling:** resolved style-run segments (size/colour/weight/
+  italic/tracking) are painted per segment with layer-style fallback (the
+  sample PSD's deduplicated empty runs make the fallback the live path).
+  Internal spaces are preserved verbatim, so multi-space labels
+  ("ID     :" ) keep their alignment. Photoshop tracking now converts from
+  thousandths of an em (Adobe spec) instead of 1/100 em (100× overshoot).
+- **Engine text stroke** (character-panel outline, `strokeColor` +
+  `outlineWidth`) renders under the fill when — and only when — the layer
+  actually enables it (`strokeFlag`), so PSDs storing a dormant non-zero
+  outlineWidth (the sample file) do not grow spurious outlines.
+
+### Added
+
+- `PsdLayerInfo.text` carries the parsed text geometry: `shapeType`,
+  `boxWidth`/`boxHeight`, `originX`/`originY` (engine transform),
+  `autoLeading`, resolved `runs`, `strokeColor`/`strokeWidth`. The oracle
+  adds `baselineOffset` and `originOffsetX` (parse-time sample anchoring,
+  measured with real font metrics at 100 px and scaled).
+- Tests: 18 new — textClipping regression suite (7, against an observable
+  rasteriser canvas mock: no-clip overflow, box wrap, wrapped-line leading,
+  point no-wrap, centre justification, oracle baseline/origin anchoring) and
+  extractText contract tests (transform scaling, auto-leading resolution,
+  box geometry, engine-stroke gating). Mutation-checked: 5 of the 7 clipping
+  tests fail against the pre-fix renderer. 176 total.
+
 ## [0.6.3] - 2026-09-26
+
+### Changed
+
+- **Placeholder text now carries a RENDER-TIME STYLE ORACLE — the original
+  PSD's text style is measured once at parse and ENFORCED at every render.**
+  Previous fixes derived the style at parse time only; font fallback (the
+  design's exact font not being installed/uploaded) still let the drawn ink
+  drift from the original. Now every text layer stores an oracle measured
+  from its own ORIGINAL raster — font size, weight (bold), slant (italic)
+  and fill colour — and `drawTextLayer` re-measures its own output before
+  compositing, correcting the font size until the drawn ink footprint
+  matches the oracle (bounded two-iteration loop). Substituted text
+  therefore keeps the placeholder's exact Photoshop style — size, colour,
+  weight, slant, stroke/shadow/overlay effects, alignment and masks — no
+  matter what the engine data claimed or which font the browser substitutes.
+- New shared modules: `inkScan` (one-pass ink measurement used by both
+  parse-time calibration and render-time verification) and
+  `textStyleOracle` (reference rendering + least-squares style matching
+  across the four bold/italic variants, with a sanity band and graceful
+  fallback to engine data when the environment cannot rasterise text).
+- `PsdLayerInfo.text.oracle` added to the layer type, including the
+  original ink box (design-pixel coordinates) so substituted text is
+  anchored to the exact left edge and baseline of the original sample and
+  clips at the original text box like Photoshop point text. The oracle is
+  applied VERBATIM — the earlier per-string "verify-correct" size loop was
+  removed (it inflated descender-less values like "Sales" ~39%, overflowing
+  the box); font size is a per-layer property, never re-derived per string.
+- The duplicated `PsdLayerInfo` declaration in `types/psd.ts` was removed.
+
+### Fixed
 
 ### Changed
 
@@ -24,8 +112,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   subtitle, consistent padding), and the Library empty state got a proper
   framed icon tile and helpful copy.
 
-### Fixed
-
 ### Changed
 
 - **Redesigned Settings page.** The page previously showed three sparse
@@ -39,10 +125,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-### Fixed
-
-- **Placeholder text size is now SELF-CALIBRATED against Photoshop's own
-  pixels — the definitive fix.** The v0.6.1 fix converted engine-data font
+- **Placeholder text style is now FULLY self-calibrated against
+  Photoshop's own pixels — size AND weight, slant and colour.** The first
+  calibration release fixed only the size: substituted values rendered
+  regular-weight black while the design's raster labels were bold italic
+  with a tinted fill, because bold/italic flags and colours still came from
+  the unreliable engine data. The raster knows all of it, so the extractor
+  now measures the layer's original pixels in one pass and derives the
+  complete style: font size (ink-height ratio, now referenced against the
+  layer's own text so descender-less strings like "Name:" size correctly),
+  **bold** (ink density — bold glyphs fill more of their bounding box),
+  **italic** (row-centroid slant between the top and bottom ink quarters),
+  and **fill colour** (mean RGB of solid pixels — exact even when the PSD
+  stores CMYK). The best of the four style variants is chosen by least
+  squares over density+slant, with a sanity band and graceful fallback to
+  engine data for pixel-less layers and multi-line paragraphs. The v0.6.1 fix converted engine-data font
   sizes points→pixels using the document DPI (a theoretical unit contract),
   but real-world PSDs proved that contract unreliable: engine data written
   by different Photoshop versions/localisations reports sizes in units that
