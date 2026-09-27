@@ -23,10 +23,7 @@ import type {
   PsdTextStyleOracle,
 } from '@/types/psd';
 import { measureCanvasInk, inkColorToHex } from './inkScan';
-import {
-  calibrateStyleFromRaster,
-  measureSampleAnchor,
-} from './textStyleOracle';
+import { calibrateStyleFromRaster, measureSampleAnchor } from './textStyleOracle';
 import type { PsdTextRun } from '@/types/psd';
 
 // Enable CMYK PSD files (print standard). ag-psd converts CMYK→RGB internally
@@ -180,6 +177,38 @@ export function extractLayerEffects(
     out.solidFill = { color: agColorToCss(fill.color) || '#000000', opacity: fill.opacity ?? 1 };
   }
 
+  for (const overlay of effects.gradientOverlay ?? []) {
+    if (!enabled(overlay)) continue;
+    const gradient = overlay.gradient;
+    if (
+      !gradient ||
+      gradient.type !== 'solid' ||
+      !Array.isArray(gradient.colorStops) ||
+      gradient.colorStops.length === 0
+    ) {
+      continue; // noise gradients are not representable on canvas
+    }
+    any = true;
+    // ag-psd normalises gradient stop locations to 0–1 (raw engine value ÷
+    // smoothness interpolation).
+    const colorStops = gradient.colorStops.map((stop) => ({
+      color: agColorToCss(stop.color) || '#000000',
+      position: Math.max(0, Math.min(1, stop.location)),
+    }));
+    const opacityStops = (gradient.opacityStops ?? []).map((stop) => ({
+      opacity: stop.opacity,
+      position: Math.max(0, Math.min(1, stop.location)),
+    }));
+    out.gradientOverlay = {
+      colorStops,
+      opacityStops,
+      angle: overlay.angle ?? 90,
+      opacity: overlay.opacity ?? 1,
+      style: overlay.type === 'radial' ? 'radial' : 'linear',
+      reverse: overlay.reverse === true,
+    };
+  }
+
   return any ? out : undefined;
 }
 
@@ -252,6 +281,17 @@ function engineValueToDesignPx(
 }
 
 /**
+ * ag-psd DEDUPLICATION coalesce: shared values are hoisted out of the
+ * per-run styles into text.style, so a property must be read as
+ * run-first → layer-fallback. Reading styleRuns[0].style alone returns the
+ * dedupe artefact and silently LOSES the property (the root cause of the
+ * "Charmaine Patel" fallback-font/mis-alignment bug).
+ */
+function coalesce<T>(runValue: T | undefined, layerValue: T | undefined): T | undefined {
+  return runValue !== undefined ? runValue : layerValue;
+}
+
+/**
  * Build the RENDER-TIME STYLE ORACLE for a text layer from its original
  * raster: the size/weight/slant/colour AND the exact ink position that
  * Photoshop actually rendered. Stored on the layer and applied VERBATIM at
@@ -279,15 +319,8 @@ function buildTextStyleOracle(
   // Sanity band against the engine value in DESIGN px (identity transform;
   // the wide 0.2–6 band absorbs any real transform scale).
   const engineFontSizePx =
-    engineFontSize !== undefined
-      ? engineValueToDesignPx(engineFontSize, dpi, 1)
-      : undefined;
-  const match = calibrateStyleFromRaster(
-    layer.canvas,
-    content,
-    fontFamily,
-    engineFontSizePx
-  );
+    engineFontSize !== undefined ? engineValueToDesignPx(engineFontSize, dpi, 1) : undefined;
+  const match = calibrateStyleFromRaster(layer.canvas, content, fontFamily, engineFontSizePx);
   if (!match) return undefined;
   const raster = measureCanvasInk(layer.canvas);
   if (!raster) return undefined;
@@ -321,17 +354,26 @@ function buildTextStyleOracle(
  * is fontSize × transform[0] (verified: "Name" bounds 36 px tall = cap
  * height of 50 px Arial; title bounds 62 px = cap+descender of 66.67 px
  * Arial, both at transform scale 1). Point-unit fontSize (rare) converts
- * through the document DPI. Treating plain numbers as points multiplies
- * every size by DPI/72 (≈4.17× at 300 dpi) — the historical size bug.
+ * through the document DPI. Treating plain numbers as artifacts
+ * multiplies every size by DPI/72 (≈4.17× at 300 dpi) — the historical size bug.
  *
  * Auto-leading: the engine stores a sentinel leading (e.g. 620) with
  * autoLeading=true; the REAL line spacing is 1.2 × font size (Photoshop's
  * 120 % auto-leading), never the sentinel value.
  */
 function extractText(text: LayerTextData, dpi: number, layer: Layer): PsdLayerInfo['text'] {
-  const firstStyle = text.styleRuns?.[0]?.style ?? text.style;
-  const fontName = firstStyle?.font?.name ?? undefined;
-  const color = agColorToCss(firstStyle?.fillColor);
+  // ag-psd DEDUPLICATES engine data: every property shared by ALL style runs
+  // is hoisted into text.style and DELETED from the per-run styles. The runs
+  // therefore never stand alone — every property is coalesced with the
+  // module-level coalesce helper (run → layer). Reading styleRuns[0].style
+  // first (the old code) returned the dedupe artefact ({autoKern:false}) and
+  // LOST the font, size, colour and every other property — the "Charmaine
+  // Patel" bug.
+  const firstRunStyle: TextStyle | undefined = text.styleRuns?.[0]?.style;
+  const firstStyle: TextStyle | undefined = firstRunStyle ?? text.style;
+  const fontName = coalesce(firstRunStyle?.font?.name, text.style?.font?.name) ?? undefined;
+  const postScriptName = fontName ?? undefined;
+  const color = agColorToCss(coalesce(firstRunStyle?.fillColor, text.style?.fillColor));
 
   // Text-path transform: [a, b, c, d, tx, ty] — a/d scale the drawn text.
   const transform = text.transform ?? [1, 0, 0, 1, 0, 0];
@@ -341,8 +383,12 @@ function extractText(text: LayerTextData, dpi: number, layer: Layer): PsdLayerIn
     typeof transform[3] === 'number' && Math.abs(transform[3]) > 0.01 ? transform[3] : 1;
   const autoLeading = firstStyle?.autoLeading === true;
   const engineFontSizePx =
-    firstStyle?.fontSize !== undefined
-      ? engineValueToDesignPx(firstStyle.fontSize, dpi, transformScaleX)
+    coalesce(firstRunStyle?.fontSize, text.style?.fontSize) !== undefined
+      ? engineValueToDesignPx(
+          coalesce(firstRunStyle?.fontSize, text.style?.fontSize),
+          dpi,
+          transformScaleX
+        )
       : undefined;
   const engineBold = firstStyle?.fauxBold === true || /bold|black|heavy/i.test(fontName ?? '');
   const engineItalic = firstStyle?.fauxItalic === true || /italic|oblique/i.test(fontName ?? '');
@@ -351,8 +397,12 @@ function extractText(text: LayerTextData, dpi: number, layer: Layer): PsdLayerIn
   // otherwise the engine's leading value (plain numbers already px-scaled).
   const leading = autoLeading
     ? (engineFontSizePx ?? 0) * 1.2
-    : firstStyle?.leading !== undefined
-      ? engineValueToDesignPx(firstStyle.leading, dpi, transformScaleX)
+    : coalesce(firstRunStyle?.leading, text.style?.leading) !== undefined
+      ? engineValueToDesignPx(
+          coalesce(firstRunStyle?.leading, text.style?.leading),
+          dpi,
+          transformScaleX
+        )
       : undefined;
 
   // Text shape: 'box' wraps at the box width; 'point' never width-wraps.
@@ -380,6 +430,26 @@ function extractText(text: LayerTextData, dpi: number, layer: Layer): PsdLayerIn
     dpi
   );
 
+  // Engine Horizontal/Vertical Scale (Photoshop character panel, %: 100 =
+  // authored). Per-run value coalesced with the layer style (dedupe).
+  const engineHorizontalScale = coalesce(
+    firstRunStyle?.horizontalScale,
+    text.style?.horizontalScale
+  );
+  const engineVerticalScale = coalesce(firstRunStyle?.verticalScale, text.style?.verticalScale);
+  const engineBaselineShiftPx =
+    coalesce(firstRunStyle?.baselineShift, text.style?.baselineShift) !== undefined
+      ? engineValueToDesignPx(
+          coalesce(firstRunStyle?.baselineShift, text.style?.baselineShift),
+          dpi,
+          transformScaleY
+        )
+      : undefined;
+  const engineFontCaps = coalesce(firstRunStyle?.fontCaps, text.style?.fontCaps);
+  const engineKerning = coalesce(firstRunStyle?.kerning, text.style?.kerning);
+  const engineStrikethrough =
+    coalesce(firstRunStyle?.strikethrough, text.style?.strikethrough) === true;
+
   // Resolved per-character style segments (renderer-ready design px/CSS).
   // Runs of 0 length (ag-psd dedupe artefacts) and layer-style fallbacks are
   // applied so the renderer can paint each segment verbatim.
@@ -403,6 +473,27 @@ function extractText(text: LayerTextData, dpi: number, layer: Layer): PsdLayerIn
       )
     : undefined;
 
+  // Per-paragraph justification (paragraphStyleRuns) — the AUTHORITATIVE
+  // alignment source. text.paragraphStyle is itself a dedupe base: when all
+  // paragraphs share one justification it lives there; mixed alignments
+  // (e.g. line 1 centred, line 2 left) stay per-run and the base is EMPTY.
+  // Falls back to the base paragraphStyle, then 'left'.
+  const paragraphJustifications: (string | undefined)[] = [];
+  let hasParagraphRuns = false;
+  if (text.paragraphStyleRuns && text.paragraphStyleRuns.length > 0) {
+    hasParagraphRuns = true;
+    for (const paragraphRun of text.paragraphStyleRuns) {
+      const style = paragraphRun.style ?? {};
+      for (let index = 0; index < Math.max(0, paragraphRun.length); index += 1) {
+        paragraphJustifications.push(style.justification);
+      }
+    }
+  }
+  const layerJustification: string =
+    paragraphJustifications.find((value) => value !== undefined) ??
+    text.paragraphStyle?.justification ??
+    'left';
+
   // Engine TEXT stroke (character panel outline): only when the layer
   // actually enables it. The sample PSD stores strokeFlag=false with a
   // non-zero outlineWidth — a stroke must NOT be drawn for it.
@@ -415,16 +506,32 @@ function extractText(text: LayerTextData, dpi: number, layer: Layer): PsdLayerIn
   return {
     content: text.text,
     fontSize: oracle?.fontSize ?? engineFontSizePx,
-    fontFamily: fontName,
+    fontFamily: postScriptName,
+    postScriptName,
+    fontWeight: deriveFontWeight(postScriptName, engineBold),
     color: oracle?.color ?? (color || undefined),
     bold: oracle?.bold ?? engineBold,
     italic: oracle?.italic ?? engineItalic,
     oracle,
-    justification: text.paragraphStyle?.justification ?? 'left',
-    underline: firstStyle?.underline === true,
+    justification: layerJustification,
+    paragraphJustifications: hasParagraphRuns ? paragraphJustifications : undefined,
+    horizontalScale:
+      engineHorizontalScale !== undefined && engineHorizontalScale !== 100
+        ? engineHorizontalScale / 100
+        : undefined,
+    verticalScale:
+      engineVerticalScale !== undefined && engineVerticalScale !== 100
+        ? engineVerticalScale / 100
+        : undefined,
+    baselineShift: engineBaselineShiftPx,
+    fontCaps: engineFontCaps,
+    strikethrough: engineStrikethrough || undefined,
+    kerning: engineKerning,
+    underline: coalesce(firstRunStyle?.underline, text.style?.underline) === true,
     tracking:
-      firstStyle?.tracking !== undefined
-        ? (firstStyle.tracking / 1000) * (engineFontSizePx ?? 0)
+      coalesce(firstRunStyle?.tracking, text.style?.tracking) !== undefined
+        ? ((coalesce(firstRunStyle?.tracking, text.style?.tracking) ?? 0) / 1000) *
+          (engineFontSizePx ?? 0)
         : undefined,
     leading: leading !== undefined && leading > 0 ? leading : undefined,
     autoLeading,
@@ -487,13 +594,28 @@ function resolveStyleRuns(
       from,
       to,
       // Explicitly-set properties only — undefined falls back to the
-      // layer style / oracle at render time.
+      // layer style / oracle at render time. Per-run font/transform values
+      // are coalesced with the layer style (ag-psd dedupe hoists shared
+      // values out of the runs into text.style).
       fontSize: runFontSizePx,
       color: agColorToCss(style.fillColor) || undefined,
       bold: style.fauxBold,
       italic: style.fauxItalic,
       underline: style.underline,
       tracking: trackingPx,
+      fontFamily: coalesce(style.font?.name, layerStyle?.font?.name) ?? undefined,
+      horizontalScale: coalesce(style.horizontalScale, layerStyle?.horizontalScale),
+      verticalScale: coalesce(style.verticalScale, layerStyle?.verticalScale),
+      baselineShift:
+        coalesce(style.baselineShift, layerStyle?.baselineShift) !== undefined
+          ? engineValueToDesignPx(
+              coalesce(style.baselineShift, layerStyle?.baselineShift),
+              dpi,
+              transformScale
+            )
+          : undefined,
+      fontCaps: coalesce(style.fontCaps, layerStyle?.fontCaps),
+      strikethrough: coalesce(style.strikethrough, layerStyle?.strikethrough) === true || undefined,
     });
   }
   if (cursor === 0 && layerStyle) {
@@ -508,9 +630,40 @@ function resolveStyleRuns(
       italic: fallback.italic,
       underline: fallback.underline,
       tracking: fallback.trackingPx,
+      fontFamily: layerStyle.font?.name ?? undefined,
+      horizontalScale: layerStyle.horizontalScale,
+      verticalScale: layerStyle.verticalScale,
+      baselineShift:
+        layerStyle.baselineShift !== undefined
+          ? engineValueToDesignPx(layerStyle.baselineShift, dpi, transformScale)
+          : undefined,
+      fontCaps: layerStyle.fontCaps,
+      strikethrough: layerStyle.strikethrough === true || undefined,
     });
   }
   return runs;
+}
+
+/**
+ * Derive a CSS font weight (100–900) from the PostScript font name + the
+ * engine's fauxBold flag. PostScript names encode weight lexically
+ * ("-Bold", "-Black", "-Light", …); the canvas font string needs a numeric
+ * weight so the registered FontFace variant matches. 400/700 by default.
+ *
+ * @param postScriptName - Engine font name (e.g. "MyriadPro-Bold")
+ * @param fauxBold - True when the engine enables synthetic bold
+ * @returns Numeric CSS font weight
+ */
+export function deriveFontWeight(postScriptName: string | undefined, fauxBold: boolean): number {
+  // MOST SPECIFIC LEXEME FIRST: "Semibold"/"Extrabold" contain "bold", so
+  // the plain-bold test must come after them.
+  if (/black|heavy/i.test(postScriptName ?? '')) return 900;
+  if (/extrabold|ultrabold/i.test(postScriptName ?? '')) return 800;
+  if (/semibold|demibold/i.test(postScriptName ?? '')) return 600;
+  if (/bold/i.test(postScriptName ?? '')) return 700;
+  if (/medium/i.test(postScriptName ?? '')) return 500;
+  if (/light|thin/i.test(postScriptName ?? '')) return 300;
+  return fauxBold ? 700 : 400;
 }
 
 /** Flatten the layer tree into a display list (top-most first) */

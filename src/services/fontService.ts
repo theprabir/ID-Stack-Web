@@ -60,6 +60,14 @@ export interface LoadedFont {
 /** Registry of family → FontFace (so we don't double-load) */
 const loadedFamilies = new Map<string, FontFace>();
 
+/**
+ * PostScript name → registered family (e.g. "MyriadPro-Bold" → family the
+ * user uploaded as "MyriadPro Bold"). Populated by preloadFontsForText so
+ * resolveFontFamily can hit the EXACT font embedded in the PSD even when
+ * the family name differs from the PostScript name.
+ */
+const postScriptAliasFamilies = new Map<string, string>();
+
 /** Listener set notified whenever the font registry changes */
 const listeners = new Set<() => void>();
 
@@ -103,7 +111,8 @@ export function baseFamilyKeyOf(name: string): string {
 /**
  * Match a PSD font name (e.g. "ArialMT") against a loaded family.
  * Exact normalised match first, then base-family match (so "Arial" covers
- * "ArialMT" and "Arial-BoldMT").
+ * "ArialMT" and "Arial-BoldMT"), then PostScript aliases recorded when a
+ * font's binary was inspected at registration time.
  *
  * @param psdFontName - Font name extracted from the PSD text style
  * @param loadedFamiliesList - Families currently registered in the app
@@ -112,13 +121,18 @@ export function baseFamilyKeyOf(name: string): string {
 export function matchPsdFont(psdFontName: string, loadedFamiliesList: string[]): string | null {
   if (!psdFontName) return null;
   const target = normaliseFontName(psdFontName);
-  const targetBase = baseFamilyKeyOf(psdFontName);
   for (const family of loadedFamiliesList) {
     if (normaliseFontName(family) === target) return family;
   }
-  for (const family of loadedFamiliesList) {
-    if (baseFamilyKeyOf(family) === targetBase && targetBase.length > 0) return family;
+  const base = baseFamilyKeyOf(psdFontName);
+  if (base.length > 0) {
+    for (const family of loadedFamiliesList) {
+      if (baseFamilyKeyOf(family) === base) return family;
+    }
   }
+  // Exact PostScript alias registered by the preload step.
+  const alias = postScriptAliasFamilies.get(normaliseFontName(psdFontName));
+  if (alias && loadedFamiliesList.includes(alias)) return alias;
   return null;
 }
 
@@ -156,14 +170,14 @@ export function registerFontFace(family: string, buffer: ArrayBuffer): boolean {
  *
  * @param files - Font files (.ttf/.otf/.woff/.woff2)
  * @returns Families successfully registered
- */
-export async function importFontFiles(files: FileList | File[]): Promise<string[]> {
+ */ export async function importFontFiles(files: FileList | File[]): Promise<string[]> {
   const imported: string[] = [];
   for (const file of Array.from(files)) {
     if (!isSupportedFontFile(file)) continue;
     const family = file.name.replace(/\.[^.]+$/, '');
     const buffer = await file.arrayBuffer();
     if (!registerFontFace(family, buffer)) continue;
+    registerPostScriptAlias(family, buffer);
     const record: FontRecord = {
       name: family,
       fileName: file.name,
@@ -200,6 +214,7 @@ export async function restoreFontsFromStorage(): Promise<string[]> {
   }
   for (const record of records) {
     registerFontFace(record.name, record.buffer);
+    registerPostScriptAlias(record.name, record.buffer);
   }
   await ensureBundledFonts();
   return records.map((record) => record.name);
@@ -266,4 +281,135 @@ export function resolveFontFamily(psdFontName: string | undefined): string {
   if (matched) return `"${matched}"`;
   // Fall back to the PSD name for browser-installed fonts, then sans-serif.
   return `"${psdFontName.replace(/"/g, '')}", sans-serif`;
+}
+
+/**
+ * Build the EXACT CSS font shorthand for one text run — the single source
+ * of truth shared by measurement and painting (a mismatch silently
+ * mis-centres text). Weight and style come from the PSD engine data, size
+ * in px, family is the resolved match for the embedded PostScript name.
+ *
+ * @param bold - Engine bold (faux or name-derived)
+ * @param italic - Engine italic (faux or name-derived)
+ * @param sizePx - Font size in px
+ * @param family - Resolved CSS font family
+ * @param weight - Numeric CSS weight (default: bold ? 700 : 400)
+ * @returns CSS font shorthand for canvas `font`
+ */
+export function exactFontCss(
+  bold: boolean,
+  italic: boolean,
+  sizePx: number,
+  family: string,
+  weight?: number
+): string {
+  const style = italic ? 'italic ' : '';
+  const resolvedWeight = weight ?? (bold ? 700 : 400);
+  return `${style}${resolvedWeight} ${sizePx}px ${family}`;
+}
+
+/**
+ * PRELOAD the exact fonts a design's text layers reference BEFORE any
+ * canvas measurement or painting. Canvas text renders with the LAST set
+ * font string; without an awaited `document.fonts.load` the first layout
+ * pass measures (and often paints) with a fallback font, mis-wrapping and
+ * mis-centering every placeholder until a re-render happens to be lucky.
+ *
+ * For every PostScript name embedded in the PSD this resolves the matching
+ * registered family (uploaded font / bundled alias) and loads ALL faces of
+ * it at the referenced sizes. Returns the set of families that could NOT be
+ * resolved so the caller can surface a user-facing warning.
+ *
+ * @param postScriptNames - Every font name embedded in the parsed PSD
+ * @param sizesPx - Font sizes referenced by the design (loading is per size)
+ * @param boldItalicVariants - Style variants to load (default: regular+bold)
+ * @returns Families referenced by the design but not available
+ */
+export async function preloadFontsForText(
+  postScriptNames: (string | undefined)[],
+  sizesPx: number[] = [16],
+  boldItalicVariants: Array<{ bold: boolean; italic: boolean }> = [
+    { bold: false, italic: false },
+    { bold: true, italic: false },
+  ]
+): Promise<string[]> {
+  const uniqueNames = [...new Set(postScriptNames.filter((name): name is string => Boolean(name)))];
+  const missing: string[] = [];
+  for (const name of uniqueNames) {
+    const matched = matchPsdFont(name, listLoadedFontFamilies());
+    if (!matched) {
+      missing.push(name);
+      continue;
+    }
+    for (const variant of boldItalicVariants) {
+      for (const size of sizesPx) {
+        const css = exactFontCss(variant.bold, variant.italic, size, `"${matched}"`);
+        try {
+          await document.fonts.load(css, 'AgÜ0');
+        } catch {
+          // Invalid font string / unsupported font — the browser falls back.
+        }
+      }
+    }
+  }
+  return missing;
+}
+
+/**
+ * Inspect a font binary's name table for its PostScript name (name ID 6)
+ * and record a family alias so PSD-embedded PostScript names resolve even
+ * when the user's file/registration name differs (e.g. the file says
+ * "MyriadPro Bold.ttf" but the embedded name is "MyriadPro-Bold").
+ *
+ * @param family - Family the font was registered under
+ * @param buffer - Raw font file bytes
+ */
+export function registerPostScriptAlias(family: string, buffer: ArrayBuffer): void {
+  try {
+    const view = new DataView(buffer);
+    if (view.byteLength < 12 || view.getUint32(0) !== 0x00010000) return; // not TrueType
+    const tableCount = view.getUint16(4);
+    let nameOffset = -1;
+    for (let index = 0; index < tableCount; index += 1) {
+      const record = 12 + index * 16;
+      if (view.getUint32(record) === 0x6e616d65) {
+        // 'name'
+        nameOffset = view.getUint32(record + 8);
+        break;
+      }
+    }
+    if (nameOffset < 0) return;
+    const count = view.getUint16(nameOffset + 2);
+    const stringOffset = nameOffset + view.getUint16(nameOffset + 4);
+    for (let index = 0; index < count; index += 1) {
+      const record = nameOffset + 6 + index * 12;
+      const platform = view.getUint16(record);
+      const nameId = view.getUint16(record + 6);
+      const length = view.getUint16(record + 8);
+      const offset = view.getUint16(record + 10);
+      if (nameId !== 6) continue; // PostScript name
+      const bytes = new Uint8Array(buffer, stringOffset + offset, length);
+      let decoded: string;
+      if (platform === 1 || platform === 0) {
+        decoded = String.fromCharCode(...bytes);
+      } else {
+        decoded = new TextDecoder('utf-16be').decode(bytes);
+      }
+      postScriptAliasFamilies.set(normaliseFontName(decoded), family);
+      return;
+    }
+  } catch {
+    // Malformed name table — the family still resolves by name matching.
+  }
+}
+
+/**
+ * Application bootstrap: restore persisted fonts + bundled Arial-compatible
+ * faces BEFORE any card preview or batch render. Called from main.tsx so
+ * the font registry is guaranteed ready regardless of which page mounts
+ * first (the old code only restored fonts when the FontManager panel was
+ * open — placeholder text rendered in fallback fonts on every other path).
+ */
+export async function bootstrapFonts(): Promise<void> {
+  await restoreFontsFromStorage();
 }

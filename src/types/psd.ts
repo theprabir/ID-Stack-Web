@@ -51,6 +51,8 @@ export interface PsdLayerEffects {
   };
   /** Colour overlay (Photoshop solidFill effect) — replaces the fill colour */
   solidFill?: { color: string; opacity: number };
+  /** Gradient overlay (Photoshop gradient effect) — replaces the fill */
+  gradientOverlay?: PsdGradientFill;
 }
 
 /**
@@ -63,6 +65,25 @@ export interface PsdLayerMask {
   /** Mask top/left in design pixels */
   top: number;
   left: number;
+}
+
+/**
+ * A linear/radial gradient fill extracted from a Photoshop gradient overlay
+ * (or a gradient text fill). Colors are CSS hex; positions are 0–1 stops.
+ */
+export interface PsdGradientFill {
+  /** CSS color of each stop (agColorToCss-converted) */
+  colorStops: { color: string; position: number }[];
+  /** Alpha of each stop (parallel to colorStops) */
+  opacityStops: { opacity: number; position: number }[];
+  /** Gradient direction in degrees (linear gradients) */
+  angle: number;
+  /** Effect opacity 0–1 */
+  opacity: number;
+  /** 'linear' | 'radial' (Photoshop GradientStyle) */
+  style: string;
+  /** True when Photoshop reversed the gradient stops */
+  reverse: boolean;
 }
 
 /** The render-time style oracle measured from the layer's ORIGINAL raster */
@@ -121,6 +142,14 @@ export interface PsdLayerInfo {
     /** Font size in DESIGN px (engine size × text-transform scale) */
     fontSize?: number;
     fontFamily?: string;
+    /**
+     * PostScript font name exactly as embedded in the PSD engine data
+     * (e.g. "ArialMT", "MyriadPro-Bold"). resolveFontFamily matches this
+     * against user-registered FontFace families; never sanitised.
+     */
+    postScriptName?: string;
+    /** Font weight 100–900 derived from the font name + fauxBold */
+    fontWeight?: number;
     color?: string;
     bold?: boolean;
     italic?: boolean;
@@ -132,6 +161,24 @@ export interface PsdLayerInfo {
     /** True when the PSD used auto-leading (leading = 1.2 × fontSize) */
     autoLeading?: boolean;
     justification?: string;
+    /**
+     * Per-paragraph justification exactly as authored (paragraphStyleRuns),
+     * one entry per line of the ORIGINAL content. Absent when every
+     * paragraph shares the layer-level justification.
+     */
+    paragraphJustifications?: (string | undefined)[];
+    /** Engine Horizontal Scale (100 = authored 100 %, 1 = 0.01) */
+    horizontalScale?: number;
+    /** Engine Vertical Scale (100 = authored 100 %) */
+    verticalScale?: number;
+    /** Baseline shift in DESIGN px (positive = raised) */
+    baselineShift?: number;
+    /** Photoshop capitalisation: 0 = normal, 1 = all caps, 2 = small caps */
+    fontCaps?: number;
+    /** True when the PSD enables strikethrough on this layer */
+    strikethrough?: boolean;
+    /** Manual kerning pair value in thousandths of em (after auto-kern) */
+    kerning?: number;
     /**
      * Photoshop text shape: 'point' (no width wrapping, explicit newlines
      * only, ink can extend freely) or 'box' (wraps at the box width).
@@ -201,6 +248,17 @@ export interface PsdTextRun {
   underline?: boolean;
   /** Tracking in design px per gap */
   tracking?: number;
+  /** PostScript font name for this run (engine-deduped runs omit it) */
+  fontFamily?: string;
+  /** Engine Horizontal Scale for this run (100 = 100 %) */
+  horizontalScale?: number;
+  /** Engine Vertical Scale for this run (100 = 100 %) */
+  verticalScale?: number;
+  /** Baseline shift in design px (positive = raised) */
+  baselineShift?: number;
+  /** Photoshop capitalisation (0 normal / 1 all caps / 2 small caps) */
+  fontCaps?: number;
+  strikethrough?: boolean;
 }
 
 /** A user-chosen placeholder layer on one side */

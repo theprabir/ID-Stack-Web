@@ -25,12 +25,12 @@ import type {
   PsdLayerInfo,
   PsdLayerEffects,
   PsdTextStyleOracle,
+  PsdGradientFill,
 } from '@/types/psd';
 import { sideKeyOf } from '@/types/psd';
 import type { DataRow, PhotoRecord } from '@/types/data';
 import { loadImageElement } from './psdService';
-import { resolveFontFamily } from './fontService';
-import { fontCssFor } from './textStyleOracle';
+import { resolveFontFamily, preloadFontsForText, exactFontCss } from './fontService';
 
 /** A value lookup: placeholder key → string for the current row */
 export type RowResolver = (key: string) => string;
@@ -83,6 +83,97 @@ function withAlpha(hex: string, opacity: number): string {
   const g = (value >> 8) & 0xff;
   const b = value & 0xff;
   return `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(1, opacity))})`;
+}
+
+/** True when the justification anchors the line at its horizontal centre */
+function alignsCenter(justification: string): boolean {
+  return (
+    justification === 'center' ||
+    justification === 'justify-center' ||
+    justification === 'justify-all'
+  );
+}
+
+/** True when the justification anchors the line at its right edge */
+function alignsRight(justification: string): boolean {
+  return justification === 'right' || justification === 'justify-right';
+}
+
+/**
+ * Justification for one line. Per-paragraph values (paragraphStyleRuns)
+ * are positional over the ORIGINAL sample content; when the line comes
+ * from substituted content the layer-level justification governs.
+ */
+function justificationForLine(
+  text: NonNullable<PsdLayerInfo['text']>,
+  lineStartIndex: number,
+  substituted: boolean
+): string {
+  if (!substituted && text.paragraphJustifications) {
+    const perParagraph = text.paragraphJustifications[lineStartIndex];
+    if (perParagraph) return perParagraph;
+  }
+  return text.justification ?? 'left';
+}
+
+/**
+ * Paint a Photoshop gradient overlay effect as a canvas gradient across a
+ * text line's box. Stops map 1:1 from the parsed effect (positions 0–1,
+ * colours CSS) with per-stop opacity from the engine's opacity stops;
+ * 'reverse' flips the stop order exactly like the Photoshop checkbox.
+ */
+function gradientFillStyle(
+  context: CanvasRenderingContext2D,
+  gradient: PsdGradientFill,
+  x: number,
+  baselineY: number,
+  width: number,
+  height: number
+): string | CanvasGradient {
+  let colorStops = [...gradient.colorStops].sort((a, b) => a.position - b.position);
+  const opacityStops = [...gradient.opacityStops].sort((a, b) => a.position - b.position);
+  if (gradient.reverse) {
+    colorStops = colorStops.reverse().map((stop) => ({ ...stop, position: 1 - stop.position }));
+  }
+  if (colorStops.length === 0) return '#000000';
+  const opacityAt = (position: number): number => {
+    if (opacityStops.length === 0) return 1;
+    if (position <= opacityStops[0]!.position) return opacityStops[0]!.opacity;
+    const last = opacityStops[opacityStops.length - 1]!;
+    if (position >= last.position) return last.opacity;
+    for (let index = 0; index < opacityStops.length - 1; index += 1) {
+      const a = opacityStops[index]!;
+      const b = opacityStops[index + 1]!;
+      if (position >= a.position && position <= b.position) {
+        const t = (position - a.position) / Math.max(1e-6, b.position - a.position);
+        return a.opacity + (b.opacity - a.opacity) * t;
+      }
+    }
+    return 1;
+  };
+
+  const top = baselineY - height * 0.8;
+  const centerX = x + width / 2;
+  const centerY = top + height / 2;
+  const radians = (gradient.angle * Math.PI) / 180;
+  const halfLength =
+    (Math.abs(Math.cos(radians)) * width + Math.abs(Math.sin(radians)) * height) / 2 || 1;
+  const canvasGradient =
+    gradient.style === 'radial'
+      ? context.createRadialGradient(centerX, centerY, 0, centerX, centerY, halfLength)
+      : context.createLinearGradient(
+          centerX - Math.cos(radians) * halfLength,
+          centerY + Math.sin(radians) * halfLength,
+          centerX + Math.cos(radians) * halfLength,
+          centerY - Math.sin(radians) * halfLength
+        );
+  for (const stop of colorStops) {
+    canvasGradient.addColorStop(
+      Math.max(0, Math.min(1, stop.position)),
+      withAlpha(stop.color, gradient.opacity * opacityAt(stop.position))
+    );
+  }
+  return canvasGradient;
 }
 
 /**
@@ -258,6 +349,20 @@ interface TextLayout {
   /** Resolved CSS font family (single resolution for measure + paint) */
   family: string;
   /**
+   * Numeric CSS weight derived from the PSD's PostScript font name +
+   * fauxBold — part of the exact font string for BOTH measure and paint.
+   */
+  fontWeight: number;
+  /** Per-line justification exactly as authored (paragraph runs honoured) */
+  lineJustifications: string[];
+  /**
+   * Per-line anchor X in design×scale px — the alignment fixed point the
+   * line grows/shrinks around: left edge (left), horizontal centre
+   * (centre), right edge (right). Derived from the text origin + box, so
+   * substituted values align EXACTLY where the design aligned the sample.
+   */
+  lineAnchorX: number[];
+  /**
    * v0.6.5 auto-fit: the horizontal compression ratio (0 < ratio ≤ 1)
    * applied to the painted glyphs — 1 means the value fits its zone
    * naturally at 100 %. Painting wraps the line in a
@@ -267,8 +372,18 @@ interface TextLayout {
    * Scale).
    */
   horizontalScale: number;
-  /** Justification used to lay the lines out (anchors the squish) */
+  /** Justification of the FIRST line (anchors the auto-fit squish) */
   justification: string;
+  /**
+   * AUTHORED Horizontal Scale from the PSD character panel (1 = 100 %).
+   * Multiplied with the v0.6.5 auto-fit ratio — a design authored at 90 %
+   * must render at 90 %, never snapped to 100 %.
+   */
+  authoredHorizontalScale: number;
+  /** AUTHORED Vertical Scale from the PSD character panel (1 = 100 %) */
+  authoredVerticalScale: number;
+  /** Engine baseline shift in design×scale px (positive = raised) */
+  baselineShift: number;
 }
 
 /**
@@ -302,7 +417,62 @@ function resolveStyleAt(
     bold: run.bold ?? fallback.bold,
     italic: run.italic ?? fallback.italic,
   };
-}/**
+}
+
+/**
+ * The text AS PAINTED after the engine's capitalisation: ALL CAPS maps every
+ * character to uppercase; small caps uppercases too (mixed sizing is
+ * handled by the paint transform). Measurement uses the SAME mapping so
+ * justification/wrapping agree with what is drawn.
+ */
+function paintedTextOf(value: string, fontCaps: number | undefined): string {
+  return fontCaps === 1 || fontCaps === 2 ? value.toUpperCase() : value;
+}
+
+/** Per-character mirror properties resolved from the layer + run at an index */
+interface CharMirrorProps {
+  /** 0 = normal, 1 = ALL CAPS, 2 = small caps */
+  fontCaps: number;
+  /** Authored horizontal scale multiplier (1 = 100 %) */
+  horizontalScale: number;
+  /** Authored vertical scale multiplier (1 = 100 %) */
+  verticalScale: number;
+  /** Baseline shift in design px (positive = raised) */
+  baselineShift: number;
+  strikethrough: boolean;
+}
+
+/**
+ * Resolve the engine's per-character transform properties at a content
+ * index — substitution semantics match resolveStyleAt: a substituted value
+ * takes the LAYER-level properties wholesale; authored sample text honours
+ * per-run overrides.
+ */
+function resolveMirrorPropsAt(
+  text: NonNullable<PsdLayerInfo['text']>,
+  index: number,
+  substituted: boolean
+): CharMirrorProps {
+  const layerFallback: CharMirrorProps = {
+    fontCaps: text.fontCaps ?? 0,
+    horizontalScale: text.horizontalScale ?? 1,
+    verticalScale: text.verticalScale ?? 1,
+    baselineShift: text.baselineShift ?? 0,
+    strikethrough: text.strikethrough === true,
+  };
+  if (substituted) return layerFallback;
+  const run = text.runs?.find((segment) => index >= segment.from && index < segment.to);
+  if (!run) return layerFallback;
+  return {
+    fontCaps: run.fontCaps ?? layerFallback.fontCaps,
+    horizontalScale:
+      run.horizontalScale !== undefined ? run.horizontalScale / 100 : layerFallback.horizontalScale,
+    verticalScale:
+      run.verticalScale !== undefined ? run.verticalScale / 100 : layerFallback.verticalScale,
+    baselineShift: run.baselineShift ?? layerFallback.baselineShift,
+    strikethrough: run.strikethrough ?? layerFallback.strikethrough,
+  };
+} /**
  * v0.6.5 AUTO-FIT: single-line no-wrap + conditional horizontal compression
  * for SUBSTITUTED placeholder values (the "Charmaine Patel" bug).
  *
@@ -395,11 +565,12 @@ function computeTextLayout(
   const oracle = text.oracle;
   const fontSize = (oracle?.fontSize ?? text.fontSize ?? 18) * scale;
   const trackingPx =
-    text.tracking !== undefined
-      ? text.tracking * scale
-      : (text.runs?.[0]?.tracking ?? 0) * scale;
-  const justification = text.justification ?? 'left';
-  const fontCssFamily = resolveFontFamily(text.fontFamily);
+    text.tracking !== undefined ? text.tracking * scale : (text.runs?.[0]?.tracking ?? 0) * scale;
+  // FONT RESOLUTION (the "Charmaine Patel" bug): use the EXACT PostScript
+  // name embedded in the PSD layer — never a sanitised or guessed name —
+  // so the registered FontFace (user upload or bundled alias) is hit.
+  const fontCssFamily = resolveFontFamily(text.postScriptName ?? text.fontFamily);
+  const fontWeight = text.fontWeight ?? (text.bold ? 700 : 400);
 
   const bounds = layer.bounds;
   const boxLeft = bounds.left * scale;
@@ -412,6 +583,10 @@ function computeTextLayout(
   const textOriginX = (text.originX ?? bounds.left) * scale;
   const textOriginY = (text.originY ?? bounds.top) * scale;
 
+  // Per-line justification: layer level first (authoritative), per-paragraph
+  // runs override for the ORIGINAL content's lines.
+  const lineJustifications: string[] = [];
+
   const metrics = context.measureText('Mg');
   const ascent = metrics.fontBoundingBoxAscent ?? metrics.actualBoundingBoxAscent ?? fontSize * 0.8;
 
@@ -422,12 +597,11 @@ function computeTextLayout(
   // still break lines). Auto-fit then compresses it horizontally to its
   // zone; wrapping would instead bleed into the layers below.
   const engineBoxWidth = (text.boxWidth ?? 0) * scale;
-  const wrapWidth =
-    substituted
-      ? Number.POSITIVE_INFINITY
-      : text.shapeType === 'box' && engineBoxWidth > 1
-        ? engineBoxWidth
-        : Number.POSITIVE_INFINITY;
+  const wrapWidth = substituted
+    ? Number.POSITIVE_INFINITY
+    : text.shapeType === 'box' && engineBoxWidth > 1
+      ? engineBoxWidth
+      : Number.POSITIVE_INFINITY;
   const lines = wrapLinesPreserving(context, content, wrapWidth, trackingPx);
 
   // Line starts (content indices) for per-run styling.
@@ -458,10 +632,13 @@ function computeTextLayout(
   // Per-line start x (justification) and width — computed ONCE here so the
   // canvas sizing, auto-fit and the painting all share the same geometry.
   const lineX: number[] = [];
+  const lineAnchorX: number[] = [];
   const lineWidths: number[] = [];
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index] ?? '';
     if (line.length === 0) {
+      lineJustifications.push(justificationForLine(text, lineStarts[index] ?? 0, substituted));
+      lineAnchorX.push(textOriginX + ((text.boxWidth ?? 0) * scale) / 2);
       lineX.push(textOriginX);
       lineWidths.push(0);
       continue;
@@ -469,30 +646,49 @@ function computeTextLayout(
     const lineStartIndex = lineStarts[index] ?? 0;
     const segments = buildLineSegments(text, line, lineStartIndex, substituted);
     const width = segments.reduce((total, segment) => {
-      context.font = fontCssFor(
+      context.font = exactFontCss(
         segment.style.bold,
         segment.style.italic,
         segment.style.fontSize * scale,
-        fontCssFamily
+        fontCssFamily,
+        fontWeight
       );
-      return total + context.measureText(segment.text).width + trackingPx * Math.max(0, segment.text.length - 1);
+      // Painted width: the capitalised text at the segment's AUTHORED
+      // horizontal scale — justification anchors must match what is drawn.
+      return (
+        total +
+        context.measureText(paintedTextOf(segment.text, segment.mirror.fontCaps)).width *
+          segment.mirror.horizontalScale +
+        trackingPx * Math.max(0, segment.text.length - 1)
+      );
     }, 0);
     lineWidths.push(width);
-    // v0.6.5: justification positions lines by their NATURAL width —
-    // compression then squishes the glyphs in place around the same anchor
-    // (left stays left-anchored, centre stays centred, right stays
-    // right-anchored), so the value never shifts when it auto-fits.
-    if (justification === 'center' || justification.startsWith('justify')) {
-      if (text.shapeType === 'box' && boxWidth > 1) {
-        lineX.push(textOriginX + (boxWidth - width) / 2);
-      } else {
-        lineX.push(textOriginX - width / 2);
-      }
-    } else if (justification === 'right') {
-      lineX.push(textOriginX - width);
+    // JUSTIFICATION (the alignment bug): resolve per line — per-paragraph
+    // runs for authored content, layer justification for substituted rows —
+    // then position the line by its NATURAL width around the alignment
+    // ANCHOR (box centre / box right / origin left). Compression later
+    // squishes in place around the same anchor, so a substituted value that
+    // auto-fits never shifts: centre stays centred, right stays right.
+    const justification = justificationForLine(text, lineStartIndex, substituted);
+    lineJustifications.push(justification);
+    // The anchor: box text aligns within the parsed text box; point text
+    // anchors at the engine origin itself.
+    const isBox = text.shapeType === 'box' && (text.boxWidth ?? 0) * scale > 1;
+    const anchorX = isBox
+      ? alignsRight(justification)
+        ? textOriginX + (text.boxWidth ?? 0) * scale
+        : alignsCenter(justification)
+          ? textOriginX + ((text.boxWidth ?? 0) * scale) / 2
+          : textOriginX
+      : textOriginX;
+    lineAnchorX.push(anchorX);
+    if (alignsCenter(justification)) {
+      lineX.push(anchorX - width / 2);
+    } else if (alignsRight(justification)) {
+      lineX.push(anchorX - width);
     } else {
       const originOffset = (oracle?.originOffsetX ?? 0) * scale;
-      lineX.push(textOriginX + originOffset);
+      lineX.push(anchorX + originOffset);
     }
   }
 
@@ -504,6 +700,7 @@ function computeTextLayout(
     lines,
     lineStarts,
     lineX,
+    lineAnchorX,
     lineWidths,
     fontSize,
     tracking: trackingPx,
@@ -516,8 +713,13 @@ function computeTextLayout(
     boxHeight,
     ascent,
     family: fontCssFamily,
+    fontWeight,
+    lineJustifications,
     horizontalScale,
-    justification,
+    justification: lineJustifications[0] ?? 'left',
+    authoredHorizontalScale: text.horizontalScale ?? 1,
+    authoredVerticalScale: text.verticalScale ?? 1,
+    baselineShift: (text.baselineShift ?? 0) * scale,
   };
 }
 
@@ -535,11 +737,7 @@ function computeTextLayout(
  * @param cardWidth - Card width in design×scale px
  * @returns The allowed width, or 0 when it cannot be determined
  */
-function autoFitMaxAllowedWidth(
-  layer: PsdLayerInfo,
-  scale: number,
-  cardWidth: number
-): number {
+function autoFitMaxAllowedWidth(layer: PsdLayerInfo, scale: number, cardWidth: number): number {
   const text = layer.text!;
   const engineBoxWidth = (text.boxWidth ?? 0) * scale;
   if (text.shapeType === 'box' && engineBoxWidth > 1) return engineBoxWidth;
@@ -566,6 +764,8 @@ function autoFitMaxAllowedWidth(
 interface GlyphSegment {
   text: string;
   style: { fontSize: number; color: string; bold: boolean; italic: boolean };
+  /** Engine per-character mirror properties (caps, scales, shift, strike) */
+  mirror: CharMirrorProps;
 }
 
 /**
@@ -583,17 +783,22 @@ function buildLineSegments(
 ): GlyphSegment[] {
   const styleAt = (index: number): GlyphSegment['style'] =>
     resolveStyleAt(text, text.oracle, text.bold ?? false, text.italic ?? false, index, substituted);
+  const mirrorAt = (index: number): CharMirrorProps =>
+    resolveMirrorPropsAt(text, index, substituted);
   if (substituted || !text.runs || text.runs.length === 0) {
-    return [{ text: line, style: styleAt(lineStartIndex) }];
+    return [{ text: line, style: styleAt(lineStartIndex), mirror: mirrorAt(lineStartIndex) }];
   }
   const segments: GlyphSegment[] = [];
   let offset = 0;
   while (offset < line.length) {
     const absolute = lineStartIndex + offset;
     const run = text.runs.find((entry) => absolute >= entry.from && absolute < entry.to);
-    const runEndAbsolute = run ? Math.min(run.to, lineStartIndex + line.length) : lineStartIndex + line.length;
+    const runEndAbsolute = run
+      ? Math.min(run.to, lineStartIndex + line.length)
+      : lineStartIndex + line.length;
     const slice = line.slice(offset, runEndAbsolute - lineStartIndex);
-    if (slice.length > 0) segments.push({ text: slice, style: styleAt(absolute) });
+    if (slice.length > 0)
+      segments.push({ text: slice, style: styleAt(absolute), mirror: mirrorAt(absolute) });
     offset += slice.length;
   }
   // Merge adjacent segments with identical style (avoids pointless splits).
@@ -605,14 +810,20 @@ function buildLineSegments(
       previous.style.fontSize === segment.style.fontSize &&
       previous.style.color === segment.style.color &&
       previous.style.bold === segment.style.bold &&
-      previous.style.italic === segment.style.italic
+      previous.style.italic === segment.style.italic &&
+      previous.mirror.fontCaps === segment.mirror.fontCaps &&
+      previous.mirror.horizontalScale === segment.mirror.horizontalScale &&
+      previous.mirror.baselineShift === segment.mirror.baselineShift &&
+      previous.mirror.strikethrough === segment.mirror.strikethrough
     ) {
       previous.text += segment.text;
     } else {
       merged.push(segment);
     }
   }
-  return merged.length > 0 ? merged : [{ text: line, style: styleAt(lineStartIndex) }];
+  return merged.length > 0
+    ? merged
+    : [{ text: line, style: styleAt(lineStartIndex), mirror: mirrorAt(lineStartIndex) }];
 }
 
 /**
@@ -639,6 +850,9 @@ function drawTextContent(
   const effects = layer.effects;
   // Photoshop colour overlay (solidFill effect) replaces the text fill.
   const overlay = effects?.solidFill;
+  // Photoshop gradient overlay — replaces the fill with a canvas gradient
+  // mapped across each line's box (stops/angle/reverse mirrored exactly).
+  const gradientFill = effects?.gradientOverlay;
   const stroke = effects?.stroke;
   const dropShadow = effects?.dropShadows?.[0];
   // Engine TEXT stroke (character panel) — only when the PSD enables it.
@@ -652,19 +866,30 @@ function drawTextContent(
     if (line.length === 0) continue;
     const lineStartIndex = layout.lineStarts[index] ?? 0;
     const segments = buildLineSegments(text, line, lineStartIndex, substituted);
-    const fontFor = (style: GlyphSegment['style']): string =>
-      fontCssFor(style.bold, style.italic, style.fontSize * scale, family);
-    const segmentWidth = (segment: GlyphSegment): number => {
-      layerContext.font = fontFor(segment.style);
-      return (
-        layerContext.measureText(segment.text).width +
-        layout.tracking * Math.max(0, segment.text.length - 1)
+    // Font string built from the PSD's OWN font identity: numeric weight
+    // derived from the embedded PostScript name — never a generic string.
+    const fontFor = (segment: GlyphSegment): string =>
+      exactFontCss(
+        segment.style.bold,
+        segment.style.italic,
+        segment.style.fontSize * scale,
+        family,
+        layout.fontWeight
       );
+    const segmentPaintText = (segment: GlyphSegment): string =>
+      paintedTextOf(segment.text, segment.mirror.fontCaps);
+    const segmentWidth = (segment: GlyphSegment): number => {
+      layerContext.font = fontFor(segment);
+      const painted = segmentPaintText(segment);
+      const natural =
+        layerContext.measureText(painted).width + layout.tracking * Math.max(0, painted.length - 1);
+      // Authored character-panel transforms apply to the advance width.
+      return natural * segment.mirror.horizontalScale;
     };
     // Geometry (start x, widths, justification) was decided ONCE in
     // computeTextLayout — the same source that sized the layer canvas.
     const x = layout.lineX[index]! - offsetX;
-    const y = layout.firstBaseline + index * layout.leading - offsetY;
+    const y = layout.firstBaseline + index * layout.leading - offsetY - layout.baselineShift;
 
     // v0.6.5 AUTO-FIT paint transform: squish ONLY the x-axis around the
     // line's own justification anchor (left edge / centre / right edge),
@@ -675,13 +900,10 @@ function drawTextContent(
     // the baseline stay untouched. Ratio 1 (the value fits) is a no-op.
     const ratio = layout.horizontalScale;
     const naturalWidth = layout.lineWidths[index] ?? 0;
-    const justification = layout.justification;
-    const anchor =
-      justification === 'right'
-        ? x + naturalWidth
-        : justification === 'center' || justification.startsWith('justify')
-          ? x + naturalWidth / 2
-          : x;
+    // Anchor from the LAYOUT's per-line anchor (design-space alignment
+    // point), not the painted width — a substituted value that auto-fits
+    // keeps the exact alignment the design authored.
+    const anchor = (layout.lineAnchorX[index] ?? x) - offsetX;
     const applySquish = (): void => {
       layerContext.save();
       layerContext.translate(anchor, 0);
@@ -689,29 +911,51 @@ function drawTextContent(
       layerContext.translate(-anchor, 0);
     };
 
-    const fillSegment = (segment: GlyphSegment, cursorX: number): void => {
-      layerContext.font = fontFor(segment.style);
+    /** Paint one segment: font → caps text → per-glyph advance (tracking,
+     * authored h/v scale). fill OR stroke, with the segment's mirror props. */
+    const paintSegment = (
+      segment: GlyphSegment,
+      cursorX: number,
+      mode: 'fill' | 'stroke'
+    ): number => {
+      layerContext.font = fontFor(segment);
+      const painted = segmentPaintText(segment);
+      const vScale = segment.mirror.verticalScale;
+      const hScale = segment.mirror.horizontalScale;
+      const drawGlyph = (glyph: string, glyphX: number): void => {
+        if (vScale === 1 && hScale === 1) {
+          if (mode === 'fill') layerContext.fillText(glyph, glyphX, y);
+          else layerContext.strokeText(glyph, glyphX, y);
+          return;
+        }
+        // Character-panel transforms (Horizontal/Vertical Scale): scale the
+        // glyphs themselves around (glyphX, baseline) — x-only squish or
+        // y-only stretch, exactly like Photoshop's engine.
+        layerContext.save();
+        layerContext.translate(glyphX, y);
+        layerContext.scale(hScale, vScale);
+        if (mode === 'fill') layerContext.fillText(glyph, 0, 0);
+        else layerContext.strokeText(glyph, 0, 0);
+        layerContext.restore();
+      };
       if (layout.tracking === 0) {
-        layerContext.fillText(segment.text, cursorX, y);
-        return;
+        drawGlyph(painted, cursorX);
+        return layerContext.measureText(painted).width * segment.mirror.horizontalScale;
       }
       let cursor = cursorX;
-      for (const character of segment.text) {
-        layerContext.fillText(character, cursor, y);
-        cursor += layerContext.measureText(character).width + layout.tracking;
+      for (const character of painted) {
+        drawGlyph(character, cursor);
+        cursor +=
+          layerContext.measureText(character).width * segment.mirror.horizontalScale +
+          layout.tracking;
       }
+      return cursor - cursorX - layout.tracking; // last tracking not part of width
+    };
+    const fillSegment = (segment: GlyphSegment, cursorX: number): void => {
+      void paintSegment(segment, cursorX, 'fill');
     };
     const strokeSegment = (segment: GlyphSegment, cursorX: number): void => {
-      layerContext.font = fontFor(segment.style);
-      if (layout.tracking === 0) {
-        layerContext.strokeText(segment.text, cursorX, y);
-        return;
-      }
-      let cursor = cursorX;
-      for (const character of segment.text) {
-        layerContext.strokeText(character, cursor, y);
-        cursor += layerContext.measureText(character).width + layout.tracking;
-      }
+      void paintSegment(segment, cursorX, 'stroke');
     };
     /** Shape-only painter for inner-effect compositing */
     const drawShape = (target: CanvasRenderingContext2D): void => {
@@ -727,14 +971,30 @@ function drawTextContent(
       }
       let cursor = x;
       for (const segment of segments) {
-        target.font = fontFor(segment.style);
+        target.font = fontFor(segment);
+        const painted = segmentPaintText(segment);
+        const vScale = segment.mirror.verticalScale;
+        const hScale = segment.mirror.horizontalScale;
+        const drawTargetGlyph = (glyph: string, glyphX: number): void => {
+          if (vScale === 1 && hScale === 1) {
+            target.fillText(glyph, glyphX, y);
+            return;
+          }
+          target.save();
+          target.translate(glyphX, y);
+          target.scale(hScale, vScale);
+          target.fillText(glyph, 0, 0);
+          target.restore();
+        };
         if (layout.tracking === 0) {
-          target.fillText(segment.text, cursor, y);
+          drawTargetGlyph(painted, cursor);
         } else {
           let inner = cursor;
-          for (const character of segment.text) {
-            target.fillText(character, inner, y);
-            inner += target.measureText(character).width + layout.tracking;
+          for (const character of painted) {
+            drawTargetGlyph(character, inner);
+            inner +=
+              target.measureText(character).width * segment.mirror.horizontalScale +
+              layout.tracking;
           }
         }
         cursor += segmentWidth(segment);
@@ -747,60 +1007,74 @@ function drawTextContent(
     // squishes itself on its halo canvases.)
     if (ratio !== 1) applySquish();
     try {
-    // --- Engine text stroke: painted UNDER everything, like Photoshop.
-    if (engineStroke) {
-      layerContext.save();
-      layerContext.strokeStyle = engineStroke.color;
-      layerContext.lineWidth = engineStroke.width * scale;
-      layerContext.lineJoin = 'round';
-      let cursor = x;
-      for (const segment of segments) {
-        strokeSegment(segment, cursor);
-        cursor += segmentWidth(segment);
+      // --- Engine text stroke: painted UNDER everything, like Photoshop.
+      if (engineStroke) {
+        layerContext.save();
+        layerContext.strokeStyle = engineStroke.color;
+        layerContext.lineWidth = engineStroke.width * scale;
+        layerContext.lineJoin = 'round';
+        let cursor = x;
+        for (const segment of segments) {
+          strokeSegment(segment, cursor);
+          cursor += segmentWidth(segment);
+        }
+        layerContext.restore();
       }
-      layerContext.restore();
-    }
 
-    // --- Layer-effect stroke: painted UNDER the fill so the glyph face
-    // keeps its colour. Outside/inside positions are approximated with a
-    // doubled/normal width under-stroke (canvas cannot offset outlines).
-    if (stroke) {
-      layerContext.save();
-      layerContext.globalAlpha *= stroke.opacity;
-      layerContext.strokeStyle = stroke.color;
-      layerContext.lineWidth = Math.max(1, stroke.width * (stroke.position === 'center' ? 1 : 2));
-      layerContext.lineJoin = 'round';
-      let cursor = x;
-      for (const segment of segments) {
-        strokeSegment(segment, cursor);
-        cursor += segmentWidth(segment);
+      // --- Layer-effect stroke: painted UNDER the fill so the glyph face
+      // keeps its colour. Outside/inside positions are approximated with a
+      // doubled/normal width under-stroke (canvas cannot offset outlines).
+      if (stroke) {
+        layerContext.save();
+        layerContext.globalAlpha *= stroke.opacity;
+        layerContext.strokeStyle = stroke.color;
+        layerContext.lineWidth = Math.max(1, stroke.width * (stroke.position === 'center' ? 1 : 2));
+        layerContext.lineJoin = 'round';
+        let cursor = x;
+        for (const segment of segments) {
+          strokeSegment(segment, cursor);
+          cursor += segmentWidth(segment);
+        }
+        layerContext.restore();
       }
-      layerContext.restore();
-    }
 
-    // --- Drop shadow: cast from the glyph shape, then repaint the fill.
-    if (dropShadow) {
-      const { offsetX: sx, offsetY: sy } = shadowOffsets(dropShadow.angle, dropShadow.distance);
+      // --- Drop shadow: cast from the glyph shape, then repaint the fill.
+      if (dropShadow) {
+        const { offsetX: sx, offsetY: sy } = shadowOffsets(dropShadow.angle, dropShadow.distance);
+        layerContext.save();
+        setShadow(layerContext, dropShadow.color, dropShadow.opacity, dropShadow.blur, sx, sy, 1);
+        let cursor = x;
+        for (const segment of segments) {
+          fillSegment(segment, cursor);
+          cursor += segmentWidth(segment);
+        }
+        layerContext.restore();
+      }
+
+      // --- Main fill pass (per-segment colour; solid/gradient overlays
+      // replace every fill — Photoshop semantics).
       layerContext.save();
-      setShadow(layerContext, dropShadow.color, dropShadow.opacity, dropShadow.blur, sx, sy, 1);
       let cursor = x;
       for (const segment of segments) {
+        const fillStyle = gradientFill
+          ? gradientFillStyle(
+              layerContext,
+              gradientFill,
+              x,
+              y,
+              Math.max(1, naturalWidth),
+              layout.fontSize * 1.2
+            )
+          : overlay
+            ? overlay.color
+            : segment.style.color;
+        layerContext.fillStyle = fillStyle;
+        if (overlay) layerContext.globalAlpha = layerContext.globalAlpha * overlay.opacity;
         fillSegment(segment, cursor);
+        if (overlay) layerContext.globalAlpha = layerContext.globalAlpha / overlay.opacity;
         cursor += segmentWidth(segment);
       }
       layerContext.restore();
-    }
-
-    // --- Main fill pass (per-segment colour; overlay replaces every fill).
-    layerContext.save();
-    if (overlay) layerContext.globalAlpha *= overlay.opacity;
-    let cursor = x;
-    for (const segment of segments) {
-      layerContext.fillStyle = overlay ? overlay.color : segment.style.color;
-      fillSegment(segment, cursor);
-      cursor += segmentWidth(segment);
-    }
-    layerContext.restore();
     } finally {
       if (ratio !== 1) layerContext.restore();
     }
@@ -840,33 +1114,52 @@ function drawTextContent(
     // --- Squish window 2: outer glow → underline.
     if (ratio !== 1) applySquish();
     try {
-    // --- Outer glow: soft centred halo beneath the fill (drawn per line).
-    const outerGlow = effects?.outerGlow;
-    if (outerGlow) {
-      layerContext.save();
-      setShadow(layerContext, outerGlow.color, outerGlow.opacity, outerGlow.blur, 0, 0, 1);
-      let glowCursor = x;
-      for (const segment of segments) {
-        layerContext.fillStyle = segment.style.color;
-        fillSegment(segment, glowCursor);
-        glowCursor += segmentWidth(segment);
+      // --- Outer glow: soft centred halo beneath the fill (drawn per line).
+      const outerGlow = effects?.outerGlow;
+      if (outerGlow) {
+        layerContext.save();
+        setShadow(layerContext, outerGlow.color, outerGlow.opacity, outerGlow.blur, 0, 0, 1);
+        let glowCursor = x;
+        for (const segment of segments) {
+          layerContext.fillStyle = segment.style.color;
+          fillSegment(segment, glowCursor);
+          glowCursor += segmentWidth(segment);
+        }
+        layerContext.restore();
       }
-      layerContext.restore();
-    }
 
-    // --- Underline: a thin bar just below the baseline (Photoshop-like),
-    // per segment so mixed-size runs get proportionate bars.
-    if (text.underline) {
-      layerContext.save();
-      let underlineCursor = x;
-      for (const segment of segments) {
-        layerContext.fillStyle = overlay ? overlay.color : segment.style.color;
-        const thickness = Math.max(1, segment.style.fontSize * scale * 0.05);
-        layerContext.fillRect(underlineCursor, y + thickness, segmentWidth(segment), thickness);
-        underlineCursor += segmentWidth(segment);
+      // --- Underline / strikethrough: thin bars below the baseline /
+      // mid-x-height (Photoshop-like), per segment so mixed-size runs get
+      // proportionate bars. Gradient/solid overlays colour them too.
+      if (text.underline || text.strikethrough) {
+        layerContext.save();
+        let barCursor = x;
+        for (const segment of segments) {
+          layerContext.fillStyle = gradientFill
+            ? gradientFillStyle(
+                layerContext,
+                gradientFill,
+                x,
+                y,
+                Math.max(1, naturalWidth),
+                layout.fontSize * 1.2
+              )
+            : overlay
+              ? overlay.color
+              : segment.style.color;
+          const em = segment.style.fontSize * scale;
+          if (text.underline) {
+            const thickness = Math.max(1, em * 0.05);
+            layerContext.fillRect(barCursor, y + em * 0.12, segmentWidth(segment), thickness);
+          }
+          if (segment.mirror.strikethrough) {
+            const thickness = Math.max(1, em * 0.05);
+            layerContext.fillRect(barCursor, y - em * 0.28, segmentWidth(segment), thickness);
+          }
+          barCursor += segmentWidth(segment);
+        }
+        layerContext.restore();
       }
-      layerContext.restore();
-    }
     } finally {
       if (ratio !== 1) layerContext.restore();
     }
@@ -905,6 +1198,16 @@ function drawTextLayer(
   let layout: TextLayout;
   try {
     const measure = getMeasureContext();
+    // Set the EXACT font of this layer's first style on the measure context
+    // BEFORE measuring ascent — metrics belong to the PSD's font, not to
+    // whatever font string the previous layer left behind.
+    measure.font = exactFontCss(
+      text.bold ?? false,
+      text.italic ?? false,
+      (text.oracle?.fontSize ?? text.fontSize ?? 18) * scale,
+      resolveFontFamily(text.postScriptName ?? text.fontFamily),
+      text.fontWeight ?? (text.bold ? 700 : 400)
+    );
     // v0.6.5: the auto-fit boundary (text box for box text; origin → card
     // edge for point text) is decided ONCE here and shared by layout and
     // painting.
@@ -1218,6 +1521,28 @@ export async function compositeDesign(
     options.placeholders.map((placeholder) => [placeholder.layerId, placeholder])
   );
   const resolver = createRowResolver(options.mappings, options.row);
+
+  // FONT PRELOAD (the "Charmaine Patel" fallback-font bug): BEFORE any
+  // measurement or painting, load every font the design's text layers
+  // reference — resolved from the embedded PostScript names against the
+  // registered FontFaces (user uploads + bundled aliases). Awaited so the
+  // FIRST layout pass already measures/paints with the exact family; canvas
+  // text would otherwise silently use the last-set (fallback) font.
+  const textLayers = design.layers.filter((layer) => layer.kind === 'text' && layer.text);
+  const referencedFonts = textLayers.flatMap((layer) => {
+    const text = layer.text!;
+    return [
+      text.postScriptName,
+      text.fontFamily,
+      ...(text.runs ?? []).map((run) => run.fontFamily),
+    ];
+  });
+  const referencedSizes = [...new Set(textLayers.map((layer) => layer.text!.fontSize ?? 18))];
+  try {
+    await preloadFontsForText(referencedFonts, referencedSizes.length > 0 ? referencedSizes : [16]);
+  } catch {
+    // Font loading is best-effort: the browser falls back by family name.
+  }
 
   // Paint in stored order: ag-psd returns children bottom-most first (file
   // order), so iterating forwards paints the background first and content

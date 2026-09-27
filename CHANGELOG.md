@@ -3,6 +3,53 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6.6] - 2026-09-27
+
+### Fixed
+
+- **FULL-PROPERTY TEXT MIRROR (the "Charmaine Patel" font/alignment bug).**
+  The rendering pipeline mapped only basic primitives (bold, italic, colour,
+  font-size) and silently DROPPED the structural typographic metadata embedded
+  in the PSD layer. Three root causes were fixed:
+
+  1. **Font truncation — ag-psd engine-data dedupe.** ag-psd hoists every
+     property shared by ALL style runs into `text.style` and DELETES it from
+     the per-run styles; on real files `styleRuns[0].style` is a near-empty
+     artefact (`{autoKern:false}`). The parser read the artefact FIRST and
+     lost the PostScript font name, size and fill colour — substituted values
+     fell back to a system font. Every engine property is now COALESCED
+     run → layer (run value wins, layer style restores deduped values), so
+     `postScriptName`/`fontFamily` arrive exactly as embedded.
+  2. **Font preloading.** `compositeDesign` now AWAITS
+     `document.fonts.load` for every referenced PostScript name (resolved
+     against user uploads + bundled aliases) BEFORE any measurement or
+     painting, so the first layout pass already uses the exact family.
+     Font binaries' `name` tables are inspected at registration to alias
+     PostScript names ("MyriadPro-Bold") to their registered families;
+     fonts restore at app bootstrap (`main.tsx`), not only when the Font
+     Manager panel is mounted. The CSS font string is built from the PSD's
+     numeric weight (derived from the PostScript name + fauxBold) and is
+     shared by measurement and painting.
+  3. **Alignment + missing mirror properties.** Justification now resolves
+     from the AUTHORITATIVE `paragraphStyleRuns` (per-paragraph, honouring
+     mixed alignments) with `paragraphStyle` as the dedupe base, instead of
+     reading only the base. Lines anchor at the design's alignment point
+     (box centre/right/origin-left) computed from the text origin + parsed
+     box — a substituted value that auto-fits compresses in place and
+     never drifts off the card's centre axis. Newly mirrored engine
+     properties: Horizontal/Vertical Scale (character-panel transforms,
+     painted as glyph transforms and folded into measured widths), baseline
+     shift (positive = raised), ALL CAPS / small caps, strikethrough,
+     gradient overlay fills (canvas gradients from the effect's colour/
+     opacity stops, angle, reverse flag) and per-run font/transform
+     overrides.
+
+  Tests: 15 new regression tests (`tests/services/textMirror.test.ts`) pin
+  the dedupe coalescing, PostScript weight derivation, per-paragraph
+  justification extraction, font-string construction, preloading contract
+  and gradient-fill rendering. The stray unused-import typecheck error in
+  `AboutPage.tsx` that blocked `npm run build` is also fixed.
+
 ## [0.6.5] - 2026-09-27
 
 ### Fixed

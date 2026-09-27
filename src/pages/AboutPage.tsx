@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import {
   Github,
   User,
@@ -38,9 +38,7 @@ function SectionHeader({
         <h2 className="text-sm sm:text-base font-semibold text-slate-100 flex items-center gap-2">
           {title}
         </h2>
-        {subtitle && (
-          <p className="text-xs text-slate-400 mt-0.5">{subtitle}</p>
-        )}
+        {subtitle && <p className="text-xs text-slate-400 mt-0.5">{subtitle}</p>}
       </div>
       {badge && (
         <span className="self-start sm:self-auto text-[10px] sm:text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
@@ -77,17 +75,16 @@ export function AboutPage(): JSX.Element {
 
   return (
     <div className="w-full max-w-5xl mx-auto space-y-6 sm:space-y-8 p-3.5 sm:p-6 lg:p-8 font-sans antialiased text-slate-100 overflow-x-hidden">
-      
       <header className="relative overflow-hidden rounded-xl sm:rounded-2xl border border-slate-800/80 bg-gradient-to-br from-slate-900 via-slate-900/95 to-slate-950 p-4 sm:p-6 lg:p-8 shadow-sm">
         <div className="absolute -top-24 -right-24 h-48 sm:h-64 w-48 sm:w-64 rounded-full bg-indigo-500/10 blur-3xl pointer-events-none" />
         <div className="absolute -bottom-24 -left-24 h-48 sm:h-64 w-48 sm:w-64 rounded-full bg-emerald-500/10 blur-3xl pointer-events-none" />
-        
+
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-start sm:items-center gap-3">
             <span className="flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-xl bg-slate-800/90 border border-slate-700/80 overflow-hidden shrink-0 shadow-sm">
-              <img 
-                src="/favicon.ico" 
-                alt="ID Stack Logo" 
+              <img
+                src="/favicon.ico"
+                alt="ID Stack Logo"
                 className="h-6 w-6 sm:h-7 sm:w-7 object-contain"
                 onError={(e) => {
                   (e.target as HTMLElement).style.display = 'none';
@@ -96,7 +93,9 @@ export function AboutPage(): JSX.Element {
             </span>
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white">ID Stack</h1>
+                <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white">
+                  ID Stack
+                </h1>
                 <span className="text-[10px] sm:text-xs font-semibold px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700 text-slate-300">
                   v{APP_VERSION}
                 </span>
@@ -127,15 +126,14 @@ export function AboutPage(): JSX.Element {
       </header>
 
       <section>
-        <SectionHeader 
-          title="Creator & Maintainer" 
-          subtitle="The developer behind ID Stack and related open-source tools" 
+        <SectionHeader
+          title="Creator & Maintainer"
+          subtitle="The developer behind ID Stack and related open-source tools"
           badge="Author Profile"
         />
 
         <div className="rounded-xl sm:rounded-2xl border border-slate-800/80 bg-slate-900/60 p-4 sm:p-6 shadow-sm hover:border-slate-700/80 transition-colors">
           <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 sm:gap-6">
-            
             {/* Creator Avatar */}
             <div className="relative shrink-0">
               {!avatarFailed ? (
@@ -158,14 +156,17 @@ export function AboutPage(): JSX.Element {
             {/* Creator Bio & Links */}
             <div className="flex-1 text-center sm:text-left space-y-2.5 sm:space-y-3 min-w-0 w-full">
               <div>
-                <h3 className="text-lg sm:text-xl font-bold text-white tracking-tight">{APP_AUTHOR_NAME}</h3>
+                <h3 className="text-lg sm:text-xl font-bold text-white tracking-tight">
+                  {APP_AUTHOR_NAME}
+                </h3>
                 <p className="text-xs font-medium text-indigo-400 mt-0.5">
                   Software Engineer & Open Source Developer
                 </p>
               </div>
 
               <p className="text-xs text-slate-300 leading-relaxed max-w-2xl">
-                Specializes in privacy-first, browser-executed software, publishing tools, and custom font rendering engines.
+                Specializes in privacy-first, browser-executed software, publishing tools, and
+                custom font rendering engines.
               </p>
 
               {/* Action Buttons */}
@@ -211,28 +212,26 @@ export function AboutPage(): JSX.Element {
                 </button>
               </div>
             </div>
-
           </div>
         </div>
       </section>
 
       <section>
-        <SectionHeader 
-          title="Featured Projects" 
-          subtitle="Software applications developed and maintained by the author" 
+        <SectionHeader
+          title="Featured Projects"
+          subtitle="Software applications developed and maintained by the author"
         />
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5">
-          
           {/* ID Stack Card */}
           <div className="rounded-xl sm:rounded-2xl border border-slate-800/80 bg-slate-900/60 p-4 sm:p-6 flex flex-col justify-between hover:border-slate-700/80 transition-colors">
             <div>
               <div className="flex items-center justify-between gap-2 mb-3">
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-800/90 border border-slate-700/80 overflow-hidden shrink-0 shadow-sm">
-                    <img 
-                      src="/favicon.ico" 
-                      alt="ID Stack Logo" 
+                    <img
+                      src="/favicon.ico"
+                      alt="ID Stack Logo"
                       className="h-6 w-6 object-contain"
                       onError={(e) => {
                         (e.target as HTMLElement).style.display = 'none';
@@ -250,7 +249,8 @@ export function AboutPage(): JSX.Element {
               </div>
 
               <p className="text-xs text-slate-300 leading-relaxed">
-                A browser-based ID card design suite with PSD layer import, batch Excel data binding, and print-ready imposed PDF exporting.
+                A browser-based ID card design suite with PSD layer import, batch Excel data
+                binding, and print-ready imposed PDF exporting.
               </p>
 
               <div className="mt-4 space-y-2">
@@ -285,9 +285,9 @@ export function AboutPage(): JSX.Element {
               <div className="flex items-center justify-between gap-2 mb-3">
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-800/90 border border-slate-700/80 overflow-hidden shrink-0 shadow-sm">
-                    <img 
-                      src="https://www.google.com/s2/favicons?domain=lipika.co.in&sz=128" 
-                      alt="Lipika Logo" 
+                    <img
+                      src="https://www.google.com/s2/favicons?domain=lipika.co.in&sz=128"
+                      alt="Lipika Logo"
                       className="h-6 w-6 object-contain rounded-sm"
                       onError={(e) => {
                         (e.target as HTMLElement).style.display = 'none';
@@ -296,7 +296,9 @@ export function AboutPage(): JSX.Element {
                   </div>
                   <div className="min-w-0">
                     <h3 className="text-base font-bold text-white truncate">Lipika</h3>
-                    <p className="text-[11px] text-slate-400 truncate">Odia Publishing & Font Tool</p>
+                    <p className="text-[11px] text-slate-400 truncate">
+                      Odia Publishing & Font Tool
+                    </p>
                   </div>
                 </div>
                 <a
@@ -311,7 +313,8 @@ export function AboutPage(): JSX.Element {
               </div>
 
               <p className="text-xs text-slate-300 leading-relaxed">
-                Professional Odia text converter for Unicode ↔ Akruti / Sreelipi fonts with press-grade DTP accuracy and Windows glyph fixes.
+                Professional Odia text converter for Unicode ↔ Akruti / Sreelipi fonts with
+                press-grade DTP accuracy and Windows glyph fixes.
               </p>
 
               <div className="mt-4 flex flex-wrap gap-1.5">
@@ -339,14 +342,13 @@ export function AboutPage(): JSX.Element {
               </a>
             </div>
           </div>
-
         </div>
       </section>
 
       <section>
-        <SectionHeader 
-          title="Technical Standards" 
-          subtitle="Core architectural principles applied across tools" 
+        <SectionHeader
+          title="Technical Standards"
+          subtitle="Core architectural principles applied across tools"
         />
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-4">
@@ -356,7 +358,8 @@ export function AboutPage(): JSX.Element {
               <h4 className="text-xs font-semibold text-slate-200">100% In-Browser</h4>
             </div>
             <p className="text-[11px] text-slate-400 leading-normal">
-              Your files and photos never touch external servers. Processing occurs entirely locally.
+              Your files and photos never touch external servers. Processing occurs entirely
+              locally.
             </p>
           </div>
 
@@ -385,7 +388,9 @@ export function AboutPage(): JSX.Element {
       <footer className="pt-4 border-t border-slate-800/60 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-400">
         <div className="flex items-center gap-2 text-center sm:text-left">
           <Terminal className="h-3.5 w-3.5 text-indigo-400 shrink-0" />
-          <span>Designed & built by <strong className="text-slate-200">{APP_AUTHOR_NAME}</strong></span>
+          <span>
+            Designed & built by <strong className="text-slate-200">{APP_AUTHOR_NAME}</strong>
+          </span>
         </div>
         <div className="flex items-center gap-3 sm:gap-4 text-slate-400">
           <a
@@ -416,7 +421,6 @@ export function AboutPage(): JSX.Element {
           </a>
         </div>
       </footer>
-
     </div>
   );
 }
