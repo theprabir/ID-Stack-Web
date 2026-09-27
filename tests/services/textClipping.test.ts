@@ -72,20 +72,40 @@ class Mock2DContext {
   shadowBlur = 0;
   shadowOffsetX = 0;
   shadowOffsetY = 0;
-  private fills: FillRecord[] = [];
+  /** Paint history, replayed by getImageData — public for test inspection */
+  fills: FillRecord[] = [];
+  /** Affine x-transform state (x' = a·x + e) so v0.6.5 squish is observable */
+  private transformA = 1;
+  private transformE = 0;
+  private transformStack: Array<{ a: number; e: number }> = [];
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
   }
 
-  save(): void {}
-  restore(): void {}
+  save(): void {
+    this.transformStack.push({ a: this.transformA, e: this.transformE });
+  }
+  restore(): void {
+    const snapshot = this.transformStack.pop();
+    if (snapshot) {
+      this.transformA = snapshot.a;
+      this.transformE = snapshot.e;
+    }
+  }
   beginPath(): void {}
   closePath(): void {}
   clip(): void {}
-  translate(): void {}
+  translate(x: number, y: number): void {
+    // Compose: x' = a·(x + tx) + e
+    this.transformE += this.transformA * x;
+    void y; // the renderer only squishes the x axis
+  }
   rotate(): void {}
-  scale(): void {}
+  scale(x: number, y: number): void {
+    this.transformA *= x;
+    void y;
+  }
   setTransform(): void {}
   setLineDash(): void {}
   createLinearGradient(): { addColorStop(): void } {
@@ -111,9 +131,9 @@ class Mock2DContext {
   fillRect(x: number, y: number, w: number, h: number): void {
     this.fills.push({
       kind: 'rect',
-      x,
+      x: this.transformA * x + this.transformE,
       y,
-      w,
+      w: w * this.transformA,
       h,
       color: this.fillStyle,
       alpha: this.globalAlpha,
@@ -124,9 +144,9 @@ class Mock2DContext {
   strokeRect(x: number, y: number, w: number, h: number): void {
     this.fills.push({
       kind: 'rect',
-      x,
+      x: this.transformA * x + this.transformE,
       y,
-      w,
+      w: w * this.transformA,
       h,
       color: this.strokeStyle,
       alpha: this.globalAlpha,
@@ -138,10 +158,10 @@ class Mock2DContext {
     const size = this.fontSizeOf();
     this.fills.push({
       kind: 'text',
-      x,
+      x: this.transformA * x + this.transformE,
       y: y - size * 0.8, // ink box: ascent 0.8 em above the baseline
-      w: text.length * 6,
-      h: size,
+      w: text.length * 6 * this.transformA,
+      h: size, // VERTICAL size is never scaled by the auto-fit squish
       color: this.fillStyle,
       alpha: this.globalAlpha,
       composite: this.globalCompositeOperation,
@@ -153,9 +173,9 @@ class Mock2DContext {
     const size = this.fontSizeOf();
     this.fills.push({
       kind: 'text',
-      x,
+      x: this.transformA * x + this.transformE,
       y: y - size * 0.8,
-      w: text.length * 6,
+      w: text.length * 6 * this.transformA,
       h: size,
       color: this.strokeStyle,
       alpha: this.globalAlpha,
@@ -433,24 +453,32 @@ describe('placeholder text is never clipped (v0.6.4)', () => {
     expect(box.right - box.left).toBeGreaterThanOrEqual(76);
   });
 
-  it('a forced wrap draws BOTH lines inside the canvas (leading = 1.2×size)', async () => {
+  it('a substituted value in a narrow box NEVER wraps — v0.6.5 compresses it to one line', async () => {
+    // THE "Charmaine Patel" BUG: the value exceeded its box, wrapped onto a
+    // second line and bled down over the layer beneath. v0.6.5 forces
+    // single-line layout for substituted values and compresses horizontally
+    // instead — the box width (60 px) is the compression zone.
     const design = designWithTextLayer({
       content: 'ID',
       shapeType: 'box',
-      boxWidth: 60, // "Alice Johnson" → "Alice" / "Johnson" under mock metrics
+      boxWidth: 60,
       boxHeight: 78,
       originX: 266,
       originY: 511.47,
       leading: 60,
     });
     const box = await inkBoxOf(design, { Name: 'Alice Johnson' });
-    // No oracle → baseline 1 = originY + 0.8×50 = 551.47, baseline 2 = 611.47.
-    // Both ink bands must be present; the old 2583 px leading pushed line 2
-    // to ~3100 (outside the card entirely).
+    // ONE line: natural 13×6 = 78 px compressed to the 60 px box; no-oracle
+    // baseline = originY + 0.8×50 = 551.47 → ink band 511–562. The old wrap
+    // put a second band at 562–622 (bleeding over the layer below).
     expect(box.count).toBeGreaterThan(0);
-    expect(box.top).toBeLessThan(560);
-    expect(box.bottom).toBeGreaterThan(575);
-    expect(box.bottom).toBeLessThan(660);
+    expect(box.top).toBeGreaterThanOrEqual(505);
+    expect(box.bottom).toBeLessThanOrEqual(565); // NO second line below
+    // Compressed width ≈ the box width, never the natural 78 px.
+    expect(box.right - box.left).toBeGreaterThanOrEqual(55);
+    expect(box.right - box.left).toBeLessThanOrEqual(63);
+    // Left-anchored: compression never shifts the start position.
+    expect(box.left).toBeLessThanOrEqual(268);
   });
 
   it('point text never width-wraps (explicit newlines only)', async () => {
@@ -553,5 +581,129 @@ describe('placeholder text is never clipped (v0.6.4)', () => {
     const colours = new Set(textFills.map((fill) => fill.color.toLowerCase()));
     expect(colours.has('#ff0000')).toBe(true);
     expect(colours.has('#0000ff')).toBe(true);
+  });
+});
+
+describe('auto-fit horizontal compression (v0.6.5)', () => {
+  it('"Charmaine Patel" (14×6 = 84 px) compresses to the 60 px zone on ONE line', async () => {
+    const design = designWithTextLayer({
+      content: 'ID',
+      shapeType: 'box',
+      boxWidth: 60,
+      boxHeight: 78,
+      originX: 266,
+      originY: 511.47,
+      leading: 60,
+    });
+    const box = await inkBoxOf(design, { Name: 'Charmaine Patel' });
+    // No second baseline band (the old wrap put one at ~562–622).
+    expect(box.top).toBeGreaterThanOrEqual(505);
+    expect(box.bottom).toBeLessThanOrEqual(565);
+    // Squished to the zone, left edge unmoved.
+    expect(box.right - box.left).toBeGreaterThanOrEqual(55);
+    expect(box.right - box.left).toBeLessThanOrEqual(63);
+    expect(box.left).toBeLessThanOrEqual(268);
+    // Vertical glyph size is PRESERVED: 50 px font → 40 px ink (0.8 em).
+    expect(box.bottom - box.top).toBeGreaterThanOrEqual(39);
+  });
+
+  it('a fitting value keeps 100 % horizontal scale — pixel-identical to v0.6.4', async () => {
+    const design = designWithTextLayer({
+      content: 'ID',
+      shapeType: 'box',
+      boxWidth: 204,
+      boxHeight: 78,
+      originX: 266,
+      originY: 511.47,
+      leading: 60,
+    });
+    const box = await inkBoxOf(design, { Name: 'Alice' });
+    // 5×6 = 30 px of ink (columns 266–295 → 29 px measured) ≤ 204 px box:
+    // no compression — natural width, full height.
+    expect(box.right - box.left).toBe(29);
+    expect(box.bottom - box.top).toBe(50); // one 50 px line (0.8 em + 0.2 em mock box)
+    expect(box.left).toBe(266);
+  });
+
+  it('point text compresses to the origin→card-edge zone (never past the card)', async () => {
+    const design = designWithTextLayer({ content: 'ID' });
+    // Origin 270, card 638, margin 4 → allowed 364. 60 chars ×6 = 360 fits;
+    // 70 chars ×6 = 420 > 364 → ratio ≈ 0.867, width ≈ 364.
+    const box = await inkBoxOf(design, { Name: 'x'.repeat(70) });
+    expect(box.left).toBe(270);
+    expect(box.right).toBeLessThanOrEqual(636); // 638 − 4 margin
+    expect(box.right - box.left).toBeGreaterThanOrEqual(360);
+  });
+
+  it('explicit newlines in the VALUE still break lines (never squished across)', async () => {
+    const design = designWithTextLayer({
+      content: 'ID',
+      shapeType: 'box',
+      boxWidth: 204,
+      boxHeight: 120,
+      originX: 266,
+      originY: 511.47,
+      leading: 60,
+    });
+    const box = await inkBoxOf(design, { Name: 'Alice\nJohnson' });
+    // Two bands: baselines 551.47 and 611.47 (leading 60 preserved).
+    expect(box.top).toBeLessThan(560);
+    expect(box.bottom).toBeGreaterThan(600);
+    // Each line fits the 204 px box naturally — no compression applied.
+    expect(box.right - box.left).toBeLessThanOrEqual(50); // 7×6=42 widest
+  });
+
+  it('the design preview (sample text) is NEVER compressed — only substituted values are', async () => {
+    // Sample one word wider than the box, so wrapping cannot mask the
+    // difference: 15 chars × 6 = 90 px in a 60 px box. The substituted value
+    // is a DIFFERENT long word (20 × 6 = 120 px) — a value equal to the
+    // sample content IS the design preview by definition.
+    const design = designWithTextLayer({
+      content: 'Extraordinarily',
+      shapeType: 'box',
+      boxWidth: 60,
+      boxHeight: 78,
+      originX: 266,
+      originY: 511.47,
+      leading: 60,
+    });
+    // Empty substitution → the SAMPLE is drawn as authored: full natural
+    // 90 px width, overflowing the box (the design canvas is the only clip).
+    const previewBox = await inkBoxOf(design, { Name: '' });
+    expect(previewBox.right - previewBox.left).toBeGreaterThanOrEqual(88);
+    // A long SUBSTITUTED value compresses to the 60 px zone instead.
+    const substitutedBox = await inkBoxOf(design, { Name: 'Internationalization' });
+    expect(substitutedBox.right - substitutedBox.left).toBeLessThanOrEqual(63);
+    expect(substitutedBox.right - substitutedBox.left).toBeGreaterThanOrEqual(55);
+  });
+
+  it('drop shadows compress WITH the squished glyphs (cast by the transformed shape)', async () => {
+    const design = designWithTextLayer(
+      {
+        content: 'ID',
+        shapeType: 'box',
+        boxWidth: 60,
+        boxHeight: 78,
+        originX: 266,
+        originY: 511.47,
+        leading: 60,
+      },
+      {
+        effects: {
+          dropShadows: [
+            { color: '#000000', opacity: 1, angle: 0, distance: 10, blur: 0 },
+          ],
+        },
+      }
+    );
+    const canvas = await compositeDesign(design, options({ Name: 'Charmaine Patel' }));
+    const textFills = collectTextFills(canvas);
+    expect(textFills.length).toBeGreaterThan(0);
+    // The shadow pass paints text fills too — both shadow and fill copies
+    // must sit inside the compressed zone (≤ 60 px + shadow distance 10).
+    const lefts = textFills.map((fill) => fill.x);
+    const rights = textFills.map((fill) => fill.x + fill.w);
+    expect(Math.min(...lefts)).toBeLessThanOrEqual(268);
+    expect(Math.max(...rights)).toBeLessThanOrEqual(266 + 60 + 12);
   });
 });

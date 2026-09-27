@@ -3,6 +3,59 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6.5] - 2026-09-27
+
+### Fixed
+
+- **Auto-fit horizontal compression for substituted placeholder values (the
+  "Charmaine Patel" bug).** A substituted value wider than its allocated zone
+  used to word-wrap onto a second line that bled down and overlapped the
+  layer beneath (the reference card showed "Charmaine Patel" wrapping over
+  "Dept.: Marketing"). Substituted values now follow the auto-fit pipeline:
+
+  1. **Force no-wrap** — every substituted value lays out as single-line
+     point text (explicit newlines inside the value itself still break
+     lines); word-wrap is never applied to a replacement value, even when
+     the placeholder was authored as box text.
+  2. **Capture baseline** — the natural width is measured at 100 %
+     horizontal scale (compression is a paint-time transform, never fed
+     back into layout or justification).
+  3. **Evaluate bounds** — the natural line width is compared against the
+     placeholder's maximum allowed zone: the parsed text-box width
+     (`boxBounds`) for box text; the distance from the justification anchor
+     to the card edge (minus a 4 px margin) for point text.
+  4. **Scale conditionally** — ratio = maxAllowed ÷ naturalWidth, clamped
+     to (0, 1]; a value that fits keeps ratio = 1 and paints pixel-identical
+     to v0.6.4. The smallest per-line ratio wins so every line fits.
+
+  The ratio is applied as a pure `translate(anchor) → scale(ratio, 1)`
+  paint transform anchored at the line's justification point (left edge,
+  centre or right edge), so the value squishes **in place** and never
+  shifts position. STRICT STYLING ISOLATION: only the x-axis compresses —
+  font family/weight, vertical font size (text never shrinks vertically),
+  colours/fills, engine and layer strokes, drop shadows, glows, overlays,
+  underline, tracking, leading and the baseline coordinate are untouched.
+  Shadows and inner effects compress WITH the glyphs (they are cast by the
+  transformed shape; inner-effect halo canvases apply the same anchor
+  squish themselves so the halo is never compressed twice). The design
+  preview (original sample text) is NEVER compressed — authored design
+  truth renders exactly as authored.
+
+### Added
+
+- `computeAutoFitScale` (evaluate + conditional compression over the shared
+  layout geometry), `autoFitMaxAllowedWidth` (the per-layer zone: box width
+  or justification-anchor → card edge) and `TextLayout.horizontalScale` /
+  `TextLayout.justification` — the layout decides the ratio once and the
+  canvas sizing, masking and painting all consume the same numbers.
+- Tests: 6 new auto-fit regressions against the observable rasteriser mock
+  (extended with real affine-transform semantics so the squish is
+  measurable): "Charmaine Patel" single-line compression into a narrow box,
+  fitting values keep 100 % scale, point-text compression to the
+  origin→card-edge zone, explicit newlines still break lines, sample text
+  never compressed while the same-width substituted value is, and drop
+  shadows compress with the squished glyphs — 184 total.
+
 ## [0.6.4] - 2026-09-26
 
 ### Fixed

@@ -11,6 +11,7 @@
 - Batch generation of hundreds of ID cards in seconds
 - **CMYK export:** ICC-corrected CMYK JPEG (Adobe APP14 transform=0) and direct CMYK PDF (embedded ICC profile + GTS_PDFX OutputIntent)
 - **True text geometry:** placeholder text honours the PSD's real text box (box text wraps at the authored box width, point text never width-wraps), the engine transform origin, Photoshop auto-leading (120 %), per-run mixed styling and the engine character stroke — substituted values render exactly where and how the design's sample text sat
+- **Auto-fit values:** substituted placeholder text never wraps or overlaps the layers below — a value wider than its zone compresses horizontally (Photoshop-style Horizontal Scale) to fit exactly, preserving font family, weight, vertical size, colours, strokes, shadows and baseline
 - **Imposition engine:** N cards per sheet on A4/A3/Letter/Legal/Tabloid or custom paper (mm/cm/in/pt), user-set bleed, gap, margin, crop marks and positioned numbering; live sheet preview
 - **One PDF per person:** double-sided cards export as a single 2-page PDF (front + back)
 - PSD file import (Photoshop designs)
@@ -99,7 +100,7 @@ Use [GitHub Issues](https://github.com/theprabir/ID-Stack-Web/issues) to report 
 
 ## 📊 Project Status
 **Current Phase:** 6 (Imposition Engine) — COMPLETE
-**Patch:** 0.6.4 (placeholder text renders with the design's TRUE text geometry: parsed text-box/point shape, engine transform origin, auto-leading = 1.2 × size, oracle-anchored baseline — substituted values are never clipped to the sample string's ink box and sizes are immune to engine-data unit quirks)
+**Patch:** 0.6.5 (auto-fit horizontal compression: substituted values never wrap or overlap — they squish horizontally to their allocated zone, preserving every other style run; plus the v0.6.4 true text geometry: parsed text-box/point shape, engine transform origin, auto-leading = 1.2 × size, oracle-anchored baseline, no clipping at the sample string's ink box)
 **Status:** v0.6.3 — Phase 7 Web Worker batch rendering; card size LOCKED to the uploaded PSD's true physical size (px ÷ DPI × 72 — a 300-dpi 1056×663 px card derives to 89.4×56.1 mm, never raw pixels), placeholder text/effects sized in true Photoshop units (points→design pixels at document DPI), so imposition fits and placeholder styling are correct at any document resolution
 **Status:** v0.6.0 — guided 3-step PSD Studio (Upload Designs & Data → Choose Placeholders → Generate); imposed sheets with each back directly below its front (or separate duplex sheets), undistorted contain-fitted cards, card size LOCKED to the uploaded PSD (orientation switch swaps width/height at true scale), live preview with real cards; batch export runs JPEG compression + DEFLATE in a dedicated Web Worker with transparent main-thread fallback; fully faithful placeholder rendering (text style + layer effects + masks; photo effects + masks + clipping masks); v0.5.0–0.5.1 imposition options (custom paper/units, bleed, gap, margin, crop marks, positioned numbering, per-slot card numbering, persisted settings); one 2-page PDF per person, bundled Arial-compatible font
 

@@ -257,6 +257,18 @@ interface TextLayout {
   ascent: number;
   /** Resolved CSS font family (single resolution for measure + paint) */
   family: string;
+  /**
+   * v0.6.5 auto-fit: the horizontal compression ratio (0 < ratio ≤ 1)
+   * applied to the painted glyphs — 1 means the value fits its zone
+   * naturally at 100 %. Painting wraps the line in a
+   * `translate(anchor) → scale(ratio, 1)` transform so ONLY the x-axis
+   * squishes: vertical size, weight, colour, strokes, shadows, leading
+   * and the baseline position are untouched (Photoshop's Horizontal
+   * Scale).
+   */
+  horizontalScale: number;
+  /** Justification used to lay the lines out (anchors the squish) */
+  justification: string;
 }
 
 /**
@@ -290,6 +302,56 @@ function resolveStyleAt(
     bold: run.bold ?? fallback.bold,
     italic: run.italic ?? fallback.italic,
   };
+}/**
+ * v0.6.5 AUTO-FIT: single-line no-wrap + conditional horizontal compression
+ * for SUBSTITUTED placeholder values (the "Charmaine Patel" bug).
+ *
+ * PIPELINE (per the spec):
+ * 1. FORCE NO-WRAP — a substituted value renders as single-line point text:
+ *    it never enters the word-wrap logic at all (explicit newlines in the
+ *    value itself still break lines). This is unconditional: even when the
+ *    placeholder layer was authored as box text, the substituted value is
+ *    not squeezed into the sample's box — it lays out unwrapped so its
+ *    natural width can be measured, then squished to fit.
+ * 2. CAPTURE BASELINE (100 % horizontal scale) — the natural, unscaled line
+ *    width is exactly what computeTextLayout measures into `lineWidths`
+ *    (compression is a paint-time transform, never fed back into layout).
+ * 3. EVALUATE BOUNDS — each natural line width vs the placeholder's maximum
+ *    allowed zone (see `autoFitMaxAllowedWidth`).
+ * 4. SCALE CONDITIONALLY — ratio = maxAllowed / naturalWidth, clamped to
+ *    (0, 1]; a value that fits keeps ratio = 1 and paints EXACTLY as
+ *    before. The smallest per-line ratio wins so EVERY line fits.
+ *
+ * STYLE ISOLATION: the ratio is applied through a pure paint transform
+ * (translate → scale(ratio, 1) → paint → restore). Every other style run —
+ * font family/weight, VERTICAL size (font height is never scaled), colour,
+ * engine/layer strokes, shadows, glows, overlays, underline, tracking,
+ * leading and the baseline coordinate — flows through the ordinary
+ * painting path unchanged. Shadows compress WITH the glyphs (they are cast
+ * by the transformed shape), matching Photoshop's Horizontal Scale.
+ *
+ * @param lineWidths - Natural (100 % scale) painted width per line
+ * @param substituted - True when the content replaced the sample string
+ * @param maxAllowedWidth - Maximum allowed zone width in design×scale px
+ * @returns The compression ratio (1 = no compression)
+ */
+function computeAutoFitScale(
+  lineWidths: number[],
+  substituted: boolean,
+  maxAllowedWidth: number
+): number {
+  // Design-preview content (the original sample) is authored truth — it is
+  // never squished; only substituted VALUES auto-fit.
+  if (!substituted) return 1;
+  if (!(maxAllowedWidth > 0) || !Number.isFinite(maxAllowedWidth)) return 1;
+  let worstRatio = 1;
+  for (const width of lineWidths) {
+    if (!(width > maxAllowedWidth)) continue;
+    // Clamp: never blow a value UP (ratio ≤ 1), never squish to nothing.
+    const ratio = Math.max(0.05, Math.min(1, maxAllowedWidth / width));
+    if (ratio < worstRatio) worstRatio = ratio;
+  }
+  return worstRatio;
 }
 
 /**
@@ -326,7 +388,8 @@ function computeTextLayout(
   layer: PsdLayerInfo,
   content: string,
   scale: number,
-  substituted: boolean
+  substituted: boolean,
+  maxAllowedWidth: number
 ): TextLayout {
   const text = layer.text!;
   const oracle = text.oracle;
@@ -354,11 +417,17 @@ function computeTextLayout(
 
   // Wrap width: box text wraps at the REAL text box (which extends beyond
   // the sample's ink bounds); point text never width-wraps.
+  // v0.6.5 FORCE NO-WRAP: a SUBSTITUTED value always lays out unwrapped
+  // (single-line point-text behaviour — explicit newlines in the value
+  // still break lines). Auto-fit then compresses it horizontally to its
+  // zone; wrapping would instead bleed into the layers below.
   const engineBoxWidth = (text.boxWidth ?? 0) * scale;
   const wrapWidth =
-    text.shapeType === 'box' && engineBoxWidth > 1
-      ? engineBoxWidth
-      : Number.POSITIVE_INFINITY;
+    substituted
+      ? Number.POSITIVE_INFINITY
+      : text.shapeType === 'box' && engineBoxWidth > 1
+        ? engineBoxWidth
+        : Number.POSITIVE_INFINITY;
   const lines = wrapLinesPreserving(context, content, wrapWidth, trackingPx);
 
   // Line starts (content indices) for per-run styling.
@@ -387,7 +456,7 @@ function computeTextLayout(
   }
 
   // Per-line start x (justification) and width — computed ONCE here so the
-  // canvas sizing and the painting share the same geometry.
+  // canvas sizing, auto-fit and the painting all share the same geometry.
   const lineX: number[] = [];
   const lineWidths: number[] = [];
   for (let index = 0; index < lines.length; index += 1) {
@@ -409,6 +478,10 @@ function computeTextLayout(
       return total + context.measureText(segment.text).width + trackingPx * Math.max(0, segment.text.length - 1);
     }, 0);
     lineWidths.push(width);
+    // v0.6.5: justification positions lines by their NATURAL width —
+    // compression then squishes the glyphs in place around the same anchor
+    // (left stays left-anchored, centre stays centred, right stays
+    // right-anchored), so the value never shifts when it auto-fits.
     if (justification === 'center' || justification.startsWith('justify')) {
       if (text.shapeType === 'box' && boxWidth > 1) {
         lineX.push(textOriginX + (boxWidth - width) / 2);
@@ -422,6 +495,10 @@ function computeTextLayout(
       lineX.push(textOriginX + originOffset);
     }
   }
+
+  // v0.6.5 AUTO-FIT: measure → evaluate → conditionally compress (ONLY the
+  // horizontal scale; see computeAutoFitScale for the full pipeline).
+  const horizontalScale = computeAutoFitScale(lineWidths, substituted, maxAllowedWidth);
 
   return {
     lines,
@@ -439,7 +516,50 @@ function computeTextLayout(
     boxHeight,
     ascent,
     family: fontCssFamily,
+    horizontalScale,
+    justification,
   };
+}
+
+/**
+ * Maximum allowed zone width for one text layer (design×scale px) — the
+ * v0.6.5 auto-fit boundary the substituted value must respect.
+ *
+ * - BOX text: the parsed text-box width (`boxWidth`) — the bounding
+ *   container the design author allocated.
+ * - POINT text: the distance from the text origin to the card's right edge
+ *   minus a 4-design-px margin, so the value stays inside the card.
+ *
+ * @param text - Parsed text info for the layer
+ * @param scale - Pixel scale (1 = design pixels)
+ * @param cardWidth - Card width in design×scale px
+ * @returns The allowed width, or 0 when it cannot be determined
+ */
+function autoFitMaxAllowedWidth(
+  layer: PsdLayerInfo,
+  scale: number,
+  cardWidth: number
+): number {
+  const text = layer.text!;
+  const engineBoxWidth = (text.boxWidth ?? 0) * scale;
+  if (text.shapeType === 'box' && engineBoxWidth > 1) return engineBoxWidth;
+  // Point text: the value may grow from its justification anchor until the
+  // card edge (minus a small margin) — the zone it must stay inside.
+  const justification = text.justification ?? 'left';
+  const originX = (text.originX ?? layer.bounds.left) * scale;
+  const margin = 4 * scale;
+  if (justification === 'right') {
+    const allowed = originX - margin;
+    return allowed > 0 ? allowed : 0;
+  }
+  if (justification === 'center' || justification.startsWith('justify')) {
+    // Centre-anchored: the tighter side governs (mirrored around the anchor).
+    const side = Math.min(originX, cardWidth - originX);
+    const allowed = 2 * (side - margin);
+    return allowed > 0 ? allowed : 0;
+  }
+  const allowed = cardWidth - margin - originX;
+  return allowed > 0 ? allowed : 0;
 }
 
 /** One painted style segment of a line (maximal run of equal style) */
@@ -546,6 +666,29 @@ function drawTextContent(
     const x = layout.lineX[index]! - offsetX;
     const y = layout.firstBaseline + index * layout.leading - offsetY;
 
+    // v0.6.5 AUTO-FIT paint transform: squish ONLY the x-axis around the
+    // line's own justification anchor (left edge / centre / right edge),
+    // so the value compresses IN PLACE — it never shifts position. Every
+    // pass below (engine stroke, effect stroke, shadow, fill, inner
+    // effects, glow, underline) paints through this transform, so all
+    // effects compress with the glyphs while vertical size, leading and
+    // the baseline stay untouched. Ratio 1 (the value fits) is a no-op.
+    const ratio = layout.horizontalScale;
+    const naturalWidth = layout.lineWidths[index] ?? 0;
+    const justification = layout.justification;
+    const anchor =
+      justification === 'right'
+        ? x + naturalWidth
+        : justification === 'center' || justification.startsWith('justify')
+          ? x + naturalWidth / 2
+          : x;
+    const applySquish = (): void => {
+      layerContext.save();
+      layerContext.translate(anchor, 0);
+      layerContext.scale(ratio, 1);
+      layerContext.translate(-anchor, 0);
+    };
+
     const fillSegment = (segment: GlyphSegment, cursorX: number): void => {
       layerContext.font = fontFor(segment.style);
       if (layout.tracking === 0) {
@@ -573,6 +716,15 @@ function drawTextContent(
     /** Shape-only painter for inner-effect compositing */
     const drawShape = (target: CanvasRenderingContext2D): void => {
       target.textBaseline = layerContext.textBaseline;
+      // v0.6.5: inner effects composite on SEPARATE halo canvases that do
+      // not inherit the layer context's transform — apply the same anchor
+      // squish so inner shadows/glows track the compressed glyphs exactly.
+      if (ratio !== 1) {
+        target.save();
+        target.translate(anchor, 0);
+        target.scale(ratio, 1);
+        target.translate(-anchor, 0);
+      }
       let cursor = x;
       for (const segment of segments) {
         target.font = fontFor(segment.style);
@@ -587,8 +739,14 @@ function drawTextContent(
         }
         cursor += segmentWidth(segment);
       }
+      if (ratio !== 1) target.restore();
     };
 
+    // --- Squish window 1: engine stroke → effect stroke → shadow → fill.
+    // (Inner effects composite between the windows at identity — drawShape
+    // squishes itself on its halo canvases.)
+    if (ratio !== 1) applySquish();
+    try {
     // --- Engine text stroke: painted UNDER everything, like Photoshop.
     if (engineStroke) {
       layerContext.save();
@@ -643,8 +801,14 @@ function drawTextContent(
       cursor += segmentWidth(segment);
     }
     layerContext.restore();
+    } finally {
+      if (ratio !== 1) layerContext.restore();
+    }
 
     // --- Inner shadow / inner glow, intersected with the glyph shape.
+    // Painted OUTSIDE the squish window: drawShape applies the same anchor
+    // compression on its halo canvases itself, so the halo is composited at
+    // identity (never compressed twice).
     const innerShadow = effects?.innerShadows?.[0];
     const innerGlow = effects?.innerGlow;
     if (innerShadow) {
@@ -673,6 +837,9 @@ function drawTextContent(
       );
     }
 
+    // --- Squish window 2: outer glow → underline.
+    if (ratio !== 1) applySquish();
+    try {
     // --- Outer glow: soft centred halo beneath the fill (drawn per line).
     const outerGlow = effects?.outerGlow;
     if (outerGlow) {
@@ -699,6 +866,9 @@ function drawTextContent(
         underlineCursor += segmentWidth(segment);
       }
       layerContext.restore();
+    }
+    } finally {
+      if (ratio !== 1) layerContext.restore();
     }
   }
 }
@@ -735,7 +905,11 @@ function drawTextLayer(
   let layout: TextLayout;
   try {
     const measure = getMeasureContext();
-    layout = computeTextLayout(measure, layer, content, scale, substituted);
+    // v0.6.5: the auto-fit boundary (text box for box text; origin → card
+    // edge for point text) is decided ONCE here and shared by layout and
+    // painting.
+    const maxAllowed = autoFitMaxAllowedWidth(layer, scale, cardWidth);
+    layout = computeTextLayout(measure, layer, content, scale, substituted, maxAllowed);
   } catch {
     // Canvas 2D unavailable — nothing sensible can be drawn.
     return;
@@ -751,7 +925,7 @@ function drawTextLayer(
   let inkBottom = layout.boxTop + layout.boxHeight;
   for (let index = 0; index < layout.lines.length; index += 1) {
     const startX = layout.lineX[index] ?? layout.textOriginX;
-    const width = layout.lineWidths[index] ?? 0;
+    const width = (layout.lineWidths[index] ?? 0) * layout.horizontalScale;
     const baseline = layout.firstBaseline + index * layout.leading;
     if (startX < inkLeft) inkLeft = startX;
     if (startX + width > inkRight) inkRight = startX + width;
