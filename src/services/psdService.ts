@@ -362,9 +362,13 @@ function buildTextStyleOracle(
       ? (engineFontSizePx ?? 0) * 1.2
       : engineValueToDesignPx(engineStyle.leading, dpi, 1);
   // The engine's own slant claim — PostScript name lexemes + fauxItalic.
-  // Feeds the oracle's italic veto (the "regular shows italic" bug).
-  const engineItalic =
-    engineStyle.fauxItalic === true || /italic|oblique/i.test(fontFamily ?? '');
+  // AUTHORITATIVE for slant (the JNV "apaar id" doctrine): Photoshop drew
+  // the raster FROM this claim, so an upright claim renders upright even
+  // when the raster's centroid drift reads as slant (ascender/descender
+  // asymmetry — "apaar id"'s d-ascender/p-descender — produces raster
+  // slant values of ±2 on genuinely upright Arial Bold, dwarfing real
+  // italic lean of ~0.2 and flipping the ink match to italic).
+  const engineItalic = engineStyle.fauxItalic === true || /italic|oblique/i.test(fontFamily ?? '');
   const match = calibrateStyleFromRaster(
     layer.canvas,
     content,
@@ -383,6 +387,13 @@ function buildTextStyleOracle(
   return {
     fontSize: match.fontSize,
     bold: match.bold,
+    // v0.6.14 ENGINE-SLANT DOCTRINE: the engine claim is ground truth for
+    // slant. An upright claim ALWAYS yields an upright oracle (vetoItalic
+    // set when the ink match voted italic — the renderer then takes the
+    // weight from engine data too, see resolveStyleAt); an italic claim
+    // yields italic. The old path kept the ink matcher's italic vote and
+    // only vetoed when the RASTER showed no slant — which never fired on
+    // letterform-asymmetric samples like "apaar id".
     italic: match.italic,
     vetoItalic: match.vetoItalic === true ? true : undefined,
     color: inkColorToHex(raster.meanColor) ?? undefined,
@@ -447,8 +458,7 @@ function extractText(text: LayerTextData, dpi: number, layer: Layer): PsdLayerIn
     typeof transform[0] === 'number' && Math.abs(transform[0]) > 0.01 ? transform[0] : 1;
   const transformScaleY =
     typeof transform[3] === 'number' && Math.abs(transform[3]) > 0.01 ? transform[3] : 1;
-  const autoLeading =
-    coalesce(firstRunStyle?.autoLeading, text.style?.autoLeading) === true;
+  const autoLeading = coalesce(firstRunStyle?.autoLeading, text.style?.autoLeading) === true;
   const engineFontSizePx =
     coalesce(firstRunStyle?.fontSize, text.style?.fontSize) !== undefined
       ? engineValueToDesignPx(
@@ -600,7 +610,10 @@ function extractText(text: LayerTextData, dpi: number, layer: Layer): PsdLayerIn
     postScriptName,
     fontWeight: deriveFontWeight(postScriptName, engineBold),
     color: oracle?.color ?? (color || undefined),
-    bold: oracle?.bold ?? engineBold,
+    // Vetoed oracle (engine-upright claim overridden the ink match): the
+    // engine's own weight claim wins too — the ink vote is unreliable when
+    // it contradicts the engine data that produced the raster.
+    bold: oracle?.vetoItalic === true ? engineBold : (oracle?.bold ?? engineBold),
     italic: oracle?.italic ?? engineItalic,
     oracle,
     justification: layerJustification,

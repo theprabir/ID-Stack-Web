@@ -76,9 +76,7 @@ describe('wrapped-sample guard (rasterSpansMultipleLines, v0.6.10)', () => {
 
   it('detects a wrapped sample: ink taller than 1.5 leading AND ≈ 2 lines of glyphs', () => {
     // The Address layer: single-line string, two lines in the raster.
-    expect(
-      rasterSpansMultipleLines(107, 72, ENGINE_SIZE, ENGINE_LEADING)
-    ).toBe(true);
+    expect(rasterSpansMultipleLines(107, 72, ENGINE_SIZE, ENGINE_LEADING)).toBe(true);
   });
 
   it('does NOT flag a tall single line (ascender + descender within one leading)', () => {
@@ -105,8 +103,6 @@ describe('full-style text calibration (matchTextStyleFromInk)', () => {
     slant: 0.01,
   };
   const rasterBold = { inkHeight: 70, inkWidth: 300, inkDensity: 0.34, slant: 0.01 };
-  const rasterItalic = { inkHeight: 70, inkWidth: 300, inkDensity: 0.22, slant: 0.25 };
-  const rasterBoldItalic = { inkHeight: 70, inkWidth: 300, inkDensity: 0.34, slant: 0.25 };
 
   const refsRegular = { inkHeight: 75, inkWidth: 320, inkDensity: 0.22, slant: 0.01 };
   const refsBold = { inkHeight: 75, inkWidth: 340, inkDensity: 0.35, slant: 0.01 };
@@ -127,72 +123,48 @@ describe('full-style text calibration (matchTextStyleFromInk)', () => {
     expect(match?.fontSize).toBeCloseTo((70 * 100) / 75, 1);
   });
 
-  it('matches a bold raster to the bold variant', () => {
+  it('matches a bold raster to the bold variant (weight still comes from ink)', () => {
     const match = matchTextStyleFromInk(rasterBold, candidates, 50);
     expect(match?.bold).toBe(true);
     expect(match?.italic).toBe(false);
   });
 
-  it('matches an italic raster to the italic variant (slant dominates)', () => {
-    const match = matchTextStyleFromInk(rasterItalic, candidates, 50);
-    expect(match?.italic).toBe(true);
-    expect(match?.bold).toBe(false);
-  });
-
-  it('matches a bold-italic raster to the bold-italic variant', () => {
-    const match = matchTextStyleFromInk(rasterBoldItalic, candidates, 50);
-    expect(match?.bold).toBe(true);
-    expect(match?.italic).toBe(true);
-  });
-
-  it('VETOES an italic match when the environment cannot rasterise italic', () => {
-    // THE "REGULAR NAME SHOWS ITALIC" BUG: when the design's italic font
-    // is missing, canvas substitutes an UPRIGHT face — the italic REFERENCE
-    // then renders unslanted, the 3× slant term zeroes for both variants
-    // and DENSITY alone picks italic for an upright raster. All four
-    // signals must hold: matched italic + engine-upright + unslanted
-    // raster + UN_SLANTED italic reference (proof of substitution).
-    const substitutedRefs = [
-      { ...refsRegular, bold: false, italic: false },
-      { ...refsBold, bold: true, italic: false },
-      { ...refsRegular, bold: false, italic: true }, // italic → renders upright (slant 0.01)
-      { ...refsBold, bold: true, italic: true },
-    ];
-    const match = matchTextStyleFromInk(rasterRegular, substitutedRefs, 50, 0.2, 6, false);
+  it('ENGINE UPRIGHT WINS over an italic ink vote (the JNV "apaar id" bug)', () => {
+    // The raster's centroid drift reads as slant (letterform asymmetry:
+    // d-ascender right + p-descender left) so the ink comparison votes
+    // italic — but the engine data says Arial-BoldMT / fauxItalic:false.
+    // Photoshop drew the raster FROM that claim: the result must be upright
+    // and VETOED (vetoItalic) so the renderer takes the weight from engine
+    // data too.
+    const driftingRaster = { ...rasterRegular, slant: 2.1 };
+    const match = matchTextStyleFromInk(driftingRaster, candidates, 50, 0.2, 6, false);
     expect(match?.italic).toBe(false);
     expect(match?.vetoItalic).toBe(true);
   });
 
-  it('does NOT veto an italic match when the engine claims italic', () => {
+  it('does NOT set vetoItalic when the ink match already voted upright', () => {
+    const match = matchTextStyleFromInk(rasterRegular, candidates, 50, 0.2, 6, false);
+    expect(match?.italic).toBe(false);
+    expect(match?.vetoItalic).toBeUndefined();
+  });
+
+  it('an engine italic claim forces italic whatever the ink comparison says', () => {
     // A genuinely italic design (PostScript "-Italic" or fauxItalic) keeps
-    // the italic match even when this environment's rasterisation is odd.
-    const match = matchTextStyleFromInk(rasterItalic, candidates, 50, 0.2, 6, true);
+    // italic even when this environment's rasterisation is odd.
+    const match = matchTextStyleFromInk(rasterRegular, candidates, 50, 0.2, 6, true);
     expect(match?.italic).toBe(true);
     expect(match?.vetoItalic).toBeUndefined();
   });
 
-  it('does NOT veto when the RASTER really slants (engine claim was wrong)', () => {
-    // Upright-named raster that measurably slants — the design IS italic;
-    // the raster is ground truth, no veto.
-    const slantedRaster = { ...rasterRegular, slant: 0.25 };
-    const match = matchTextStyleFromInk(slantedRaster, candidates, 50, 0.2, 6, false);
+  it('an engine italic claim stays italic even on a strongly drifting raster', () => {
+    // The engine claim overrides the noisy slant metric in BOTH directions.
+    const driftingRaster = { ...rasterRegular, slant: -1.9 };
+    const match = matchTextStyleFromInk(driftingRaster, candidates, 50, 0.2, 6, true);
     expect(match?.italic).toBe(true);
-  });
-
-  it('does NOT veto when the italic reference slants normally (healthy environment)', () => {
-    // With a live italic reference (slant ≥ 0.12), a slanted raster's
-    // italic match is trusted — even if the engine name lacked "Italic".
-    const match = matchTextStyleFromInk(rasterItalic, candidates, 50, 0.2, 6, false);
-    expect(match?.italic).toBe(true);
-    expect(match?.vetoItalic).toBeUndefined();
   });
 
   it('a size outside the sanity band rejects the calibration', () => {
     // Engine says 10 px but raster implies 10× that — ratio 10 > 6.
-    const tiny = { ...refsRegular, inkHeight: 750 };
-    const candidatesWithNull = candidates;
-    void tiny;
-    void candidatesWithNull;
     const badRaster = { inkHeight: 750, inkWidth: 300, inkDensity: 0.22, slant: 0.01 };
     expect(matchTextStyleFromInk(badRaster, candidates, 10)).toBeNull();
   });
@@ -342,7 +314,9 @@ describe('extractText full-style calibration end-to-end', () => {
     (layer as { canvas?: unknown }).canvas = {
       width: 10,
       height: 10,
-      getContext: () => ({ getImageData: () => ({ data: new Uint8ClampedArray(400), width: 10, height: 10 }) }),
+      getContext: () => ({
+        getImageData: () => ({ data: new Uint8ClampedArray(400), width: 10, height: 10 }),
+      }),
     };
     // No throw + the oracle path receives engineFontSizePx = 42 (the sanity
     // band yardstick). The observable contract: extraction completes and

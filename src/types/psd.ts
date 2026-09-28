@@ -95,10 +95,12 @@ export interface PsdTextStyleOracle {
   /** Slant variant matched from the raster's centroid drift */
   italic: boolean;
   /**
-   * TRUE when the raster match voted italic but was VETOED to upright —
-   * the engine data claims upright (PostScript name / fauxItalic) and the
-   * raster shows no slant. The paint style is upright; stored so the
-   * renderer can distinguish a true upright design from a vetoed one.
+   * TRUE when the raster ink match voted italic but was OVERRIDDEN to
+   * upright — the engine data claims upright (no Italic/Oblique PostScript
+   * lexeme, no fauxItalic) and the engine claim is authoritative: Photoshop
+   * drew the raster from it (the JNV "apaar id" doctrine). The paint style
+   * is upright and the layer's bold flag falls back to engine data (the
+   * ink weight vote is equally unreliable in that case).
    */
   vetoItalic?: boolean;
   /** Fill colour measured from the raster's solid pixels */

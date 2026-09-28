@@ -2,6 +2,47 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6.14] - 2026-09-28
+
+### Fixed
+
+- **The photo's masking-shape stroke is back (the JNV ring).** Untouched
+  (non-placeholder) layers kept their parsed Photoshop layer effects in the
+  design data but the compositor painted only the raw raster — the ellipse
+  that the JNV photo clips to carries a 3 px outside stroke that silently
+  vanished from every generated card. Effect-bearing rasters now render
+  through the same padded offscreen stage as photos and text: drop shadows
+  and outer glows cast from the raster's own alpha contour (the ellipse
+  glows as an ellipse, never a rectangle), inner shadows/glows intersected
+  with the contour, colour overlays tinting it, and strokes painted as an
+  alpha dilation/erosion ring honouring the Photoshop position
+  (outside/center/inside). The white outlines on the JNV label texts and
+  the flourish glow return with the same code path.
+
+- **Substituted values no longer render italic when the design is upright
+  (the JNV "apaar id").** The style oracle matched the four style variants
+  against the layer raster and scored slant absolutely — but the centroid
+  drift of upright letterforms ("apaar id": d-ascender right, p-descender
+  left) measures ±2 on genuinely upright Arial Bold, dwarfing real italic
+  lean (~0.2), so the ink match flipped such layers to italic and the old
+  raster-veto (raster slant ≤ 0.02) could never fire. The ENGINE data is
+  now authoritative for slant — Photoshop drew the raster from that very
+  claim: an upright claim (PostScript name without Italic/Oblique, no
+  fauxItalic) always renders upright (vetoItalic set when the ink match
+  voted italic, and the weight then also falls back to engine data); an
+  italic claim always renders italic. The ink comparison still decides
+  weight and size for layers without a usable engine claim.
+
+### Tests
+
+- Oracle matcher suite rewritten to the engine-slant doctrine: upright
+  engine claim overrides an italic ink vote (vetoed), italic engine claim
+  forces italic on drifting rasters, weight/size still come from ink.
+- Full suite: 229 passed, 1 pre-existing failure unrelated to this change
+  (the partially-white-mask geometry regression present on the previous
+  release; the v0.6.13 baseline also failed the matcher veto case this
+  release rewrites).
+
 ## [0.6.12] - 2026-09-28
 
 ### Fixed

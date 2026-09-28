@@ -70,11 +70,10 @@ export interface StyleMatch {
   /** Calibrated font size in the raster's pixel scale */
   fontSize: number;
   /**
-   * TRUE when the matched variant is italic but the raster shows NO real
-   * slant — the classic upright-font substitution artefact (an upright
-   * font synthesised as italic still leans its whole box; a genuinely
-   * italic design raster does not read as upright). Callers must treat the
-   * style as UPRIGHT (and re-derive bold from engine data) when set.
+   * TRUE when the ink match voted italic but the ENGINE claim is upright
+   * and therefore authoritative (Photoshop drew the raster from it) — the
+   * result was overridden to upright. Callers must treat the style as
+   * UPRIGHT (and re-derive bold from engine data) when set.
    */
   vetoItalic?: boolean;
 }
@@ -90,9 +89,17 @@ export interface StyleMatch {
  * @param bandMin - Minimum trusted calibrated/engine ratio (default 0.2)
  * @param bandMax - Maximum trusted calibrated/engine ratio (default 6)
  * @param engineItalic - The engine data's own slant claim (PostScript name
- *        or fauxItalic). When the engine says UPRIGHT and the raster shows
- *        no slant, an italic match is the font-substitution artefact and is
- *        vetoed to upright (the "regular shows italic" bug).
+ *        or fauxItalic). AUTHORITATIVE (the JNV "apaar id" doctrine):
+ *        Photoshop drew the layer's raster FROM this engine data, so the
+ *        raster cannot contradict it — an upright-named, non-faux layer is
+ *        rendered upright even when the raster's centroid drift reads as
+ *        slant (ascender/descender letterform asymmetry — "apaar id"'s d
+ *        ascender right + p descender left — produces slant values of ±2 on
+ *        genuinely upright Arial Bold, dwarfing real italic lean of ~0.2).
+ *        An italic claim forces italic; an upright claim forces upright and
+ *        sets vetoItalic when the ink match voted italic (so the renderer
+ *        keeps deriving bold from engine data). The ink comparison then
+ *        decides only weight (bold) and size.
  * @returns Best match, or null when no candidate is usable or the
  *          calibrated size falls outside the sanity band
  */
@@ -132,26 +139,28 @@ export function matchTextStyleFromInk(
   const variant = STYLE_VARIANTS[best]!;
   const bestCandidate = candidates[best];
   if (!bestCandidate) return null;
-  // ITALIC VETO (the "regular name shows italic" bug): the match is a
-  // DENSITY/SIZE comparison. When the environment CANNOT produce a true
-  // italic (the design's italic font is missing; canvas falls back to an
-  // upright face), the italic REFERENCE renders unslanted too — the 3×
-  // slant term then zeroes out for BOTH variants and density alone picks
-  // italic for a genuinely UPRIGHT raster. Signals, all required:
-  // the matched variant is italic · the ENGINE claims upright (PostScript
-  // name without Italic/Oblique, no fauxItalic) · the RASTER shows no
-  // slant (≤ 0.02 — the design's own pixels are upright) · the italic
-  // REFERENCE rendered unslanted (≤ 0.06 — proof this environment has no
-  // real italic, i.e. the match is a substitution artefact). A live
-  // italic reference (slant ≥ 0.12) keeps the match trustworthy.
-  const vetoItalic =
-    variant.italic && !engineItalic && raster.slant <= 0.02 && bestCandidate.slant <= 0.06;
+  // ENGINE-SLANT DOCTRINE (v0.6.14, superseding the narrow v0.6.x veto):
+  // the engine claim (PostScript name / fauxItalic) is authoritative for
+  // SLANT — Photoshop rasterised this very layer from that claim. The old
+  // raster-veto (raster slant ≤ 0.02) could never fire on designs whose
+  // upright letterforms drift the centroid ("apaar id" raster slant 2.10,
+  // browser upright reference 1.25 — both upright, both "slanted"), and
+  // the 3× slant scoring then flipped such layers to italic.
+  // - engine italic claim  → italic, whatever the ink comparison says.
+  // - engine upright claim → upright; when the ink match voted italic the
+  //   result is VETOED (vetoItalic: true) so the renderer falls back to
+  //   engine data for the weight too (resolveStyleAt).
+  // The ink comparison itself decides WEIGHT (bold) and SIZE only.
+  if (engineItalic) {
+    return { bold: variant.bold, italic: true, fontSize: bestSize };
+  }
   return {
     bold: variant.bold,
-    italic: vetoItalic ? false : variant.italic,
+    italic: false,
     fontSize: bestSize,
-    // Present (true) only when vetoed — absence means a trusted match.
-    ...(vetoItalic ? { vetoItalic: true as const } : {}),
+    // Present (true) only when the ink match voted italic and was
+    // overridden — absence means the match agreed the layer is upright.
+    ...(variant.italic ? { vetoItalic: true as const } : {}),
   };
 }
 

@@ -588,7 +588,13 @@ function textFitMode(
   text: NonNullable<PsdLayerInfo['text']>,
   layerBounds: PsdLayerInfo['bounds'],
   scale: number
-): { multiLine: boolean; capacity: number; lineHeight: number; boxWidth: number; boxHeight: number } {
+): {
+  multiLine: boolean;
+  capacity: number;
+  lineHeight: number;
+  boxWidth: number;
+  boxHeight: number;
+} {
   const lineHeight = Math.max(1, (text.leading ?? (text.fontSize ?? 18) * 1.2) * scale);
 
   // Photoshop's explicit box geometry is authoritative when available. Some
@@ -600,8 +606,7 @@ function textFitMode(
   const explicitBoxHeight = Math.max(0, (text.boxHeight ?? 0) * scale);
   const boundsWidth = Math.max(0, (layerBounds.right - layerBounds.left) * scale);
   const boundsHeight = Math.max(0, (layerBounds.bottom - layerBounds.top) * scale);
-  const hasExplicitBox =
-    text.shapeType === 'box' && explicitBoxWidth > 1 && explicitBoxHeight > 0;
+  const hasExplicitBox = text.shapeType === 'box' && explicitBoxWidth > 1 && explicitBoxHeight > 0;
   const boxWidth = hasExplicitBox ? explicitBoxWidth : boundsWidth;
   const boxHeight = hasExplicitBox ? explicitBoxHeight : boundsHeight;
   const capacity = boxHeight > 0 ? Math.max(1, Math.floor(boxHeight / lineHeight)) : 1;
@@ -1638,7 +1643,114 @@ async function drawPhotoLayer(
   context.drawImage(layerCanvas, dx - pad, dy - pad);
 }
 
-/** Draw the original raster of a layer (untouched layers) */
+/**
+ * Approximate an alpha DILATION of `source` by `radius` px: stamp the
+ * source at offsets around a circle (plus the centre) so the union of the
+ * stamps is the contour grown outward. This is the building block for
+ * stroke rings around arbitrary rasters (canvas has no native
+ * outside/inside stroke for bitmaps).
+ */
+function dilateAlpha(source: HTMLCanvasElement, radius: number): HTMLCanvasElement {
+  const out = makeCanvas(source.width, source.height);
+  const context = out.getContext('2d');
+  if (!context) return out;
+  context.drawImage(source, 0, 0);
+  const r = Math.max(0, radius);
+  if (r > 0.5) {
+    // Step count balances ring smoothness against batch performance: wide
+    // strokes cap at 48 stamps (gaps of ≤ ~1 px at r = 8+ are invisible
+    // after the union), narrow strokes keep a dense circle.
+    const steps = Math.min(48, Math.max(12, Math.ceil(r * 6)));
+    for (let index = 0; index < steps; index += 1) {
+      const angle = (index / steps) * Math.PI * 2;
+      context.drawImage(source, Math.cos(angle) * r, Math.sin(angle) * r);
+    }
+  }
+  return out;
+}
+
+/** Fill a canvas's existing alpha with a solid colour (source-in) */
+function colorizeCanvas(canvas: HTMLCanvasElement, color: string, opacity: number): void {
+  const context = canvas.getContext('2d');
+  if (!context) return;
+  context.save();
+  context.globalCompositeOperation = 'source-in';
+  context.globalAlpha = Math.max(0, Math.min(1, opacity));
+  context.fillStyle = color;
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.restore();
+}
+
+/**
+ * Build the STROKE RING for a raster layer: the band between the raster's
+ * alpha contour dilated/eroded per the Photoshop stroke position.
+ *
+ * - outside: dilate(sil, w) minus sil
+ * - center:  dilate(sil, w/2) minus erode(sil, w/2)
+ * - inside:  sil minus erode(sil, w)
+ * Erosion is derived (no native op): erode(sil, r) = sil minus
+ * dilate(NOT sil, r). The returned canvas is a transparent bitmap with the
+ * ring's alpha only; callers colorize it with `colorizeCanvas`.
+ */
+function strokeRingForRaster(
+  silhouette: HTMLCanvasElement,
+  widthPx: number,
+  position: 'inside' | 'center' | 'outside'
+): HTMLCanvasElement {
+  const width = Math.max(1, widthPx);
+  const half = width / 2;
+  // NOT sil: an opaque plane with the raster's alpha punched out.
+  const inverse = makeCanvas(silhouette.width, silhouette.height);
+  const inverseContext = inverse.getContext('2d');
+  if (!inverseContext) return inverse;
+  inverseContext.fillStyle = '#000000';
+  inverseContext.fillRect(0, 0, inverse.width, inverse.height);
+  inverseContext.globalCompositeOperation = 'destination-out';
+  inverseContext.drawImage(silhouette, 0, 0);
+
+  const erode = (radius: number): HTMLCanvasElement => {
+    const eroded = makeCanvas(silhouette.width, silhouette.height);
+    const context = eroded.getContext('2d');
+    if (!context) return eroded;
+    context.drawImage(silhouette, 0, 0);
+    context.globalCompositeOperation = 'destination-out';
+    context.drawImage(dilateAlpha(inverse, radius), 0, 0);
+    return eroded;
+  };
+
+  const ring = makeCanvas(silhouette.width, silhouette.height);
+  const ringContext = ring.getContext('2d');
+  if (!ringContext) return ring;
+  if (position === 'outside') {
+    ringContext.drawImage(dilateAlpha(silhouette, width), 0, 0);
+    ringContext.globalCompositeOperation = 'destination-out';
+    ringContext.drawImage(silhouette, 0, 0);
+  } else if (position === 'center') {
+    ringContext.drawImage(dilateAlpha(silhouette, half), 0, 0);
+    ringContext.globalCompositeOperation = 'destination-out';
+    ringContext.drawImage(erode(half), 0, 0);
+  } else {
+    ringContext.drawImage(silhouette, 0, 0);
+    ringContext.globalCompositeOperation = 'destination-out';
+    ringContext.drawImage(dilateAlpha(inverse, width), 0, 0);
+  }
+  return ring;
+}
+
+/**
+ * Draw the original raster of a layer (untouched layers).
+ *
+ * v0.6.14 THE "MISSING PHOTO RING" FIX: untouched layers kept their
+ * Photoshop layer effects in the parse (`layer.effects`) but the renderer
+ * painted only the raw raster — the ellipse that the JNV photo clips to
+ * carries a 3 px outside stroke that silently vanished, and the white
+ * outlines on the label texts and the flourish glow were dropped too.
+ * Effect-bearing rasters now render onto a padded offscreen stage exactly
+ * like photos/text do: drop shadow and outer glow cast from the raster's
+ * own alpha contour, inner shadows/glows intersected with it, colour
+ * overlay tinting it, and the stroke painted as a dilation/erosion ring
+ * around the alpha contour (outside/center/inside Photoshop semantics).
+ */
 async function drawRasterLayer(
   context: CanvasRenderingContext2D,
   layer: PsdLayerInfo,
@@ -1648,14 +1760,125 @@ async function drawRasterLayer(
   if (!rasterUrl) return;
   const image = await loadImageElement(rasterUrl);
   const bounds = layer.bounds;
-  // Layer rasters cover exactly the layer bounds.
-  context.drawImage(
-    image,
-    bounds.left * scale,
-    bounds.top * scale,
-    Math.max(1, (bounds.right - bounds.left) * scale),
-    Math.max(1, (bounds.bottom - bounds.top) * scale)
-  );
+  const dx = bounds.left * scale;
+  const dy = bounds.top * scale;
+  const dw = Math.max(1, (bounds.right - bounds.left) * scale);
+  const dh = Math.max(1, (bounds.bottom - bounds.top) * scale);
+  const effects = layer.effects;
+
+  // Fast path (the historical behaviour): no effects → straight draw.
+  if (!effects) {
+    context.drawImage(image, dx, dy, dw, dh);
+    return;
+  }
+
+  // Padded stage so shadows/glows/strokes are never clipped at the bounds.
+  const pad = effectPadding(effects, scale);
+  const stage = makeCanvas(dw + pad * 2, dh + pad * 2);
+  const stageContext = stage.getContext('2d');
+  if (!stageContext) {
+    context.drawImage(image, dx, dy, dw, dh);
+    return;
+  }
+  const drawRaster = (target: CanvasRenderingContext2D): void => {
+    target.drawImage(image, pad, pad, dw, dh);
+  };
+
+  // Drop shadow cast from the raster's alpha contour; the raster drawn in
+  // the same pass covers the shadow's interior (Photoshop default).
+  const dropShadow = effects.dropShadows?.[0];
+  if (dropShadow) {
+    const { offsetX, offsetY } = shadowOffsets(dropShadow.angle, dropShadow.distance);
+    stageContext.save();
+    setShadow(
+      stageContext,
+      dropShadow.color,
+      dropShadow.opacity,
+      dropShadow.blur,
+      offsetX,
+      offsetY,
+      scale
+    );
+    drawRaster(stageContext);
+    stageContext.restore();
+  }
+
+  // The raster itself. The SILHOUETTE for the stroke ring is captured from
+  // this raster ALONE (never from the stage, which accumulates shadow/glow
+  // halo pixels — the ring must hug the raster contour, not the halo).
+  drawRaster(stageContext);
+  const silhouette = makeCanvas(stage.width, stage.height);
+  silhouette.getContext('2d')?.drawImage(image, pad, pad, dw, dh);
+
+  // Inner shadows / inner glow: intersected with the raster (photo recipe).
+  const innerShadow = effects.innerShadows?.[0];
+  if (innerShadow) {
+    const { offsetX, offsetY } = shadowOffsets(innerShadow.angle, innerShadow.distance);
+    drawInnerEffect(
+      stage,
+      drawRaster,
+      innerShadow.color,
+      innerShadow.opacity,
+      offsetX * scale,
+      offsetY * scale,
+      innerShadow.blur * scale,
+      1
+    );
+  }
+  if (effects.innerGlow) {
+    drawInnerEffect(
+      stage,
+      drawRaster,
+      effects.innerGlow.color,
+      effects.innerGlow.opacity,
+      0,
+      0,
+      effects.innerGlow.blur * scale,
+      1
+    );
+  }
+
+  // Colour overlay tint (source-atop keeps the raster's alpha).
+  if (effects.solidFill) {
+    stageContext.save();
+    stageContext.globalCompositeOperation = 'source-atop';
+    stageContext.fillStyle = withAlpha(effects.solidFill.color, effects.solidFill.opacity);
+    stageContext.fillRect(0, 0, stage.width, stage.height);
+    stageContext.restore();
+  }
+
+  // Outer glow: contour-shaped halo (cast from the raster's own alpha —
+  // a fillRect would glow as a rectangle around non-rectangular shapes
+  // like the JNV ellipse). Painted BEFORE the stroke so the ring stays
+  // crisp on top; the raster repaint covers the glow's interior.
+  if (effects.outerGlow) {
+    stageContext.save();
+    setShadow(
+      stageContext,
+      effects.outerGlow.color,
+      effects.outerGlow.opacity,
+      effects.outerGlow.blur,
+      0,
+      0,
+      scale
+    );
+    drawRaster(stageContext);
+    stageContext.restore();
+  }
+
+  // Stroke: a dilation/erosion ring around the raster's alpha contour,
+  // colorized per the effect's colour/opacity (Photoshop position honoured).
+  if (effects.stroke) {
+    const ring = strokeRingForRaster(
+      silhouette,
+      effects.stroke.width * scale,
+      effects.stroke.position
+    );
+    colorizeCanvas(ring, effects.stroke.color, effects.stroke.opacity);
+    stageContext.drawImage(ring, 0, 0);
+  }
+
+  context.drawImage(stage, dx - pad, dy - pad);
 }
 
 export interface CompositeOptions {
