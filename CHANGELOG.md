@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Vercel build blocker removed.** The stray half-written debug probe
+  `tests/services/zz-probe.test.ts` (truncated mid-expression at line 131,
+  `TS1005` — the same file that had to be removed once before v0.6.8) broke
+  `tsc --noEmit`, the first half of `npm run build`, failing every Vercel
+  deployment. Deleted; the full typecheck is clean.
+
 - **Wrap now converges with compression (the orphaned "Near").** v0.6.11
   wrapped the value at 100 % Horizontal Scale and only then compressed the
   resulting lines — the compressed width had room for words that stayed
