@@ -4,7 +4,12 @@ import { useUIStore } from '@/stores/uiStore';
 describe('uiStore', () => {
   beforeEach(() => {
     localStorage.clear();
-    useUIStore.setState({ theme: 'dark', sidebarCollapsed: false, isLoading: false });
+    useUIStore.setState({
+      theme: 'dark',
+      themeId: 'classic',
+      sidebarCollapsed: false,
+      isLoading: false,
+    });
   });
 
   it('defaults to dark theme', () => {
@@ -28,6 +33,33 @@ describe('uiStore', () => {
     useUIStore.getState().setTheme('light');
     const stored = JSON.parse(localStorage.getItem('id-stack-ui-preferences') ?? '{}');
     expect(stored.state?.theme).toBe('light');
+  });
+
+  it('defaults to the classic palette', () => {
+    expect(useUIStore.getState().themeId).toBe('classic');
+  });
+
+  it('sets and persists a palette id', () => {
+    useUIStore.getState().setThemeId('lime');
+    expect(useUIStore.getState().themeId).toBe('lime');
+    const stored = JSON.parse(localStorage.getItem('id-stack-ui-preferences') ?? '{}');
+    expect(stored.state?.themeId).toBe('lime');
+  });
+
+  it('keeps palette and mode independent', () => {
+    useUIStore.getState().setThemeId('teal');
+    useUIStore.getState().toggleTheme();
+    expect(useUIStore.getState().themeId).toBe('teal');
+    expect(useUIStore.getState().theme).toBe('light');
+  });
+
+  it('rejects an unknown palette id via isValidThemeId', async () => {
+    const { isValidThemeId } = await import('@/stores/uiStore');
+    expect(isValidThemeId('classic')).toBe(true);
+    expect(isValidThemeId('lime')).toBe(true);
+    expect(isValidThemeId('teal')).toBe(true);
+    expect(isValidThemeId('neon')).toBe(false);
+    expect(isValidThemeId(42)).toBe(false);
   });
 
   it('manages sidebar and loading state without persisting them', () => {

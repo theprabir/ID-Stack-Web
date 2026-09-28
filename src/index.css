@@ -4,13 +4,18 @@
 
 /*
  * Theme variables.
- * Dark theme is the default (html.dark). The dark palette follows Design.md:
- *   deepest #0F0F0F, panels #1A1A1A, cards/inputs #252525,
- *   text #FFFFFF / #A0A0A0 / #666666, accent #3B82F6, borders #333333, canvas #1E1E1E
- * Light palette (modern cool-neutral): soft slate-tinted surfaces instead of
- * flat grey, indigo-leaning accent, layered elevation (page → panel → card).
+ * Three color palettes (data-theme on <html>) × two modes (.dark class):
+ * - classic (default): neutral greys; dark accent #3B82F6 / light indigo #6366F1
+ * - lime:   warm lime accent — dark mode lead #CFFF74, light mode lead #2F3A1D
+ * - teal:   carbon-teal accent — dark mode lead #D6FFCB, light mode lead #042F32
+ * Mode split per palette: the DARK mode surface+text stack is built around the
+ * palette's darker hue with the brighter accent; the LIGHT mode inverts —
+ * deeper hue as the accent/foreground, lighter tints as the surfaces.
  */
 @layer base {
+  /* ------------------------------------------------------------------ */
+  /* CLASSIC — light (default variables)                                 */
+  /* ------------------------------------------------------------------ */
   :root {
     /* Light theme — slate-tinted neutrals, indigo accent */
     --background: 220 14% 96%;
@@ -70,6 +75,138 @@
     --surface-panel: 0 0% 10%; /* #1A1A1A */
     --surface-card: 0 0% 15%; /* #252525 */
     --surface-canvas: 0 0% 12%; /* #1E1E1E */
+
+    --radius: 0.625rem;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* LIME — Warm lime #CFFF74 × Olive Ink #2F3A1D. Dark mode: olive-ink   */
+  /* surfaces, lime accent. Light mode: pale lime surfaces, olive accent. */
+  /* ------------------------------------------------------------------ */
+  [data-theme='lime'] {
+    --background: 75 40% 96%;
+    --foreground: 75 26% 14%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 75 26% 14%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 75 26% 14%;
+
+    --primary: 75 26% 17%; /* olive ink #2F3A1D */
+    --primary-foreground: 88 100% 93%;
+    --secondary: 75 35% 92%;
+    --secondary-foreground: 75 26% 22%;
+    --muted: 75 35% 92%;
+    --muted-foreground: 75 12% 36%;
+    --accent: 75 26% 17%; /* olive ink */
+    --accent-foreground: 88 100% 93%;
+    --destructive: 0 74% 46%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 75 24% 84%;
+    --input: 75 24% 84%;
+    --ring: 75 26% 17%;
+
+    --surface-deepest: 75 42% 97%; /* palest lime page */
+    --surface-panel: 0 0% 100%; /* white panels */
+    --surface-card: 76 45% 94%; /* pale lime wells */
+    --surface-canvas: 76 40% 93%;
+
+    --radius: 0.625rem;
+  }
+
+  [data-theme='lime'].dark {
+    --background: 77 19% 8%; /* deep olive-ink */
+    --foreground: 75 80% 92%;
+
+    --card: 77 17% 12%;
+    --card-foreground: 75 80% 92%;
+    --popover: 77 16% 10%;
+    --popover-foreground: 75 80% 92%;
+
+    --primary: 80 95% 73%; /* warm lime #CFFF74 */
+    --primary-foreground: 77 30% 10%;
+    --secondary: 77 15% 16%;
+    --secondary-foreground: 75 40% 84%;
+    --muted: 77 15% 16%;
+    --muted-foreground: 75 18% 62%;
+    --accent: 80 95% 73%; /* warm lime */
+    --accent-foreground: 77 30% 10%;
+    --destructive: 0 74% 58%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 77 14% 21%;
+    --input: 77 15% 16%;
+    --ring: 80 95% 73%;
+
+    --surface-deepest: 77 19% 8%;
+    --surface-panel: 77 16% 10%;
+    --surface-card: 77 17% 14%;
+    --surface-canvas: 77 18% 12%;
+
+    --radius: 0.625rem;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* TEAL — Carbon Teal #042F32 × Mint Foam #D6FFCB. Dark mode: carbon-   */
+  /* teal surfaces, mint accent. Light mode: mint surfaces, teal accent.  */
+  /* ------------------------------------------------------------------ */
+  [data-theme='teal'] {
+    --background: 174 40% 96%;
+    --foreground: 182 85% 10%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 182 85% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 182 85% 10%;
+
+    --primary: 182 85% 10%; /* carbon teal #042F32 */
+    --primary-foreground: 100 100% 89%;
+    --secondary: 172 38% 91%;
+    --secondary-foreground: 182 60% 16%;
+    --muted: 172 38% 91%;
+    --muted-foreground: 180 18% 34%;
+    --accent: 182 85% 10%; /* carbon teal */
+    --accent-foreground: 100 100% 89%;
+    --destructive: 0 74% 46%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 170 26% 82%;
+    --input: 170 26% 82%;
+    --ring: 182 85% 10%;
+
+    --surface-deepest: 168 45% 97%; /* palest mint page */
+    --surface-panel: 0 0% 100%; /* white panels */
+    --surface-card: 165 42% 93%; /* pale mint wells */
+    --surface-canvas: 165 40% 92%;
+
+    --radius: 0.625rem;
+  }
+
+  [data-theme='teal'].dark {
+    --background: 182 86% 5%; /* carbon teal */
+    --foreground: 100 100% 91%;
+
+    --card: 182 70% 10%;
+    --card-foreground: 100 100% 91%;
+    --popover: 182 74% 8%;
+    --popover-foreground: 100 100% 91%;
+
+    --primary: 102 100% 90%; /* mint foam #D6FFCB */
+    --primary-foreground: 182 85% 9%;
+    --secondary: 182 55% 14%;
+    --secondary-foreground: 100 70% 84%;
+    --muted: 182 55% 14%;
+    --muted-foreground: 160 30% 62%;
+    --accent: 102 100% 90%; /* mint foam */
+    --accent-foreground: 182 85% 9%;
+    --destructive: 0 74% 58%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 182 50% 18%;
+    --input: 182 55% 14%;
+    --ring: 102 100% 90%;
+
+    --surface-deepest: 182 86% 5%;
+    --surface-panel: 182 74% 8%;
+    --surface-card: 182 62% 12%;
+    --surface-canvas: 182 70% 10%;
 
     --radius: 0.625rem;
   }

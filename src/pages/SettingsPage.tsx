@@ -1,7 +1,19 @@
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useTheme } from '@/hooks/useTheme';
+import { useUIStore, type ThemeId, type ThemeMode } from '@/stores/uiStore';
 import { Label, Select, Checkbox } from '@/components/ui';
-import { Sun, Moon, Ruler, Monitor, Save, ShieldCheck, Server, Info, Check } from 'lucide-react';
+import {
+  Sun,
+  Moon,
+  Ruler,
+  Monitor,
+  Save,
+  ShieldCheck,
+  Server,
+  Info,
+  Check,
+  Palette,
+} from 'lucide-react';
 
 /** One labelled settings section card */
 function SettingsSection({
@@ -64,23 +76,140 @@ function SettingRow({
   );
 }
 
-/** Clickable theme tile showing a mini preview of the mode */
+/** Static display metadata for each color palette */
+const THEMES: Array<{
+  id: ThemeId;
+  label: string;
+  description: string;
+  /** [dark accent, dark surface, light accent, light surface] preview swatches */
+  swatches: { darkAccent: string; darkSurface: string; lightAccent: string; lightSurface: string };
+}> = [
+  {
+    id: 'classic',
+    label: 'Classic',
+    description: 'The original neutral look — cool greys with a blue accent.',
+    swatches: {
+      darkAccent: '#3B82F6',
+      darkSurface: '#1A1A1A',
+      lightAccent: '#6366F1',
+      lightSurface: '#F5F5F5',
+    },
+  },
+  {
+    id: 'lime',
+    label: 'Warm Lime',
+    description: 'Warm lime #CFFF74 on olive ink #2F3A1D.',
+    swatches: {
+      darkAccent: '#CFFF74',
+      darkSurface: '#232B15',
+      lightAccent: '#2F3A1D',
+      lightSurface: '#F3F6E8',
+    },
+  },
+  {
+    id: 'teal',
+    label: 'Carbon Teal',
+    description: 'Carbon teal #042F32 on mint foam #D6FFCB.',
+    swatches: {
+      darkAccent: '#D6FFCB',
+      darkSurface: '#02191B',
+      lightAccent: '#042F32',
+      lightSurface: '#EDF7F1',
+    },
+  },
+];
+
+/** Mini UI mock rendered in a palette's actual dark or light colors */
+function ThemeModePreview({ themeId, mode }: { themeId: ThemeId; mode: ThemeMode }): JSX.Element {
+  const sw = THEMES.find((theme) => theme.id === themeId)!.swatches;
+  const dark = mode === 'dark';
+  const bg = dark ? sw.darkSurface : sw.lightSurface;
+  const panel = dark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.85)';
+  const accent = dark ? sw.darkAccent : sw.lightAccent;
+  const text = dark ? 'rgba(255,255,255,0.62)' : 'rgba(0,0,0,0.5)';
+  const border = dark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.12)';
+  return (
+    <div className="mb-2 h-16 w-full overflow-hidden rounded-md border" style={{ background: bg }}>
+      <div className="m-1.5 rounded p-1.5" style={{ background: panel }}>
+        <div className="h-1.5 w-10 rounded-full" style={{ background: accent }} />
+        <div className="mt-1 h-1 w-14 rounded-full" style={{ background: text }} />
+        <div className="mt-2 flex gap-1">
+          <div className="h-3 w-8 rounded" style={{ background: accent }} />
+          <div className="h-3 w-8 rounded border" style={{ borderColor: border }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Selectable palette card: two-swatch preview + description */
+function ThemePickerCard({
+  theme: themeId,
+  label,
+  description,
+  selected,
+  onSelect,
+}: {
+  theme: ThemeId;
+  label: string;
+  description: string;
+  selected: boolean;
+  onSelect: (themeId: ThemeId) => void;
+}): JSX.Element {
+  const sw = THEMES.find((theme) => theme.id === themeId)!.swatches;
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      onClick={() => onSelect(themeId)}
+      className={`group relative min-w-0 rounded-lg border-2 p-3 text-left transition-colors ${
+        selected
+          ? 'border-primary bg-primary/5'
+          : 'border-border hover:border-primary/40 hover:bg-accent/5'
+      }`}
+    >
+      {selected && (
+        <span className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
+          <Check className="h-3 w-3" aria-hidden="true" />
+        </span>
+      )}
+      <div className="mb-2 flex gap-1">
+        <span
+          className="h-8 flex-1 rounded-md border border-black/10"
+          style={{ background: sw.darkAccent }}
+          title="Dark mode accent"
+        />
+        <span
+          className="h-8 flex-1 rounded-md border border-black/10"
+          style={{ background: sw.lightAccent }}
+          title="Light mode accent"
+        />
+      </div>
+      <span className="block text-xs font-medium">{label}</span>
+      <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">
+        {description}
+      </span>
+    </button>
+  );
+}
+
+/** Selectable light/dark tile with a live preview of the current palette */
 function ThemeTile({
   mode,
   icon: Icon,
   label,
+  themeId,
   selected,
   onSelect,
 }: {
-  mode: 'dark' | 'light';
+  mode: ThemeMode;
   icon: typeof Sun;
   label: string;
+  themeId: ThemeId;
   selected: boolean;
-  onSelect: (mode: 'dark' | 'light') => void;
+  onSelect: (mode: ThemeMode) => void;
 }): JSX.Element {
-  const previewBg = mode === 'dark' ? 'bg-[#0F0F0F]' : 'bg-white';
-  const previewPanel = mode === 'dark' ? 'bg-[#1A1A1A]' : 'bg-[#F5F5F5]';
-  const previewAccent = mode === 'dark' ? 'bg-[#3B82F6]' : 'bg-[#2563EB]';
   return (
     <button
       type="button"
@@ -98,21 +227,7 @@ function ThemeTile({
           <Check className="h-3 w-3" aria-hidden="true" />
         </span>
       )}
-      {/* Mini UI preview */}
-      <div className={`mb-2 h-16 w-full overflow-hidden rounded-md border ${previewBg}`}>
-        <div className={`m-1.5 rounded ${previewPanel} p-1.5`}>
-          <div className={`h-1.5 w-10 rounded-full ${previewAccent}`} />
-          <div
-            className={`mt-1 h-1 w-14 rounded-full ${mode === 'dark' ? 'bg-[#A0A0A0]' : 'bg-[#999999]'}`}
-          />
-          <div className="mt-2 flex gap-1">
-            <div className={`h-3 w-8 rounded ${previewAccent}`} />
-            <div
-              className={`h-3 w-8 rounded border ${mode === 'dark' ? 'border-[#333333]' : 'border-[#D4D4D4]'}`}
-            />
-          </div>
-        </div>
-      </div>
+      <ThemeModePreview themeId={themeId} mode={mode} />
       <div className="flex items-center gap-1.5">
         <Icon className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
         <span className="text-xs font-medium">{label}</span>
@@ -122,11 +237,13 @@ function ThemeTile({
 }
 
 /**
- * Application settings: appearance, measurement units, editor behaviour and
- * privacy. Organised into labelled sections with visual theme previews.
+ * Application settings: appearance (palette + mode), measurement units,
+ * editor behaviour and privacy. Changes apply instantly.
  */
 export function SettingsPage(): JSX.Element {
   const { theme, setTheme } = useTheme();
+  const themeId = useUIStore((state) => state.themeId);
+  const setThemeId = useUIStore((state) => state.setThemeId);
   const unit = useSettingsStore((state) => state.unit);
   const autoSave = useSettingsStore((state) => state.autoSave);
   const setUnit = useSettingsStore((state) => state.setUnit);
@@ -145,23 +262,53 @@ export function SettingsPage(): JSX.Element {
       <SettingsSection
         icon={Monitor}
         title="Appearance"
-        description="Choose between the dark and light interface. Dark is the default."
+        description="Pick a color palette, then choose its light or dark mode."
       >
-        <div role="radiogroup" aria-label="Theme" className="grid grid-cols-2 gap-3">
-          <ThemeTile
-            mode="dark"
-            icon={Moon}
-            label="Dark"
-            selected={theme === 'dark'}
-            onSelect={setTheme}
-          />
-          <ThemeTile
-            mode="light"
-            icon={Sun}
-            label="Light"
-            selected={theme === 'light'}
-            onSelect={setTheme}
-          />
+        <div className="space-y-4">
+          {/* Palette picker */}
+          <div>
+            <Label className="mb-2 block text-xs uppercase tracking-wide text-muted-foreground">
+              <Palette className="mr-1 inline h-3 w-3" aria-hidden="true" />
+              Color palette
+            </Label>
+            <div role="radiogroup" aria-label="Color palette" className="grid grid-cols-3 gap-3">
+              {THEMES.map((theme) => (
+                <ThemePickerCard
+                  key={theme.id}
+                  theme={theme.id}
+                  label={theme.label}
+                  description={theme.description}
+                  selected={themeId === theme.id}
+                  onSelect={setThemeId}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Mode picker (previews follow the selected palette) */}
+          <div>
+            <Label className="mb-2 block text-xs uppercase tracking-wide text-muted-foreground">
+              Mode
+            </Label>
+            <div role="radiogroup" aria-label="Theme" className="grid grid-cols-2 gap-3">
+              <ThemeTile
+                mode="dark"
+                icon={Moon}
+                label="Dark"
+                themeId={themeId}
+                selected={theme === 'dark'}
+                onSelect={setTheme}
+              />
+              <ThemeTile
+                mode="light"
+                icon={Sun}
+                label="Light"
+                themeId={themeId}
+                selected={theme === 'light'}
+                onSelect={setTheme}
+              />
+            </div>
+          </div>
         </div>
       </SettingsSection>
 
