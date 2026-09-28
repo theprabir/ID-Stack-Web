@@ -79,7 +79,15 @@ No installation. No backend. No account. Your data never leaves your device.
 - 🖼️ **Per-placeholder photo columns** — one photo is matched per row; per-placeholder photo mapping is not available
 
 ## 📖 Documentation
-See the [`docs/`](docs/) folder — currently the [keyboard shortcuts](docs/keyboard_shortcuts.md) reference.
+
+All guides live in the [`docs/`](docs/) folder:
+
+| Document | For | Contents |
+|---|---|---|
+| [User manual](docs/user_manual.md) | Users | Every page and workflow: PSD Studio's 3 steps, the editor, output options, printing, privacy |
+| [Developer manual](docs/developer_manual.md) | Contributors | Stack, architecture, services, data flow, PSD/CMYK/imposition internals, testing, releases |
+| [Keyboard shortcuts](docs/keyboard_shortcuts.md) | Everyone | Photoshop-style shortcut reference (implemented + planned) |
+| [Troubleshooting guide](docs/troubleshooting.md) | Users | Symptom-first fixes: parsing, fonts, data, generation, printing, storage |
 
 ## 🛠️ For Developers
 
