@@ -3,7 +3,7 @@ import { VERSION } from '@/services/version';
 
 /**
  * Bottom status bar.
- * - Left: product tagline + version (v0.6.7 — auto-updates from
+ * - Left: product tagline + version chip (auto-updates from
  *   package.json on every release), hidden on the smallest screens.
  * - Right: privacy badge (hidden below desktop width) and the creator
  *   credit with a GitHub profile link — centred when the tagline is

@@ -1,56 +1,85 @@
-# ID Stack — ID Card Design & Batch Printing Software
+<div align="center">
 
-## 🎯 Overview
-**ID Stack** is a professional, open-source ID card design and batch printing software that runs entirely in your browser. No installation, no backend, no server. Just open the URL and start designing.
+<img src="public/pwa-512x512.png" alt="ID Stack logo" width="128" />
+
+# ID Stack
+
+**Professional ID card design & batch printing — entirely in your browser.**
+
+[![Live](https://img.shields.io/badge/live-id--stack.vercel.app-0078D4?logo=vercel&logoColor=white)](https://id-stack.vercel.app)
+[![Version](https://img.shields.io/badge/version-0.6.13-6366f1)](https://github.com/theprabir/ID-Stack-Web/blob/main/CHANGELOG.md)
+[![License](https://img.shields.io/badge/license-MIT-22c55e)](LICENSE)
+
+[**🌐 Launch the app**](https://id-stack.vercel.app) · [**📖 Changelog**](CHANGELOG.md) · [**🐛 Report an issue**](https://github.com/theprabir/ID-Stack-Web/issues)
+
+No installation. No backend. No account. Your data never leaves your device.
+
+</div>
+
+---
 
 ## ✨ Features
-- Photoshop-like template editor with layers, effects, and precision tools
-- Dual-sided templates (Front + Back)
-- Excel data import with placeholder mapping
-- Batch photo import with auto-matching
-- Batch generation of hundreds of ID cards in seconds
-- **CMYK export:** ICC-corrected CMYK JPEG (Adobe APP14 transform=0) and direct CMYK PDF (embedded ICC profile + GTS_PDFX OutputIntent)
-- **True text geometry:** placeholder text honours the PSD's real text box (box text wraps at the authored box width, point text never width-wraps), the engine transform origin, Photoshop auto-leading (120 %), per-paragraph justification (centre/right/left exactly as authored, including mixed alignments), per-run mixed styling and the engine character stroke — substituted values render exactly where and how the design's sample text sat
-- **Exact font identity:** the PSD's embedded PostScript font names are coalesced out of ag-psd's deduplicated engine data, matched against uploaded/bundled fonts (with binary name-table aliases), preloaded via `document.fonts.load` before rendering, and painted with the engine-derived numeric weight — no more fallback-font substitutions. Unmatched PostScript names fall back through humanised candidates ("Arial Narrow" → "Arial") instead of generic sans-serif
-- **Full typographic mirror:** engine Horizontal/Vertical Scale, baseline shift, ALL CAPS/small caps, strikethrough, tracking, leading, gradient overlay fills, strokes, shadows and glows are extracted from the placeholder layer and mapped verbatim onto substituted text (no injected styles)
-- **Hybrid text fitting (wrap-first, v0.6.12):** placeholder fields classify themselves from the authored box height/leading. Single-line fields never wrap and compress horizontally when needed; multi-line fields wrap NATURALLY within their AUTHORED line capacity (`floor(boxHeight / leading)` — the box height is the line budget), and when the wrapped lines overflow the box width the fitter derives the needed Horizontal Scale (floored at 0.65) and RE-WRAPS at the compressed effective width, so earlier lines absorb the words compression makes room for — no orphaned short words, no extra lines, no one-line barcodes
-- **Imposition engine:** N cards per sheet on A4/A3/Letter/Legal/Tabloid or custom paper (mm/cm/in/pt), user-set bleed, gap, margin, crop marks and positioned numbering; live sheet preview
-- **One PDF per person:** double-sided cards export as a single 2-page PDF (front + back)
-- PSD file import (Photoshop designs)
-- Custom font upload (.ttf/.otf/.woff/.woff2) — loaded in-browser, persisted offline, auto-matched to PSD text layers
-- Bundled Arial-compatible font (Arimo) so PSD text renders identically with zero setup
-- Pre-designed template library
-- Print-ready PDF export with imposition (multiple cards per sheet)
-- Same-sheet duplex layout (fronts row 1, backs row 2)
-- 3 numbering modes (per-sheet, continuous, none)
-- Custom font upload + bundled web fonts
-- Drop shadows, strokes, borders, and other effects
-- Dark and Light theme support
-- Works offline (PWA)
-- 100% client-side — your data never leaves your device
+
+### 🎨 Design & Templates
+- 🖌️ **Photoshop-like template editor** — Fabric.js canvas with layers panel, precision properties, undo/redo (50-step) and Photoshop-style keyboard shortcuts
+- 🃏 **Dual-sided cards** — front + back with independent element sets
+- 📐 **Effects** — drop shadows, strokes/borders, fills, opacity per element
+- 🗂️ **Pre-designed template library** — start from a ready layout
+
+### 🧩 PSD Workflow (the core)
+- 📥 **PSD import** — layered Photoshop files via ag-psd; layer tree flattened per side with rasters + composite preview
+- ✍️ **True text geometry** — placeholder text honours the PSD's real text box (box text wraps at the authored width, point text never width-wraps), engine transform origin, auto-leading (120 %), per-paragraph justification and the engine character stroke
+- 🔤 **Exact font identity** — embedded PostScript names coalesced from the deduplicated engine data, matched against uploaded/bundled fonts (binary name-table aliases), preloaded via `document.fonts.load`; unmatched names fall back through humanised candidates (`ArialNarrow` → "Arial Narrow" → "Arial") instead of generic sans-serif
+- 🪞 **Full typographic mirror** — engine Horizontal/Vertical Scale, baseline shift, ALL CAPS/small caps, strikethrough, tracking, leading, gradient overlay fills, strokes, shadows and glows mapped verbatim onto substituted text
+- 📏 **Wrap-first text fitting** — multi-line fields wrap naturally within their authored line capacity (the box height is the line budget); overflow compression converges with wrapping (earlier lines absorb the words compression makes room for) and never drops below the 0.65 readability floor — no one-line barcodes, no orphaned words
+- 🖼️ **Faithful photo placeholders** — centre-cropped, with the layer's original shadow/stroke/overlay/mask styling
+
+### 📊 Data & Batch
+- 📈 **Excel import** — .xlsx/.xls/.csv (SheetJS) with column mapping, auto-map and validation report (errors vs warnings per row)
+- 📷 **Photo pipeline** — multi-photo import with filename/column auto-matching and manual assignment
+- ⚡ **Batch generation** — hundreds of cards with progress bar, ETA, pause/resume/cancel and error list; CMYK JPEG encoding + DEFLATE run in a dedicated Web Worker
+- 📦 **ZIP export** — one file per card with `{Name}_{ID}` / `{{Column}}` naming templates
+- 🎨 **CMYK export** — ICC-corrected CMYK JPEG (Adobe APP14 transform=0) and direct CMYK PDF (embedded ICC profile + GTS_PDFX OutputIntent)
+- 🖨️ **Imposition engine** — N cards per sheet on A4/A3/Letter/Legal/Tabloid or custom paper (mm/cm/in/pt) with bleed, gap, margin, crop marks, positioned numbering and live sheet preview
+- 👤 **One PDF per person** — double-sided cards export as a single 2-page PDF
+
+### 🔐 Privacy & Platform
+- 🧠 **100 % client-side** — no server, no API, no database, no accounts; everything runs in your browser
+- 🌐 **Works offline (PWA)** — installable, service-worker cached
+- 🔤 **Custom fonts** — upload .ttf/.otf/.woff/.woff2, persisted in IndexedDB, auto-matched to PSD layers; bundled Arial-compatible font (Arimo) included
+- 🌗 **Dark & Light themes** — responsive from 1366×768 to 4K
 
 ## 🖥️ System Requirements
 - Modern browser: Chrome 110+, Firefox 115+, Edge 110+, Safari 16+
-- No installation required
-- Works on Windows, macOS, Linux
-
-## 🌐 Live Demo
-[Deploy to Vercel/Netlify and add link here]
+- No installation required — runs on Windows, macOS, Linux
 
 ## 🚀 Quick Start
-1. Open the app URL
-2. Create a new template or choose from the library
-3. Design front and back sides
-4. Import Excel data
-5. Import photos
-6. Generate ID cards
-7. Export as individual files or print-ready PDF
+1. Open **[id-stack.vercel.app](https://id-stack.vercel.app)**
+2. Upload your front/back PSD designs (or pick a template)
+3. Mark the text/photo layers as placeholders
+4. Import your Excel data and photos, map the columns
+5. Preview a live card, then generate the batch
+6. Export as ZIP, print-ready imposed sheets, or per-person PDFs
+
+## 📊 Project Status
+
+| Phase | Description | Status |
+|---|---|---|
+| 1 | Project Foundation — Vite + React + TS strict, Tailwind/shadcn, routing, Zustand, layout, IndexedDB, PWA, ESLint/Prettier, Vitest | ✅ Complete |
+| 2 | Template Editor — Fabric.js canvas, tools/layers/properties panels, undo/redo, template save/load, effects | ✅ Complete |
+| 3 | Data Import — Excel (SheetJS), photos, column mapping, validation, live preview | ✅ Complete |
+| 4 | Batch Processing — Web Worker rendering, progress, pause/resume/cancel, ZIP export | ✅ Complete |
+| 5 | PSD Import & Template Library — ag-psd parsing, pixel-faithful re-composition, guided 3-step PSD Studio | ✅ Complete |
+| 6 | Imposition Engine — sheet layout, numbering, print-ready PDF (pdf-lib), sheet preview | ✅ Complete |
+| 7 | Polish & Production — font manager, error boundaries, performance, final testing, deployment | ✅ Complete |
+
+**Upcoming / incomplete:**
+- 🌍 **All 11 UI language translations** — i18n was removed in v0.3.1; UI strings are currently English-only (the architecture's 11-language goal is not yet met)
+- 🔢 **Barcode/QR elements** — barcode tools render labelled boxes; real QR/1D rendering (qrcode + bwip-js) is not wired into templates yet
+- 🖼️ **Per-placeholder photo columns** — one photo is matched per row; per-placeholder photo mapping is not available
 
 ## 📖 Documentation
-See the `docs/` folder for:
-- User manual
-- Keyboard shortcuts
-- Troubleshooting guide
+See the [`docs/`](docs/) folder — currently the [keyboard shortcuts](docs/keyboard_shortcuts.md) reference.
 
 ## 🛠️ For Developers
 
@@ -67,7 +96,7 @@ npm install
 
 ### Run the App (Development)
 Starts the dev server with hot reload, then open **http://localhost:5173/** in your browser:
-```cmd
+```bash
 npm run dev
 ```
 Stop the server with `Ctrl+C`.
@@ -76,7 +105,7 @@ Stop the server with `Ctrl+C`.
 
 | Command | What it does |
 |---|---|
-| `npm run dev` | Dev server with hot reload (for testing) — http://localhost:5173/ |
+| `npm run dev` | Dev server with hot reload — http://localhost:5173/ |
 | `npm run build` | Type-checks + builds production files to `dist/` |
 | `npm run preview` | Serves the production build locally |
 | `npm test` | Runs the test suite once |
@@ -89,85 +118,13 @@ Stop the server with `Ctrl+C`.
 | `npm run format:check` | Verifies Prettier formatting without changing files |
 
 ### Deploy
-Push to main branch — auto-deploys to Vercel/Netlify.
-
-## 📄 License
-MIT License - see LICENSE file
-
-## 🤝 Contributing
-Contributions welcome! Please read the guidelines before submitting PRs to [theprabir/ID-Stack-Web](https://github.com/theprabir/ID-Stack-Web).
-
-## 🐛 Reporting Issues
-Use [GitHub Issues](https://github.com/theprabir/ID-Stack-Web/issues) to report bugs or request features.
-
-## 📊 Project Status
-**Current Phase:** 6 (Imposition Engine) — COMPLETE
-**Patch:** 0.6.12 (wrap-first multi-line fitting: substituted multi-line values wrap naturally within their AUTHORED line capacity — the box height is the line budget — and overflow compression CONVERGES with wrapping: the fitter re-wraps at the compressed effective width so earlier lines absorb the words compression makes room for, never below the 0.65 readability floor; single-line fields keep the historical compression path untouched. Plus the humanised PostScript font fallback — unmatched names like `ArialNarrow` resolve through "Arial Narrow", "Arial", … before generic sans-serif — and the wrapped-sample oracle guard: a sample string Photoshop visually wrapped inside its text box is never style-calibrated from its multi-line raster, so substituted values keep the engine's true size and slant)
-**Status:** v0.6.3 — Phase 7 Web Worker batch rendering; card size LOCKED to the uploaded PSD's true physical size (px ÷ DPI × 72 — a 300-dpi 1056×663 px card derives to 89.4×56.1 mm, never raw pixels), placeholder text/effects sized in true Photoshop units (points→design pixels at document DPI), so imposition fits and placeholder styling are correct at any document resolution
-**Status:** v0.6.0 — guided 3-step PSD Studio (Upload Designs & Data → Choose Placeholders → Generate); imposed sheets with each back directly below its front (or separate duplex sheets), undistorted contain-fitted cards, card size LOCKED to the uploaded PSD (orientation switch swaps width/height at true scale), live preview with real cards; batch export runs JPEG compression + DEFLATE in a dedicated Web Worker with transparent main-thread fallback; fully faithful placeholder rendering (text style + layer effects + masks; photo effects + masks + clipping masks); v0.5.0–0.5.1 imposition options (custom paper/units, bleed, gap, margin, crop marks, positioned numbering, per-slot card numbering, persisted settings); one 2-page PDF per person, bundled Arial-compatible font
-
-### Completed
-- **Phases 4 & 5 — PSD-First Pipeline (the core workflow):**
-  - `psdService`: ag-psd parsing of layered .psd files — full layer tree flattened per side, text style extraction (font, size, color, bold/italic, underline, tracking, leading, justification, style runs), layer rasters + composite preview as blob URLs
-  - `psdCompositeService`: pixel-faithful re-composition — chosen placeholder layers get row content (substituted text in the original style, centre-cropped photos), every other layer is drawn from its original raster untouched, with original opacity and blend modes
-  - `LayerPicker`: filterable layer list per side; one click marks a layer as text or photo placeholder with an editable mapping key; hidden/group layers handled
-  - `PsdStudioPage` (`/`, the new home): step-guided workflow — upload front/back designs → choose placeholders → import Excel/photos → map columns → live preview (front/back tabs) → generate
-  - `batchService` + `BatchRunner`: full-batch generation with progress bar, ETA, error list, pause/resume/cancel, and ZIP download (JSZip); PNG/JPG output, front/back/both, `{Name}_{Row}` / `{{Column}}` naming templates
-  - `batchNaming`: safe file-name templating with token sanitisation
-  - Placeholders, mappings and project metadata persist in IndexedDB (Dexie v2 schema)
-  - Tests: placeholder keys, row resolver, batch naming (9 new)
-- Phase 0 — Initialization: `README.md`, `LICENSE`, `.gitignore`
-- Phase 1 — Project Foundation: Vite + React + TS strict, Tailwind themes, Zustand, i18n (11 languages), layout, Dexie/IndexedDB, PWA, ESLint/Prettier, Vitest
-- **Phase 2 — Template Editor:**
-  - Fabric.js 6 canvas with zoom (Ctrl+wheel, buttons, 10%–400%), Alt+drag pan, selection sync
-  - Element tools: text, image, shape (rect/circle), barcode (as labelled box until Phase 3 wiring), `{{placeholder}}` with visual dashed border
-  - Layers panel: visibility, lock, delete, select; top-first ordering
-  - Context-sensitive properties panel: name, X/Y/width/height/rotation (mm), text options (font, size, weight, align, underline), fill, stroke + width, opacity slider, full shadow editor (color/blur/offsets/toggle)
-  - Undo/redo history (50-step cap) with redo-stack invalidation and keyboard shortcuts (Ctrl+Z/Y, Ctrl+S, Delete, Esc)
-  - Dual-sided templates: Front/Back tabs with independent element sets
-  - `templateService`: create/save/load/delete/duplicate/list via IndexedDB
-  - Editor UI strings (English)
-- **v0.2.1 — Editor UX polish:**
-  - Photoshop-style keyboard shortcuts (implemented features only): tools V/T/U/H, zoom Ctrl+±/0/1, save Ctrl+S, undo/redo, select all/deselect, layer ordering Ctrl+[/] (+Shift), arrow-key nudging (Shift = 10 px)
-  - Spacebar temporary-pan + middle-click canvas panning
-  - Drag-drop layer reordering in the Layers panel with full undo/redo
-  - Header simplified: logo + theme toggle (navigation lives in the sidebar)
-  - `docs/keyboard_shortcuts.md` — all active and planned shortcuts
-- **Phase 3 — Data Import:**
-  - `excelService`: SheetJS parsing of .xlsx/.xls/.csv (first sheet, header row), duplicate-column dedupe, blank-row skipping, preview helpers
-  - `photoService`: multi-photo import with blob URLs and dimensions, auto-matching by filename / Excel column / manual assignment, centre-crop+resize processing, blob cleanup
-  - `previewService`: 2D-canvas card renderer with `{{Placeholder}}` substitution, word-wrapped text, image centre-crop, shapes, shadows/strokes
-  - Placeholder collection from the template (placeholder elements + `{{Token}}` text) drives the mapping UI
-  - `dataStore`: Excel data, photos, mappings, validation and match state with auto-map on import
-  - Data Import page: ExcelImport, ColumnMapping, DataPreview (validation report + row picker), CardLivePreview, PhotoImport
-  - Validation: missing required fields, duplicate IDs, missing photos, sparse rows, unmapped placeholders (errors vs warnings)
-  - All UI strings in plain English (i18n removed in v0.3.1)
-
-### Working Features
-- All Phase 1 & 2 features (themes, routing, PWA, editor)
-- Import .xlsx/.xls/.csv with auto-mapping of placeholders to columns
-- Photo import with filename/column/manual auto-matching
-- Validation report with error/warning severity per row
-- Live card preview rendering any selected row onto the current template
-- Excel → mapping → matching → validation → preview pipeline covered by an integration test
-
-### Known Issues
-- Barcode elements still render as labelled boxes in previews — real QR/1D rendering lands with batch generation (Phase 4)
-- Photo placeholders render the matched photo by row (one photo per card); per-placeholder photo columns arrive with Phase 4
-- Bundle grew to ~285 KB gzipped (Fabric.js + SheetJS); still under the 500 KB budget
-
-### Next Steps
-- **Phase 4 — Batch Processing:** Web Worker rendering, progress tracking, pause/resume/cancel, ZIP export
+Push to `main` — auto-deploys to Vercel → **https://id-stack.vercel.app**
 
 ## 🙏 Acknowledgments
-Built with:
-- React + TypeScript
-- Fabric.js (canvas editor)
-- SheetJS (Excel parsing)
-- ag-psd (PSD import)
-- pdf-lib (PDF generation)
-- Tailwind CSS + shadcn/ui (UI)
-- Vite (build tool)
+Built with React + TypeScript, Fabric.js, SheetJS, ag-psd, pdf-lib, Tailwind CSS + shadcn/ui, Vite — and Web Workers for the heavy lifting.
 
-## 📞 Support
-Open an issue on [GitHub Issues](https://github.com/theprabir/ID-Stack-Web/issues) or contact the maintainer: **Prabir kumar Das** ([@theprabir](https://github.com/theprabir)).
+## 📄 License
+MIT License — see [LICENSE](LICENSE).
+
+## 🐛 Reporting Issues & Support
+Use [GitHub Issues](https://github.com/theprabir/ID-Stack-Web/issues) to report bugs or request features, or contact the maintainer: **Prabir kumar Das** ([@theprabir](https://github.com/theprabir)).

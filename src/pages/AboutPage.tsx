@@ -14,8 +14,9 @@ import {
   Cpu,
   CheckCircle2,
 } from 'lucide-react';
-
-const APP_VERSION = '0.6.3';
+// v0.6.13: sourced from package.json at build time (was hardcoded '0.6.3'
+// and never updated). The Footer chip already uses the same constant.
+import { APP_VERSION } from '@/constants/app';
 const APP_AUTHOR_NAME = 'Prabir kumar Das';
 const APP_AUTHOR_GITHUB = 'https://github.com/theprabir';
 const APP_REPO_URL = 'https://github.com/theprabir/idstack';

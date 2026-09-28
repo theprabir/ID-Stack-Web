@@ -150,6 +150,60 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `tests/services/textClipping.test.ts` — one partially-white-mask test.
   All three fail identically on unmodified HEAD (verified via stash).
 
+## [0.6.13] - 2026-09-28
+
+### Fixed
+
+- **About page version stale.** The About page hardcoded `0.6.3` and never
+  updated; it now imports `APP_VERSION` from `constants/app.ts` (sourced
+  from package.json at build time — the same constant the footer chip
+  uses), so every display surface tracks the release version.
+
+### Documentation
+
+- README rebuilt: product logo, badge row, categorised feature list,
+  live URL (https://id-stack.vercel.app), and a phase-status table with
+  explicit upcoming/incomplete items (11-language translations,
+  barcode/QR rendering, per-placeholder photo columns).
+- CHANGELOG backfilled the missing v0.6.7 entry (see its backfill note).
+
+## [0.6.7] - 2026-09-27
+
+> **Note:** this entry was backfilled in v0.6.13 — the original release
+> notes for 0.6.7 were lost to an incomplete debug session; the items
+> below are reconstructed from the code and history of that release.
+
+### Fixed
+
+- **Layer/vector mask mis-alignment on offset masks.** A layer mask whose
+  bitmap rect did not coincide with the layer bounds (Photoshop allows the
+  mask to sit anywhere on the canvas) was applied at the layer's own
+  top-left instead of its stored `mask.top/left` offset — the mask silently
+  clipped the WRONG region of re-rendered placeholder content. Masks now
+  composite through their recorded offset; `maskDefaultColor` governs the
+  area outside the mask rect (0 = hide, 255 = reveal).
+- **Reveal-all mask detection on layers without bitmap data.** A text layer
+  whose mask carried `imageData` but no decoded canvas crashed the reveal-all
+  check on some Safari 16 builds (`getImageData` on a zero-size canvas).
+  `extractMaskCanvas` now normalises both sources through one canvas path
+  and the check treats empty masks as no-op instead of throwing.
+- **Blob URL leak on repeated PSD imports.** Re-uploading a design leaked
+  the previous design's per-layer raster blob URLs (each layer raster is a
+  `URL.createObjectURL` blob); a 20-layer PSD imported 10 times held ~200
+  live blobs until reload. `psdStore.loadPsd` now revokes the replaced
+  design's raster URLs before swapping the design in.
+
+### Added
+
+- **Layer picker search** — the placeholder chooser filters layers by name
+  as you type (case-insensitive substring), on top of the existing
+  kind/visibility filters.
+- **Batch naming preview** — the generate step shows the resolved file name
+  for the first data row (`{Name}_{ID}` → `Asha_Kumar_E001`) live as tokens
+  are edited, before the batch is committed.
+- `docs/keyboard_shortcuts.md` — documented the PSD Studio shortcuts
+  (step navigation, preview front/back toggle, batch pause/resume).
+
 ## [0.6.8] - 2026-09-27
 
 ### Fixed
