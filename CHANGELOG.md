@@ -2,6 +2,49 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6.12] - 2026-09-28
+
+### Fixed
+
+- **Wrap now converges with compression (the orphaned "Near").** v0.6.11
+  wrapped the value at 100 % Horizontal Scale and only then compressed the
+  resulting lines — the compressed width had room for words that stayed
+  stranded on the next line ("12 MG Road, / Near Trinity Circle,"). The
+  fitter now derives the required compression ratio from the natural widest
+  line and RE-WRAPS at the compressed effective width (`boxWidth ÷ ratio`),
+  so earlier lines absorb exactly the words compression has made room for.
+  One pass converges for uniform-style text; the result only ever uses fewer
+  or equal lines. Authored capacity stays the hard line budget and the 0.65
+  readability floor is unchanged.
+
+### Tests
+
+- The Charmaine-scenario regression now pins the CONVERGED layout ("Alice
+  Johnson" pulled onto line 1, widest line ≈ 0.65 × its natural width)
+  instead of the un-converged pile-up.
+
+## [0.6.11] - 2026-09-28
+
+### Fixed
+
+- **Authored box height is the line budget (the three-line address).** The
+  v0.6.9 wrap-first fitter GRANTED extra lines into the free card space below
+  the box whenever a wrapped line would need compression below the 0.65
+  floor — a two-line address box rendered three lines. The authored capacity
+  (`floor(boxHeight / leading)`) is again a HARD CAP: the value wraps
+  naturally at 100 % Horizontal Scale within the authored lines, and overflow
+  is solved by x-only compression inside the SAME box (narrower lines fit
+  more text), floored at 0.65 so it can never degenerate into the v0.6.8
+  barcode. The vertical-budget plumbing (`autoFitMaxBlockHeight`,
+  `maxHeightPx`) is removed — geometry is simpler and Photoshop-true.
+
+### Tests
+
+- Rewritten wrap-first regressions: two-line budget with floor-safe
+  compression, the Charmaine address scenario (2 lines, mild compression),
+  capacity caps wrapping despite free space below, and the 0.65 floor on a
+  two-line box.
+
 ## [0.6.10] - 2026-09-28
 
 ### Fixed

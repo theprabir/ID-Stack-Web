@@ -732,14 +732,12 @@ describe('hybrid text fitting + horizontal compression (v0.6.8)', () => {
     expect(box.right - box.left).toBeLessThanOrEqual(72);
   });
 
-  it('a multi-line placeholder wraps onto granted lines instead of crushing the final line (the Address bug)', async () => {
-    // THE v0.6.8 REGRESSION: a long value in a 60-px-wide, 120-px-tall box
-    // (capacity 2) — the overflow piled onto the FINAL allowed line and was
-    // compressed to ~1/3 of its width (an illegible barcode) while open card
-    // space sat below. v0.6.9 wrap-first: wrapping happens FIRST at 100 %
-    // scale; when the widest line would need Horizontal Scale below the 0.65
-    // readability floor AND the card has vertical room, a line is GRANTED and
-    // the value re-wraps — compression is evaluated only after wrapping.
+  it('a multi-line placeholder compresses WITHIN its authored two-line budget (the Charmaine scenario)', async () => {
+    // v0.6.12 CONTRACT: the authored box height is the line budget — a
+    // two-line box holds the value on two lines, never three — AND wrap
+    // converges with compression: once the needed ratio is known, the text
+    // re-wraps at the compressed effective width so earlier lines absorb
+    // the words compression made room for ("Near" pulled up onto line 1).
     const design = designWithTextLayer({
       content: 'ID',
       shapeType: 'box',
@@ -750,14 +748,34 @@ describe('hybrid text fitting + horizontal compression (v0.6.8)', () => {
       leading: 60,
     });
     const box = await inkBoxOf(design, { Name: 'Alice Johnson Engineering Department' });
-    // Four wrapped lines (2 authored + 2 granted into the free card space):
-    // ink height 4 × 60 leading − 0.2 em gap = 230 px (the old crush stayed
-    // at ~110 px — two lines). Wrapping solved the overflow, not squishing.
-    expect(box.bottom - box.top).toBeGreaterThanOrEqual(200);
-    // The widest line ("Engineering", 66 px natural) needs only a ~0.91
-    // squeeze to the 60 px box — far above the floor, still readable.
-    expect(box.right - box.left).toBeGreaterThanOrEqual(55);
-    expect(box.right - box.left).toBeLessThanOrEqual(70);
+    // Exactly TWO lines (ink height ≈ 2 × 60 leading − gap), NOT four:
+    expect(box.bottom - box.top).toBeLessThanOrEqual(115);
+    // Converged layout: "Alice Johnson" (78 px natural) pulled onto line 1,
+    // "Engineering Department" (132 px) on line 2 at the 0.65 floor →
+    // widest painted ≈ 132 × 0.65 ≈ 86 px — wider than the 60 px box
+    // (floor protrusion) but far from the 180 px un-converged pile-up.
+    expect(box.right - box.left).toBeGreaterThanOrEqual(80);
+    expect(box.right - box.left).toBeLessThanOrEqual(95);
+  });
+
+  it('a breakable address wraps to exactly its authored capacity with mild floor-safe compression', async () => {
+    // The Charmaine Patel card: 120-px-wide, 2-line box, 43-char address.
+    // Line 1 wraps naturally ("12, MG Road, Near" = 102 px ≤ 120), the
+    // remainder sits on the authored second line and compresses ~0.8 —
+    // NO third line below the box.
+    const design = designWithTextLayer({
+      content: 'ID',
+      shapeType: 'box',
+      boxWidth: 120,
+      boxHeight: 120,
+      originX: 266,
+      originY: 511.47,
+      leading: 60,
+    });
+    const box = await inkBoxOf(design, { Name: '12, MG Road, Near Trinity Circle, Bengaluru' });
+    expect(box.bottom - box.top).toBeLessThanOrEqual(115); // two lines only
+    expect(box.right - box.left).toBeGreaterThanOrEqual(95);
+    expect(box.right - box.left).toBeLessThanOrEqual(122); // ≈ the box width
   });
 
   it('an address-style value wraps naturally at 100 % scale with zero compression', async () => {
@@ -782,41 +800,39 @@ describe('hybrid text fitting + horizontal compression (v0.6.8)', () => {
   });
 
   it('a multi-line placeholder NEVER compresses below the 0.65 readability floor', async () => {
-    // Vertical budget exhausted (box near the card bottom): the last resort
-    // may compress, but never below 0.65 — a slightly protruding line beats
-    // an illegible one. 60 chars × 6 = 360 px natural width; the floor
-    // clamps the paint at 0.65 × 360 = 234 px, NOT 0.05-crushed to ~3 px.
+    // Two-line box, 60 unbreakable chars: line 1 takes 10 x's (60 px), the
+    // remaining 50 pile onto the authored second line (300 px natural). The
+    // floor clamps the paint at 0.65 × 300 = 195 px, NOT 0.05-crushed.
     const design = designWithTextLayer({
       content: 'ID',
       shapeType: 'box',
       boxWidth: 60,
       boxHeight: 120,
       originX: 266,
-      originY: 921.47,
+      originY: 511.47,
       leading: 60,
     });
     const box = await inkBoxOf(design, { Name: 'x'.repeat(60) });
-    // One line (no vertical room to grant lines into), floor-clamped width:
-    expect(box.bottom - box.top).toBeLessThanOrEqual(55);
-    expect(box.right - box.left).toBeGreaterThanOrEqual(225); // ≥ 0.65 × 360 − tolerance
+    // Exactly the authored two lines (clamped at the card's visible area):
+    expect(box.bottom - box.top).toBeLessThanOrEqual(115);
+    expect(box.right - box.left).toBeGreaterThanOrEqual(190); // ≥ 0.65 × 300 − tolerance
   });
 
-  it('the wrap-first fitter respects the card bottom when granting lines', async () => {
-    // Box near the card bottom + a long multi-word value: granting lines
-    // would paint outside the card, so the fitter stops at the authored
-    // capacity and uses floor-clamped compression on the final line.
+  it('the authored capacity caps wrapping even when the card has free space below', async () => {
+    // The v0.6.9 granting behaviour is REVERSED: a two-line box stays two
+    // lines even with the whole card bottom free — overflow compresses.
     const design = designWithTextLayer({
       content: 'ID',
       shapeType: 'box',
       boxWidth: 60,
       boxHeight: 120,
       originX: 266,
-      originY: 921.47,
+      originY: 511.47,
       leading: 60,
     });
     const box = await inkBoxOf(design, { Name: 'Alice Internationalization' });
-    // Capacity stays 2 (921.47 + 3×60 would leave the 1011-px card), so the
-    // "Internationalization" token is floor-compressed (0.65 × 120 = 78 px).
+    // Two lines only; the "Internationalization" token (120 px natural)
+    // is floor-compressed to 0.65 × 120 = 78 px.
     expect(box.bottom - box.top).toBeLessThanOrEqual(115);
     expect(box.right - box.left).toBeGreaterThanOrEqual(75);
     expect(box.right - box.left).toBeLessThanOrEqual(82);
