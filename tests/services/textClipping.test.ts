@@ -732,7 +732,14 @@ describe('hybrid text fitting + horizontal compression (v0.6.8)', () => {
     expect(box.right - box.left).toBeLessThanOrEqual(72);
   });
 
-  it('a multi-line placeholder compresses the final wrapped line when a long token still exceeds the box', async () => {
+  it('a multi-line placeholder wraps onto granted lines instead of crushing the final line (the Address bug)', async () => {
+    // THE v0.6.8 REGRESSION: a long value in a 60-px-wide, 120-px-tall box
+    // (capacity 2) — the overflow piled onto the FINAL allowed line and was
+    // compressed to ~1/3 of its width (an illegible barcode) while open card
+    // space sat below. v0.6.9 wrap-first: wrapping happens FIRST at 100 %
+    // scale; when the widest line would need Horizontal Scale below the 0.65
+    // readability floor AND the card has vertical room, a line is GRANTED and
+    // the value re-wraps — compression is evaluated only after wrapping.
     const design = designWithTextLayer({
       content: 'ID',
       shapeType: 'box',
@@ -742,13 +749,95 @@ describe('hybrid text fitting + horizontal compression (v0.6.8)', () => {
       originY: 511.47,
       leading: 60,
     });
+    const box = await inkBoxOf(design, { Name: 'Alice Johnson Engineering Department' });
+    // Four wrapped lines (2 authored + 2 granted into the free card space):
+    // ink height 4 × 60 leading − 0.2 em gap = 230 px (the old crush stayed
+    // at ~110 px — two lines). Wrapping solved the overflow, not squishing.
+    expect(box.bottom - box.top).toBeGreaterThanOrEqual(200);
+    // The widest line ("Engineering", 66 px natural) needs only a ~0.91
+    // squeeze to the 60 px box — far above the floor, still readable.
+    expect(box.right - box.left).toBeGreaterThanOrEqual(55);
+    expect(box.right - box.left).toBeLessThanOrEqual(70);
+  });
+
+  it('an address-style value wraps naturally at 100 % scale with zero compression', async () => {
+    // The screenshot scenario: a breakable address that fits its box once it
+    // is allowed to wrap — wrap-first must leave Horizontal Scale at 100 %.
+    const design = designWithTextLayer({
+      content: 'ID',
+      shapeType: 'box',
+      boxWidth: 120,
+      boxHeight: 180,
+      originX: 266,
+      originY: 511.47,
+      leading: 60,
+    });
+    const box = await inkBoxOf(design, { Name: '12, MG Road, Near Trinity Circle, Bengaluru' });
+    // Three natural lines (capacity 3): widest "12, MG Road, Near" = 102 px
+    // ≤ 120 px box → NO compression. Old behaviour crushed the whole value
+    // onto one 120-px line at ~0.45 scale.
+    expect(box.bottom - box.top).toBeGreaterThanOrEqual(165);
+    expect(box.right - box.left).toBeGreaterThanOrEqual(95);
+    expect(box.right - box.left).toBeLessThanOrEqual(122);
+  });
+
+  it('a multi-line placeholder NEVER compresses below the 0.65 readability floor', async () => {
+    // Vertical budget exhausted (box near the card bottom): the last resort
+    // may compress, but never below 0.65 — a slightly protruding line beats
+    // an illegible one. 60 chars × 6 = 360 px natural width; the floor
+    // clamps the paint at 0.65 × 360 = 234 px, NOT 0.05-crushed to ~3 px.
+    const design = designWithTextLayer({
+      content: 'ID',
+      shapeType: 'box',
+      boxWidth: 60,
+      boxHeight: 120,
+      originX: 266,
+      originY: 921.47,
+      leading: 60,
+    });
+    const box = await inkBoxOf(design, { Name: 'x'.repeat(60) });
+    // One line (no vertical room to grant lines into), floor-clamped width:
+    expect(box.bottom - box.top).toBeLessThanOrEqual(55);
+    expect(box.right - box.left).toBeGreaterThanOrEqual(225); // ≥ 0.65 × 360 − tolerance
+  });
+
+  it('the wrap-first fitter respects the card bottom when granting lines', async () => {
+    // Box near the card bottom + a long multi-word value: granting lines
+    // would paint outside the card, so the fitter stops at the authored
+    // capacity and uses floor-clamped compression on the final line.
+    const design = designWithTextLayer({
+      content: 'ID',
+      shapeType: 'box',
+      boxWidth: 60,
+      boxHeight: 120,
+      originX: 266,
+      originY: 921.47,
+      leading: 60,
+    });
     const box = await inkBoxOf(design, { Name: 'Alice Internationalization' });
-    // Capacity is 2. "Alice" wraps to line 1; the long second token remains
-    // on the final allowed line and is then compressed horizontally to the
-    // 60 px boundary. Vertical size/leading remain unchanged.
-    expect(box.bottom - box.top).toBeGreaterThan(90);
-    expect(box.right - box.left).toBeLessThanOrEqual(63);
-    expect(box.bottom - box.top).toBeGreaterThanOrEqual(99);
+    // Capacity stays 2 (921.47 + 3×60 would leave the 1011-px card), so the
+    // "Internationalization" token is floor-compressed (0.65 × 120 = 78 px).
+    expect(box.bottom - box.top).toBeLessThanOrEqual(115);
+    expect(box.right - box.left).toBeGreaterThanOrEqual(75);
+    expect(box.right - box.left).toBeLessThanOrEqual(82);
+  });
+
+  it('a multi-line field uses its authored lines before granting extras', async () => {
+    // "Alice Johnson" in the 72-px box (capacity 2): wrapping uses the
+    // authored capacity; the 72-px line needs no compression, so NO extra
+    // line is granted and no line exceeds the box width.
+    const design = designWithTextLayer({
+      content: 'ID',
+      shapeType: 'box',
+      boxWidth: 72,
+      boxHeight: 120,
+      originX: 266,
+      originY: 511.47,
+      leading: 60,
+    });
+    const box = await inkBoxOf(design, { Name: 'Alice Johnson' });
+    expect(box.bottom - box.top).toBeGreaterThan(90); // still exactly 2 lines
+    expect(box.right - box.left).toBeLessThanOrEqual(72);
   });
 
   it('a fitting value keeps 100 % horizontal scale — pixel-identical to v0.6.4', async () => {

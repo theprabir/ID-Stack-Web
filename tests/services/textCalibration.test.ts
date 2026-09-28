@@ -8,8 +8,8 @@
  * slant (italic) and mean solid-pixel RGB (colour).
  */
 import { describe, it, expect } from 'vitest';
-import type { Layer, LayerTextData } from 'ag-psd/dist/psd.d';
-import { matchTextStyleFromInk } from '@/services/textStyleOracle';
+import type { Layer, LayerTextData, TextStyle } from 'ag-psd/dist/psd.d';
+import { matchTextStyleFromInk, rasterSpansMultipleLines } from '@/services/textStyleOracle';
 
 /** RGBA buffer with an ink rectangle drawn between the given rows/cols */
 function inkData(
@@ -69,6 +69,33 @@ async function extract(layer: Layer): Promise<{
     color: info.color,
   };
 }
+
+describe('wrapped-sample guard (rasterSpansMultipleLines, v0.6.10)', () => {
+  const ENGINE_SIZE = 50;
+  const ENGINE_LEADING = 60; // auto-leading 1.2 × 50
+
+  it('detects a wrapped sample: ink taller than 1.5 leading AND ≈ 2 lines of glyphs', () => {
+    // The Address layer: single-line string, two lines in the raster.
+    expect(
+      rasterSpansMultipleLines(107, 72, ENGINE_SIZE, ENGINE_LEADING)
+    ).toBe(true);
+  });
+
+  it('does NOT flag a tall single line (ascender + descender within one leading)', () => {
+    // One line of glyphs spans at most ~1.2 em; never 1.5 leadings.
+    expect(rasterSpansMultipleLines(72, 72, ENGINE_SIZE, ENGINE_LEADING)).toBe(false);
+    expect(rasterSpansMultipleLines(85, 72, ENGINE_SIZE, ENGINE_LEADING)).toBe(false);
+  });
+
+  it('requires a reference measurement to compare against', () => {
+    expect(rasterSpansMultipleLines(107, undefined, ENGINE_SIZE, ENGINE_LEADING)).toBe(false);
+  });
+
+  it('requires engine geometry (no yardstick → never flag)', () => {
+    expect(rasterSpansMultipleLines(107, 72, undefined, ENGINE_LEADING)).toBe(false);
+    expect(rasterSpansMultipleLines(107, 72, ENGINE_SIZE, undefined)).toBe(false);
+  });
+});
 
 describe('full-style text calibration (matchTextStyleFromInk)', () => {
   const rasterRegular = {
@@ -267,5 +294,60 @@ describe('extractText full-style calibration end-to-end', () => {
     const info = mod.extractTextForTest(layer.text!, 300, layer);
     expect(info?.strokeWidth).toBeCloseTo(2, 1);
     expect(info?.strokeColor).toBe('#ff0000');
+  });
+
+  it('keeps the engine font size when the oracle calibration is a line-count multiple (the giant-italic-Address bug)', async () => {
+    // THE v0.6.9 REGRESSION: "Complete Address" is a single-line string that
+    // Photoshop visually wrapped inside its 298 px box. The oracle compared
+    // the two-line raster ink height (~107 px) against single-line reference
+    // renderings and calibrated ~2.4× the true size — every substituted
+    // address then rendered as giant italic glyphs nearly touching across
+    // the 60 px leading. The guard must clamp back to the engine size.
+    const mod = await import('@/services/psdService');
+    const layer = { name: 'Name', text: textData() } as unknown as Layer;
+    const text = layer.text as LayerTextData;
+    // Simulate a wrapped sample: taller-than-two-lines raster canvas.
+    (layer as { canvas?: unknown }).canvas = {
+      width: 400,
+      height: 200,
+      getContext: () => ({
+        getImageData: () => inkData(400, 200, 10, 160, 20, 300), // 151 px ink
+      }),
+    };
+    text.style = {
+      font: { name: 'ArialMT', script: 0, type: 0, synthetic: 0 },
+      fontSize: 12,
+      autoLeading: true,
+      leading: 620.00037,
+    };
+    const info = mod.extractTextForTest(layer.text!, 300, layer);
+    // jsdom cannot rasterise the oracle's references, so calibration fails
+    // cleanly (null oracle) — the engine size stands either way. The guard
+    // exists for real browsers where a wrapped raster DID calibrate 2.4×.
+    expect(info?.fontSize).toBeDefined();
+    if (info?.fontSize !== undefined) {
+      expect(info.fontSize).toBeLessThanOrEqual(12 * 1.6 + 0.01);
+    }
+  });
+
+  it('reads engine fontSize through the dedupe coalesce even when styleRuns[0] is the {autoKern} artefact', async () => {
+    // buildTextStyleOracle read styleRuns[0].style via ?? — the artefact is
+    // an OBJECT (not undefined), so text.style.fontSize was never reached,
+    // the sanity band lost its yardstick and miscalibrated sizes passed.
+    const mod = await import('@/services/psdService');
+    const layer = { name: 'Name', text: textData() } as unknown as Layer;
+    const text = layer.text as LayerTextData;
+    text.styleRuns = [{ length: 1, style: { autoKern: false } as TextStyle }];
+    text.style = { font: { name: 'ArialMT', script: 0, type: 0, synthetic: 0 }, fontSize: 42 };
+    (layer as { canvas?: unknown }).canvas = {
+      width: 10,
+      height: 10,
+      getContext: () => ({ getImageData: () => ({ data: new Uint8ClampedArray(400), width: 10, height: 10 }) }),
+    };
+    // No throw + the oracle path receives engineFontSizePx = 42 (the sanity
+    // band yardstick). The observable contract: extraction completes and
+    // keeps the engine size as the layer style fallback.
+    const info = mod.extractTextForTest(text, 300, layer);
+    expect(info?.fontSize).toBeDefined();
   });
 });

@@ -95,7 +95,9 @@ export function normaliseFontName(name: string): string {
   return name.toLowerCase().replace(/[\s\-_]/g, '');
 }
 
-/** Strip style suffixes to compare base family names: "Arial-BoldMT" → "arial" */
+/**
+ * Strip PostScript style suffixes to compare base family names: "Arial-BoldMT" → "arial"
+ */
 export function baseFamilyKeyOf(name: string): string {
   return normaliseFontName(
     name
@@ -106,6 +108,71 @@ export function baseFamilyKeyOf(name: string): string {
       .replace(/(Bold|Italic|Oblique|Regular|Light|Medium|Heavy|Black|Thin)$/i, '')
       .replace(/MT$/i, '')
   );
+}
+
+/**
+ * Humanise a PostScript font name into a display family name:
+ * "ArialNarrow" → "Arial Narrow", "CopperplateGothic-Bold" →
+ * "CopperplateGothic Bold" (dash → space + camelCase word splitting).
+ * Style suffixes are handled separately by postScriptFallbackCss.
+ */
+function humanizePostScriptName(name: string): string {
+  return name
+    .replace(/[-_]/g, ' ')
+    .replace(/MT$/i, '')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Weight/slant lexemes CSS covers with font-weight/font-style — they must
+ * NOT stay in the family name ("Arial Bold" resolves to nothing, "Arial"
+ * at weight 700 is the actual font). "Roman"/"Book" are regular markers. */
+const POSTSCRIPT_WEIGHT_WORDS =
+  /\s*(Bold|Semibold|Demibold|Extrabold|Ultrabold|Black|Heavy|Light|Thin|Medium|Italic|Oblique|Regular|Roman|Book)$/i;
+
+/** Width lexemes that DO change glyph widths — they stay in the family name
+ * ("Arial Narrow" is a genuinely narrower font, not Arial styled narrow). */
+const POSTSCRIPT_WIDTH_WORDS =
+  /\s*(Narrow|Condensed|Cond|Compressed|Extended|Expanded)$/i;
+
+/**
+ * Build the CSS font-family FALLBACK LIST for a PostScript name that matched
+ * no registered font (v0.6.9): a raw PostScript name like "ArialNarrow" or
+ * "HelveticaNeue-Light" resolves to NOTHING in a browser (the old code
+ * emitted it verbatim, so canvas text silently fell all the way back to
+ * generic sans-serif and wrapped with the wrong metrics). The list instead
+ * offers humanised, resolvable candidates first:
+ *
+ * 1. the style-stripped base WITH width words ("Arial Narrow" — the real
+ *    narrower family when the OS has it),
+ * 2. the width-stripped base ("Arial" — nearest metric approximation,
+ *    typically the bundled Arimo alias),
+ * 3. the humanised full name (as authored, minus the MT marker),
+ * 4. the raw PostScript name (custom fonts registered under exactly it).
+ *
+ * Weight/slant never appears in any candidate — the canvas font string
+ * already carries font-weight/font-style separately. Generic sans-serif
+ * always comes last, as before.
+ *
+ * @param psdFontName - Raw PostScript name from the PSD (non-empty)
+ * @returns CSS font-family list, quoted, sans-serif-terminated
+ */
+function postScriptFallbackCss(psdFontName: string): string {
+  const humanised = humanizePostScriptName(psdFontName);
+  const candidates: string[] = [];
+  const push = (value: string): void => {
+    const clean = value.trim();
+    if (clean.length === 0) return;
+    if (candidates.some((existing) => existing.toLowerCase() === clean.toLowerCase())) return;
+    candidates.push(clean);
+  };
+  push(humanised.replace(POSTSCRIPT_WEIGHT_WORDS, '')); // 1. base + width words
+  push(humanised.replace(POSTSCRIPT_WIDTH_WORDS, '').replace(POSTSCRIPT_WEIGHT_WORDS, '')); // 2. bare base
+  push(humanised); // 3. full humanised name
+  push(psdFontName.replace(/"/g, '')); // 4. raw PostScript name
+  return `${candidates.map((family) => `"${family}"`).join(', ')}, sans-serif`;
 }
 
 /**
@@ -279,8 +346,11 @@ export function resolveFontFamily(psdFontName: string | undefined): string {
   if (!psdFontName) return 'sans-serif';
   const matched = matchPsdFont(psdFontName, listLoadedFontFamilies());
   if (matched) return `"${matched}"`;
-  // Fall back to the PSD name for browser-installed fonts, then sans-serif.
-  return `"${psdFontName.replace(/"/g, '')}", sans-serif`;
+  // v0.6.9: fall back to a HUMANISED candidate list ("ArialNarrow" →
+  // "Arial Narrow", "Arial", …) so browser-installed fonts — and the
+  // bundled Arial-metric aliases — are actually hit before generic
+  // sans-serif. The raw PostScript name alone resolves to nothing.
+  return postScriptFallbackCss(psdFontName);
 }
 
 /**

@@ -1,4 +1,105 @@
 # Changelog
+All notable changes to this project are documented in this file.
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+## [0.6.10] - 2026-09-28
+
+### Fixed
+
+- **Giant italic substituted values (the wrapped-sample oracle bug).** After
+  the v0.6.9 wrap fix, substituted addresses rendered at ~2.4× the font size
+  AND italic. Two parser defects compounded:
+
+  1. **The style oracle calibrated a WRAPPED sample.** `"Complete Address"`
+     is a single-line string in the engine data, but Photoshop had visually
+     wrapped it onto two lines inside its 298 px text box — so the layer
+     raster's ink box spans ~107 px while the oracle's reference renderings
+     are single-line. The ink-height ratio therefore calibrated ~2.4× the
+     true size (the "whole box height as the glyph height" effect), and the
+     two-line centroid drift scored as fake italic slant. A new
+     `rasterSpansMultipleLines` guard (engine leading as the yardstick:
+     raster > 1.5 × leading AND ≥ 0.8 leading taller than the string's
+     expected single-line ink) refuses calibration; the engine style (50 px
+     upright) stands.
+  2. **The oracle lost the engine size to ag-psd's dedupe artefact.**
+     `buildTextStyleOracle` read `styleRuns[0].style ?? text.style` — but
+     the artefact `{autoKern:false}` is an OBJECT, not undefined, so `??`
+     never reached `text.style`: the sanity band had no `engineFontSizePx`
+     yardstick and the miscalibrated size passed unchecked. The oracle now
+     coalesces run-over-layer per property (the "Charmaine Patel" doctrine).
+  3. **Parse-boundary size guard (belt and braces).** Any calibrated oracle
+     size outside 0.5×–1.6× of the unit-normalised engine size is clamped
+     back to the engine value at parse time, protecting every consumer
+     (layout, baselines, leading fallback) from any future miscalibration
+     path. 1.6× sits far above legitimate metric differences and far below
+     the ≥2× a second text line produces.
+
+### Tests
+
+- `rasterSpansMultipleLines` unit tests: wrapped detection, tall single
+  line accepted, missing reference/engine geometry never flags.
+- Parser regression: wrapped-raster sample keeps the engine font size;
+  dedupe-artefact `styleRuns[0]` no longer blinds the oracle.
+
+## [0.6.9] - 2026-09-28
+
+### Fixed
+
+- **Multi-line placeholder crush (the "Address barcode" bug).** The v0.6.8
+  hybrid fitter capped wrapping at the authored box height's line capacity
+  (`floor(boxHeight / leading)`) and piled all overflow onto the FINAL allowed
+  line, then unconditionally compressed that line — a long address ("12, MG
+  Road, Near Trinity Circle, Bengaluru") rendered as a single illegible
+  barcode strip while open card space sat below. The render lifecycle is now
+  wrap-first for MULTI-LINE fields:
+
+  1. **Wrap naturally** at 100 % Horizontal Scale up to the authored line
+     capacity — no compression is considered yet.
+  2. **Evaluate after wrapping** — measure the widest wrapped line; if it
+     would need Horizontal Scale below the new `MULTI_LINE_MIN_SCALE` (0.65)
+     readability floor AND the card has vertical room below the box, ONE line
+     is granted and the value re-wraps. The authored capacity is a floor, not
+     a cap — sample PSDs routinely author short boxes for long address
+     fields.
+  3. **Compress only as a last resort** — a layout that still overflows after
+     the vertical budget (`box top → card bottom − 4 px margin`) is consumed
+     is compressed, but never below 0.65 on multi-line fields; a slightly
+     protruding final line beats an illegible one.
+
+  Single-line fields keep the historical path exactly: no wrapping, 0.05
+  compression floor, pixel-identical output. Photos, masks and the parser are
+  untouched.
+- **Humanised PostScript font fallback.** `resolveFontFamily` emitted a raw
+  PostScript name (`ArialNarrow`, `HelveticaNeue-Light`) when no font was
+  registered — a name browsers cannot resolve, so canvas text silently fell
+  back to generic sans-serif and wrapped with wrong metrics. The fallback is
+  now a candidate list: style-stripped base with width words ("Arial Narrow")
+  → bare base ("Arial", hits the bundled Arimo alias) → full humanised name
+  → raw PostScript name → sans-serif. Weight/slant lexemes are stripped (the
+  canvas font string carries them separately); width words stay ("Narrow" is
+  a real family). Wrap measurement now uses the correct font metrics.
+
+### Changed
+
+- `computeTextLayout` takes a `maxHeightPx` vertical budget (wrap-first line
+  granting); `computeAutoFitScale` takes a `minimumScale` floor parameter.
+- New `autoFitMaxBlockHeight` computes the vertical budget from the box top
+  to the card bottom (minus a 4-px margin); multi-line only.
+
+### Tests
+
+- Regression tests: granted-line wrapping instead of crushing, address-style
+  zero-compression wrapping, the 0.65 multi-line floor, card-bottom budget
+  respect, and the humanised fallback list.
+- Updated the v0.6.8 long-token test: granting lines replaces final-line
+  crushing.
+
+### Known pre-existing failures (unrelated to this release)
+
+- `tests/services/zz-probe.test.ts` — stray syntax error, blocks `tsc`.
+- `tests/services/textCalibration.test.ts` — one italic-veto oracle test.
+- `tests/services/textClipping.test.ts` — one partially-white-mask test.
+  All three fail identically on unmodified HEAD (verified via stash).
 
 ## [0.6.8] - 2026-09-27
 
@@ -23,9 +124,6 @@
 
 - Regression coverage for two-line wrapping and wrap-then-compress behaviour.
 
-
-All notable changes to this project are documented in this file.
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [0.6.6] - 2026-09-27
 

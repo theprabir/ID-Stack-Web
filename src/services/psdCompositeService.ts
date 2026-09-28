@@ -219,8 +219,9 @@ function wrapLinesPreserving(
         current = piece.trimStart();
       } else {
         // Once the calculated capacity is reached, keep the remaining payload
-        // on the final line. The hybrid fitter will horizontally compress that
-        // line instead of creating a third/fourth line outside the placeholder.
+        // on the final line. The wrap-first fitter grants extra lines while
+        // compression would break the readability floor; past that the hybrid
+        // fitter compresses that final line (never below the floor).
         current = candidate;
       }
     }
@@ -615,13 +616,28 @@ function textFitMode(
 }
 
 /**
+ * Readability floor (v0.6.9) for MULTI-LINE substituted values: Horizontal
+ * Scale never drops below this ratio. If wrapping inside the allowed width
+ * would need more compression, the value wraps onto another line (while the
+ * card has room) or slightly overflows the box instead of becoming an
+ * illegible barcode. SINGLE-LINE fields keep the historical 0.05 floor: the
+ * authored geometry says the value must stay on one line, so compression is
+ * the only fitting tool there.
+ */
+const MULTI_LINE_MIN_SCALE = 0.65;
+
+/**
  * v0.6.8 HYBRID AUTO-FIT: calculate one x-only compression ratio from the
  * FINAL wrapped layout. Design-preview/sample text is never modified.
+ *
+ * @param minimumScale - Lowest allowed ratio (default 0.05; multi-line
+ *   callers pass MULTI_LINE_MIN_SCALE so text stays readable).
  */
 function computeAutoFitScale(
   lineWidths: number[],
   substituted: boolean,
-  maxAllowedWidth: number
+  maxAllowedWidth: number,
+  minimumScale = 0.05
 ): number {
   if (!substituted) return 1;
   if (!(maxAllowedWidth > 0) || !Number.isFinite(maxAllowedWidth)) return 1;
@@ -631,10 +647,42 @@ function computeAutoFitScale(
     if (!(width > maxAllowedWidth) || !Number.isFinite(width)) continue;
     // Only Horizontal Scale is allowed to change. Never enlarge a fitting
     // value and never collapse it to zero.
-    const ratio = Math.max(0.05, Math.min(1, maxAllowedWidth / width));
+    const ratio = Math.max(minimumScale, Math.min(1, maxAllowedWidth / width));
     if (ratio < worstRatio) worstRatio = ratio;
   }
   return worstRatio;
+}
+
+/**
+ * Natural painted width of one WRAPPED line at 100 % Horizontal Scale.
+ * A substituted value renders as a single segment in the layer/oracle style
+ * (resolveStyleAt semantics — positional runs describe the sample, not the
+ * replacement), so one measurement per line is exact.
+ */
+function measureWrappedLineWidth(
+  context: CanvasRenderingContext2D,
+  text: NonNullable<PsdLayerInfo['text']>,
+  line: string,
+  scale: number,
+  fontCssFamily: string,
+  fontWeight: number,
+  trackingPx: number
+): number {
+  if (line.length === 0) return 0;
+  const style = resolveStyleAt(text, text.oracle, text.bold ?? false, text.italic ?? false, 0, true);
+  const mirror = resolveMirrorPropsAt(text, 0, true);
+  context.font = exactFontCss(
+    style.bold,
+    style.italic,
+    style.fontSize * scale,
+    fontCssFamily,
+    fontWeight
+  );
+  const painted = paintedTextOf(line, mirror.fontCaps);
+  return (
+    context.measureText(painted).width * mirror.horizontalScale +
+    trackingPx * Math.max(0, painted.length - 1)
+  );
 }
 
 /**
@@ -665,6 +713,12 @@ function getMeasureContext(): CanvasRenderingContext2D {
  * - With an oracle, the first baseline uses the ORIGINAL sample's
  *   ink-top→baseline offset (parse-time measured) — a descender-less
  *   sample like "ID" cannot anchor a substituted value by ink top alone.
+ *
+ * WRAP-FIRST (v0.6.9): `maxHeightPx` bounds the total block height
+ * (capacity × leading) the wrap-first fitter may grow a multi-line
+ * substituted value to — capacity grants line by line while the wrapped
+ * layout would need Horizontal Scale below the readability floor. The
+ * default Infinity keeps older callers/tests on the authored box height.
  */
 function computeTextLayout(
   context: CanvasRenderingContext2D,
@@ -672,7 +726,8 @@ function computeTextLayout(
   content: string,
   scale: number,
   substituted: boolean,
-  maxAllowedWidth: number
+  maxAllowedWidth: number,
+  maxHeightPx = Number.POSITIVE_INFINITY
 ): TextLayout {
   const text = layer.text!;
   const oracle = text.oracle;
@@ -715,13 +770,58 @@ function computeTextLayout(
   const metrics = context.measureText('Mg');
   const ascent = metrics.fontBoundingBoxAscent ?? metrics.actualBoundingBoxAscent ?? fontSize * 0.8;
 
-  // HYBRID FITTING: determine capacity from placeholder height / leading.
-  // Single-line fields suppress wrapping completely. Multi-line fields use
-  // the authored box width and wrap only up to the calculated line capacity.
-  // The final measured line widths then feed the x-only compression pass.
+  // Leading: parsed (auto-leading already resolved to 1.2 × size at parse);
+  // legacy layers without it fall back to 1.2 × size. Computed BEFORE the
+  // wrap-first pass — the vertical line budget is leading-driven.
+  const leadingDesign =
+    text.leading && text.leading > 0
+      ? text.leading
+      : (oracle?.fontSize ?? text.fontSize ?? 18) * 1.2;
+  const leading = leadingDesign * scale;
+
+  // WRAP-FIRST FITTING (v0.6.9): wrap NATURALLY at 100 % Horizontal Scale
+  // and only then evaluate overflow. The authored box height gives the
+  // starting line capacity; when the wrapped layout would need Horizontal
+  // Scale below the readability floor, one line at a time is GRANTED (into
+  // the free vertical space under the box — how far the value may grow is
+  // the caller's maxHeight) and the text re-wraps wider. The original
+  // capacity is a floor, never a cap: sample PSDs routinely author short
+  // boxes for long address fields. Layout then repeats: measure → (overflow
+  // sideways below the floor? grant a line) → done. Only a layout that
+  // still overflows at max capacity is compressed, and multi-line fields
+  // never compress below MULTI_LINE_MIN_SCALE — a slightly protruding last
+  // line beats an illegible barcode strip. Single-line fields keep the
+  // historical path: no wrap, 0.05 floor (see computeAutoFitScale).
   const wrapWidth = fitMode.multiLine ? fitMode.boxWidth : Number.POSITIVE_INFINITY;
-  const maxWrapLines = fitMode.multiLine ? fitMode.capacity : Number.POSITIVE_INFINITY;
-  const lines = wrapLinesPreserving(context, content, wrapWidth, trackingPx, maxWrapLines);
+  const lines = (() => {
+    let capacity = fitMode.multiLine ? fitMode.capacity : 1;
+    let wrapped = wrapLinesPreserving(context, content, wrapWidth, trackingPx, capacity);
+    if (!fitMode.multiLine || !substituted) return wrapped;
+    for (let iteration = 0; iteration < 24; iteration += 1) {
+      const widest = wrapped.reduce((max, line) => {
+        const width = measureWrappedLineWidth(
+          context,
+          text,
+          line,
+          scale,
+          fontCssFamily,
+          fontWeight,
+          trackingPx
+        );
+        return width > max ? width : max;
+      }, 0);
+      const needsCompression =
+        Number.isFinite(maxAllowedWidth) &&
+        maxAllowedWidth > 0 &&
+        widest > maxAllowedWidth &&
+        maxAllowedWidth / widest < MULTI_LINE_MIN_SCALE;
+      const roomForAnotherLine = (capacity + 1) * leading <= maxHeightPx;
+      if (!needsCompression || !roomForAnotherLine) break;
+      capacity += 1;
+      wrapped = wrapLinesPreserving(context, content, wrapWidth, trackingPx, capacity);
+    }
+    return wrapped;
+  })();
 
   // Line starts (content indices) for per-run styling.
   const lineStarts: number[] = [];
@@ -734,13 +834,7 @@ function computeTextLayout(
     }
   }
 
-  // Leading: parsed (auto-leading already resolved to 1.2 × size at parse);
-  // legacy layers without it fall back to 1.2 × size.
-  const leadingDesign =
-    text.leading && text.leading > 0
-      ? text.leading
-      : (oracle?.fontSize ?? text.fontSize ?? 18) * 1.2;
-  const leading = leadingDesign * scale;
+  // Leading: parsed value (hoisted above the wrap-first pass).
 
   // First baseline: with an oracle, EXACTLY where Photoshop drew the
   // sample's first baseline (origin ink-top + parse-measured offset).
@@ -816,8 +910,15 @@ function computeTextLayout(
   }
 
   // HYBRID AUTO-FIT: measure the FINAL wrapped/unwrapped lines, then evaluate
-  // whether the replacement needs x-only compression.
-  const horizontalScale = computeAutoFitScale(lineWidths, substituted, maxAllowedWidth);
+  // whether the replacement needs x-only compression. Multi-line fields use
+  // the readability floor (wrap-first has already consumed the vertical
+  // budget); single-line fields keep the historical 0.05 floor.
+  const horizontalScale = computeAutoFitScale(
+    lineWidths,
+    substituted,
+    maxAllowedWidth,
+    fitMode.multiLine ? MULTI_LINE_MIN_SCALE : 0.05
+  );
 
   return {
     lines,
@@ -885,6 +986,38 @@ function autoFitMaxAllowedWidth(layer: PsdLayerInfo, scale: number, cardWidth: n
   }
   const allowed = cardWidth - margin - originX;
   return allowed > 0 ? allowed : 0;
+}
+
+/**
+ * WRAP-FIRST vertical budget (v0.6.9): how far a MULTI-LINE value may grow
+ * DOWNWARD, in design×scale px measured as total block height from the
+ * placeholder's box top (capacity × leading). The authored box grants its
+ * own height; the free space from the box's bottom to the card's bottom
+ * edge (minus a 4-design-px margin) is the extension room the fitter may
+ * spend one leading at a time. Sample PSDs routinely author short boxes for
+ * long address fields while leaving the card area below them empty — that
+ * emptiness is exactly what natural wrapping should use before any
+ * Horizontal Scale compression is considered.
+ *
+ * @returns Maximum block height in px, or Infinity when it cannot be
+ *   determined (never clamp on unknown geometry).
+ */
+function autoFitMaxBlockHeight(layer: PsdLayerInfo, scale: number, cardHeight: number): number {
+  const text = layer.text!;
+  const fitMode = textFitMode(text, layer.bounds, scale);
+  if (!fitMode.multiLine) return Number.POSITIVE_INFINITY; // single-line: unaffected
+  if (!(fitMode.lineHeight > 0) || !Number.isFinite(fitMode.lineHeight)) {
+    return Number.POSITIVE_INFINITY;
+  }
+  // Box TOP in design×scale px (explicit text box when parsed, else bounds).
+  const boundsTop = layer.bounds.top * scale;
+  const boxTop = text.shapeType === 'box' && (text.boxHeight ?? 0) > 0
+    ? (text.originY ?? boundsTop) * scale
+    : boundsTop;
+  const margin = 4 * scale;
+  const budget = cardHeight - margin - boxTop;
+  if (!(budget > 0) || !Number.isFinite(budget)) return Number.POSITIVE_INFINITY;
+  return Math.max(fitMode.boxHeight, budget);
 }
 
 /** One painted style segment of a line (maximal run of equal style) */
@@ -1337,9 +1470,11 @@ function drawTextLayer(
     );
     // v0.6.5: the auto-fit boundary (text box for box text; origin → card
     // edge for point text) is decided ONCE here and shared by layout and
-    // painting.
+    // painting. v0.6.9: the wrap-first vertical budget joins it — multi-line
+    // fields may grow downward into free card space before any compression.
     const maxAllowed = autoFitMaxAllowedWidth(layer, scale, cardWidth);
-    layout = computeTextLayout(measure, layer, content, scale, substituted, maxAllowed);
+    const maxBlockHeight = autoFitMaxBlockHeight(layer, scale, cardHeight);
+    layout = computeTextLayout(measure, layer, content, scale, substituted, maxAllowed, maxBlockHeight);
   } catch {
     // Canvas 2D unavailable — nothing sensible can be drawn.
     return;

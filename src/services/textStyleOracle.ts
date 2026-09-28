@@ -156,6 +156,47 @@ export function matchTextStyleFromInk(
 }
 
 /**
+ * WRAPPED-SAMPLE GUARD (the "giant italic Address" bug): decide whether a
+ * layer raster's ink height spans MORE than one text line. The sample
+ * string can be a single line in the engine data yet occupy multiple lines
+ * in the raster — Photoshop wraps box text visually inside its box. The
+ * oracle compares ink heights against single-line reference renderings, so
+ * a wrapped raster inflates the calibrated font size by the line count and
+ * its row-centroid drift reads as fake italic slant.
+ *
+ * Discriminators (both required, engine leading is the yardstick):
+ * 1. the raster ink is taller than 1.5 × leading (a second line adds a
+ *    full leading; one line of glyphs — even ascender+descender — stays
+ *    below that for auto-leading = 1.2 × size),
+ * 2. the raster ink exceeds the string's expected single-line ink height
+ *    (reference ink at 100 px scaled to the engine size) by ≥ 0.8 leading.
+ *
+ * @param rasterInkHeight - Ink height of the layer raster (px)
+ * @param referenceInkHeightAt100 - Ink height of the single-line reference
+ *        string rendered at 100 px (from any style-variant candidate)
+ * @param engineFontSizePx - Engine font size in design px
+ * @param engineLeadingPx - Engine line spacing in design px
+ * @returns True when the raster clearly spans multiple lines
+ */
+export function rasterSpansMultipleLines(
+  rasterInkHeight: number,
+  referenceInkHeightAt100: number | undefined,
+  engineFontSizePx: number | undefined,
+  engineLeadingPx: number | undefined
+): boolean {
+  if (
+    !(engineFontSizePx !== undefined && engineFontSizePx > 0) ||
+    !(engineLeadingPx !== undefined && engineLeadingPx > 0)
+  ) {
+    return false;
+  }
+  if (!(rasterInkHeight > engineLeadingPx * 1.5)) return false;
+  if (referenceInkHeightAt100 === undefined || referenceInkHeightAt100 <= 0) return false;
+  const expectedSingleLine = (referenceInkHeightAt100 * engineFontSizePx) / 100;
+  return rasterInkHeight - expectedSingleLine >= engineLeadingPx * 0.8;
+}
+
+/**
  * Full parse-time calibration for one text layer: match the four style
  * variants against the layer's raster and return the derived style.
  * Returns null when the raster or the environment is unusable (caller
@@ -165,13 +206,18 @@ export function matchTextStyleFromInk(
  * @param content - The layer's text content (reference string)
  * @param fontFamily - Resolved CSS font family
  * @param engineFontSizePx - Engine-data-derived size (sanity band)
+ * @param engineItalic - The engine data's own slant claim
+ * @param engineLeadingPx - Engine line spacing in design px — enables the
+ *        wrapped-sample guard (a single-line string Photoshop visually
+ *        wrapped inside its box must NOT be calibrated)
  */
 export function calibrateStyleFromRaster(
   rasterCanvas: HTMLCanvasElement,
   content: string,
   fontFamily: string,
   engineFontSizePx: number | undefined,
-  engineItalic = false
+  engineItalic = false,
+  engineLeadingPx?: number
 ): StyleMatch | null {
   // Multi-line text: the ink box spans several lines — no calibration.
   if (/\r|\n/.test(content)) return null;
@@ -184,6 +230,21 @@ export function calibrateStyleFromRaster(
       ? { ...stats, bold: STYLE_VARIANTS[index]!.bold, italic: STYLE_VARIANTS[index]!.italic }
       : null
   );
+  // Wrapped-sample guard BEFORE matching: any usable candidate tells us how
+  // tall this string renders on ONE line; the raster's ink height reveals
+  // whether Photoshop wrapped it. Calibrating a wrapped raster would derive
+  // a line-count-multiple font size and a fake italic slant.
+  const reference = candidates.find((candidate) => candidate !== null);
+  if (
+    rasterSpansMultipleLines(
+      raster.inkHeight,
+      reference?.inkHeight,
+      engineFontSizePx,
+      engineLeadingPx
+    )
+  ) {
+    return null;
+  }
   return matchTextStyleFromInk(raster, candidates, engineFontSizePx, 0.2, 6, engineItalic);
 }
 

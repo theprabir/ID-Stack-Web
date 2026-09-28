@@ -341,17 +341,38 @@ function buildTextStyleOracle(
   if (!layer.canvas) return undefined;
   const content = layer.text?.text ?? '';
   if (content.length === 0 || /\r|\n/.test(content)) return undefined;
-  const engineStyle = layer.text?.styleRuns?.[0]?.style ?? layer.text?.style;
-  const engineFontSize = engineStyle?.fontSize;
+  // ag-psd DEDUPE coalescing (the "Charmaine Patel" doctrine, applied to
+  // the oracle): styleRuns[0].style is a near-empty artefact ({autoKern:
+  // false}) — NOT undefined — so `??` alone never reaches text.style and
+  // engineFontSize/engineLeading were silently LOST. Without the size, the
+  // oracle's sanity band could not run and a miscalibrated size passed
+  // unchecked. Merge run-over-layer per property instead.
+  const firstRunStyle = layer.text?.styleRuns?.[0]?.style;
+  const engineStyle = { ...(layer.text?.style ?? {}), ...(firstRunStyle ?? {}) };
+  const engineFontSize = engineStyle.fontSize;
   // Sanity band against the engine value in DESIGN px (identity transform;
   // the wide 0.2–6 band absorbs any real transform scale).
   const engineFontSizePx =
     engineFontSize !== undefined ? engineValueToDesignPx(engineFontSize, dpi, 1) : undefined;
+  // Engine line spacing (auto-leading = 1.2 × size) — yardstick for the
+  // wrapped-sample guard (a single-line string Photoshop visually wrapped
+  // inside its box must not be calibrated from its multi-line raster).
+  const engineLeadingPx =
+    engineStyle.autoLeading === true || engineStyle.leading === undefined
+      ? (engineFontSizePx ?? 0) * 1.2
+      : engineValueToDesignPx(engineStyle.leading, dpi, 1);
   // The engine's own slant claim — PostScript name lexemes + fauxItalic.
   // Feeds the oracle's italic veto (the "regular shows italic" bug).
   const engineItalic =
-    engineStyle?.fauxItalic === true || /italic|oblique/i.test(fontFamily ?? '');
-  const match = calibrateStyleFromRaster(layer.canvas, content, fontFamily, engineFontSizePx, engineItalic);
+    engineStyle.fauxItalic === true || /italic|oblique/i.test(fontFamily ?? '');
+  const match = calibrateStyleFromRaster(
+    layer.canvas,
+    content,
+    fontFamily,
+    engineFontSizePx,
+    engineItalic,
+    engineLeadingPx > 0 ? engineLeadingPx : undefined
+  );
   if (!match) return undefined;
   const raster = measureCanvasInk(layer.canvas);
   if (!raster) return undefined;
@@ -474,7 +495,21 @@ function extractText(text: LayerTextData, dpi: number, layer: Layer): PsdLayerIn
     layer.left ?? 0,
     layer.top ?? 0,
     dpi
-  ); // Engine Horizontal/Vertical Scale (Photoshop character panel). UNIT
+  );
+  // v0.6.10 ORACLE SIZE GUARD: a wrapped sample (a single-line string
+  // Photoshop visually wrapped inside its text box) historically inflated
+  // the calibrated size by the line count — every substituted value then
+  // rendered as giant italic glyphs. The calibrated size must stay within a
+  // sane factor of the engine size (which is unit-normalised design px);
+  // outside the band the ENGINE value wins. 1.6× is far above legitimate
+  // browser-vs-Photoshop metric differences but far below the ≥2× a second
+  // text line produces.
+  if (oracle && engineFontSizePx !== undefined && engineFontSizePx > 0) {
+    const ratio = oracle.fontSize / engineFontSizePx;
+    if (ratio > 1.6 || ratio < 0.5) {
+      oracle.fontSize = engineFontSizePx;
+    }
+  } // Engine Horizontal/Vertical Scale (Photoshop character panel). UNIT
   // CONTRACT: ag-psd reports these as FRACTIONS — 1 = 100 % (verified: every
   // real PSD stores 1 on untouched text; 0.5 = 50 % squish). Treating them
   // as percent (÷100) squished every substituted glyph to 1 % width — the
