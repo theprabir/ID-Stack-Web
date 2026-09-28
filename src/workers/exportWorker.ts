@@ -35,8 +35,12 @@ interface WorkerResponse {
   error?: string;
 }
 
-const encoder: typeof import('../services/cmykJpegEncoder') =
-  await import('../services/cmykJpegEncoder');
+// STATIC import (v0.6.12): the encoder is used on every encode request and
+// ships in the worker bundle unconditionally. The old top-level dynamic
+// `await import(...)` forced code-splitting in the worker graph, which the
+// default iife worker output forbids ("UMD and IIFE output formats are not
+// supported for code-splitting builds") and broke the production build.
+import * as encoder from '../services/cmykJpegEncoder';
 
 /** Minimal DEFLATE (zlib stream) via CompressionStream when available */
 async function deflateRaw(raw: Uint8Array): Promise<Uint8Array> {

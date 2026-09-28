@@ -92,6 +92,14 @@ export default defineConfig({
   optimizeDeps: {
     include: ['ag-psd/dist/psdReader.js'],
   },
+  // WORKER BUNDLE FORMAT: the export worker is created with
+  // `type: 'module'`, so its production bundle must be ES — the default
+  // 'iife' cannot express code-splitting and fails the whole build
+  // ("UMD and IIFE output formats are not supported for code-splitting
+  // builds", seen when the worker graph contains a dynamic import).
+  worker: {
+    format: 'es',
+  },
   build: {
     target: 'es2022',
     sourcemap: false,
