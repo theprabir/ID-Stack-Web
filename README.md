@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="public/pwa-512x512.png" alt="ID Stack logo" width="128" />
+<img src="public/pwa-192x192.png" alt="ID Stack logo" width="128" />
 
 # ID Stack
 
