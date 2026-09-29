@@ -3,7 +3,6 @@
  * Covers Excel data, photo records and column mappings used by
  * the data import pipeline and batch generation (Phase 4).
  */
-import type { CardTemplate } from './template';
 
 /** Parsed Excel workbook content */
 export interface ExcelData {
@@ -89,18 +88,6 @@ export interface ValidationResult {
   issues: ValidationIssue[];
   /** Rows that pass validation (may exclude invalid rows when requested) */
   validRowIndexes: number[];
-}
-
-/** Request payload for batch generation (consumed in Phase 4) */
-export interface BatchRequest {
-  template: CardTemplate;
-  data: ExcelData;
-  mappings: Map<string, string>;
-  photoMatches: PhotoMatchResult;
-  /** Output format for individual cards */
-  format: 'png' | 'jpg' | 'pdf';
-  /** JPEG quality 0-1 when format === 'jpg' */
-  quality?: number;
 }
 
 /** Progress payload during batch generation */

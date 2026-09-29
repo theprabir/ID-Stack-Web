@@ -1,19 +1,7 @@
-import { useSettingsStore } from '@/stores/settingsStore';
 import { useTheme } from '@/hooks/useTheme';
 import { useUIStore, type ThemeId, type ThemeMode } from '@/stores/uiStore';
-import { Label, Select, Checkbox } from '@/components/ui';
-import {
-  Sun,
-  Moon,
-  Ruler,
-  Monitor,
-  Save,
-  ShieldCheck,
-  Server,
-  Info,
-  Check,
-  Palette,
-} from 'lucide-react';
+import { Label } from '@/components/ui';
+import { Sun, Moon, Monitor, Save, ShieldCheck, Server, Info, Check, Palette } from 'lucide-react';
 
 /** One labelled settings section card */
 function SettingsSection({
@@ -48,31 +36,6 @@ function SettingsSection({
       </div>
       <div className="px-5 py-4">{children}</div>
     </section>
-  );
-}
-
-/** One setting row: label + description on the left, control on the right */
-function SettingRow({
-  htmlFor,
-  label,
-  description,
-  children,
-}: {
-  htmlFor?: string;
-  label: string;
-  description: string;
-  children: React.ReactNode;
-}): JSX.Element {
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
-      <div className="min-w-0">
-        <Label htmlFor={htmlFor} className="text-sm">
-          {label}
-        </Label>
-        <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
-      </div>
-      <div className="shrink-0">{children}</div>
-    </div>
   );
 }
 
@@ -237,17 +200,13 @@ function ThemeTile({
 }
 
 /**
- * Application settings: appearance (palette + mode), measurement units,
- * editor behaviour and privacy. Changes apply instantly.
+ * Application settings: appearance (palette + mode) and privacy.
+ * Changes apply instantly.
  */
 export function SettingsPage(): JSX.Element {
   const { theme, setTheme } = useTheme();
   const themeId = useUIStore((state) => state.themeId);
   const setThemeId = useUIStore((state) => state.setThemeId);
-  const unit = useSettingsStore((state) => state.unit);
-  const autoSave = useSettingsStore((state) => state.autoSave);
-  const setUnit = useSettingsStore((state) => state.setUnit);
-  const setAutoSave = useSettingsStore((state) => state.setAutoSave);
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 p-6 sm:p-8">
@@ -309,43 +268,6 @@ export function SettingsPage(): JSX.Element {
               />
             </div>
           </div>
-        </div>
-      </SettingsSection>
-
-      {/* Editor */}
-      <SettingsSection
-        icon={Ruler}
-        title="Editor"
-        description="Measurement units and automatic saving for the template editor."
-      >
-        <div className="divide-y">
-          <SettingRow
-            htmlFor="unit-select"
-            label="Measurement units"
-            description="Used by rulers and property inputs in the editor."
-          >
-            <Select
-              id="unit-select"
-              value={unit}
-              onChange={(event) => setUnit(event.target.value as 'mm' | 'inch')}
-              className="w-44"
-            >
-              <option value="mm">Millimetres (mm)</option>
-              <option value="inch">Inches (in)</option>
-            </Select>
-          </SettingRow>
-          <SettingRow
-            htmlFor="autosave-toggle"
-            label="Auto-save templates"
-            description="Save changes automatically while editing."
-          >
-            <Checkbox
-              id="autosave-toggle"
-              checked={autoSave}
-              onChange={(event) => setAutoSave(event.target.checked)}
-              className="h-5 w-5"
-            />
-          </SettingRow>
         </div>
       </SettingsSection>
 

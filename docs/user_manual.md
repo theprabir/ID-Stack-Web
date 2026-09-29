@@ -19,11 +19,10 @@ installation, no account, no upload of your data to any server.
    - [Step 2 — Choose placeholders](#step-2--choose-placeholders)
    - [Step 3 — Generate](#step-3--generate)
    - [Working across steps](#working-across-steps)
-5. [The Editor — design from scratch](#5-the-editor--design-from-scratch)
-6. [Library, Settings & About](#6-library-settings--about)
-7. [Printing guide](#7-printing-guide)
-8. [Privacy & offline use](#8-privacy--offline-use)
-9. [Reference: supported files & limits](#9-reference-supported-files--limits)
+5. [Documentation, Settings & About](#5-documentation-settings--about)
+6. [Printing guide](#6-printing-guide)
+7. [Privacy & offline use](#7-privacy--offline-use)
+8. [Reference: supported files & limits](#8-reference-supported-files--limits)
 
 ---
 
@@ -69,7 +68,7 @@ has no cloud, and it never sends your files anywhere.
 ### Open the app
 
 Go to **https://id-stack.vercel.app**. On first visit the browser caches the
-app so it also works **offline** afterwards (see [Privacy & offline use](#8-privacy--offline-use)).
+app so it also works **offline** afterwards (see [Privacy & offline use](#7-privacy--offline-use)).
 
 ### Optional: install as a desktop app
 
@@ -110,8 +109,7 @@ The window has three fixed areas:
 ├──────────┬───────────────────────────────────────────────┤
 │ Sidebar  │  Page content                                 │
 │ PSD Studio│                                              │
-│ Editor   │                                               │
-│ Library  │                                               │
+│ Documentation │                                          │
 │ Settings │                                               │
 │ About    │                                               │
 │ « / »    │                                               │
@@ -122,19 +120,18 @@ The window has three fixed areas:
 
 - **Header** — logo (click to go home) and the **theme toggle** (sun/moon).
   Dark is the default; the choice is remembered.
-- **Sidebar** — the five pages. The bottom `«` / `»` button collapses it to
+- **Sidebar** — the four pages. The bottom `«` / `»` button collapses it to
   icons only; the state is remembered.
 - **Footer** — shows the running version, the "100% client-side" badge and a
   link to the creator.
 
-### The five pages
+### The four pages
 
 | Page | Purpose |
 |---|---|
 | **PSD Studio** | The guided 3-step production line: upload → placeholders → generate. This is where cards are made. |
-| **Editor** | A Photoshop-like canvas editor for building templates from scratch (text, shapes, placeholders). |
-| **Library** | Reserved for pre-designed template library (marked "no templates yet"). |
-| **Settings** | Theme, measurement units, auto-save preference, privacy info. |
+| **Documentation** | Guides and references: quick start, user manual, troubleshooting, shortcuts. |
+| **Settings** | Color palette, dark/light theme, privacy info. |
 | **About** | Version, author, project links. |
 
 ---
@@ -260,7 +257,7 @@ Options first:
 |---|---|---|
 | **Format** | `JPG (CMYK)` / `PDF (CMYK)` | All output is print-ready CMYK (ICC-corrected). PDF keeps vectors/precision for print shops. |
 | **Sides** | Front + Back / Front only / Back only | Which faces to render. |
-| **File naming** | text template | Tokens: `{Row}` = padded row number (001, 002…), `{ColumnName}` and `{{ColumnName}}` = the row's value from that column, e.g. `{Name}_{Row}` → `Alice_001`. Invalid filename characters are replaced with `_`. |
+| **File naming** | text pattern | Tokens: `{Row}` = padded row number (001, 002…), `{ColumnName}` and `{{ColumnName}}` = the row's value from that column, e.g. `{Name}_{Row}` → `Alice_001`. Invalid filename characters are replaced with `_`. |
 | **Output layout** | Cards / Sheets | *Cards* = one file per card (PDF doubles: front page 1, back page 2 in one file per person). *Sheets* = imposed print sheets — PDF format only. |
 
 - Press **Generate N card(s)** to start.
@@ -275,7 +272,7 @@ Options first:
   one bad row never stops the others.
 
 **When finished:** a **Download ZIP** button appears. Inside you'll find one
-file per card (or per person) named by your template — or, in Sheets mode, the
+file per card (or per person) named by your pattern — or, in Sheets mode, the
 imposed sheet PDFs (`sheet_Print.pdf` for the combined layout, or
 `sheet_Front_Back.pdf` / `sheet_Front.pdf` / `sheet_Back.pdf`).
 
@@ -328,74 +325,19 @@ preview of a real sheet:
 
 ---
 
-## 5. The Editor — design from scratch
+## 5. Documentation, Settings & About
 
-The **Editor** page is a Photoshop-style template editor for people who don't
-start from a PSD. It works on **templates** saved in your browser (a blank
-"Untitled template" is created on first visit).
-
-### Layout
-
-- **Left rail (icons)** — tools: Select, Text, Image, Shape, Barcode,
-  Placeholder, Pan; then Undo, Redo, Bring to front, Send to back, Delete.
-- **Left panel** — *Add element* buttons (Text, Image, Shape, Barcode,
-  Placeholder), *Quick shapes* (Rectangle, Circle), the side's **Background**
-  colour picker, and **New template** / **Save**.
-- **Centre** — the canvas (a CR80 card, 85.6 × 54 mm) with zoom controls
-  bottom-left and the card size readout.
-- **Right panels** — *Properties* of the selected element and the *Layers*
-  list.
-- **Bottom** — **Front Side / Back Side** tabs (independent element sets).
-
-### Adding and editing elements
-
-1. Click an element type in the left panel — it's added at the card centre and
-   selected.
-2. **Move/resize/rotate** directly on canvas, or type exact values in
-   **Properties** (X, Y, Width, Height in your chosen unit; rotation in
-   degrees).
-3. **Text elements** — set Content, Font, Size, Weight (Normal/Bold),
-   Alignment and Underline in Properties.
-4. **Placeholder elements** — set the **Excel column** they bind to; they
-   render as `{{ColumnName}}` and get substituted during batch generation
-   (the editor's placeholder flow is the legacy/scratch path — the PSD Studio
-   placeholders are the recommended production route).
-5. **Appearance** — Fill colour, Stroke (width + colour), Opacity slider for
-   every element; full **Shadow** editor (enable, colour, blur, offset X/Y)
-   plus *Reset effects*.
-
-### Layers panel
-
-- Lists layers **top-most first**; click to select.
-- **Eye** hides/shows, **padlock** locks/unlocks, **trash** deletes.
-- **Drag rows** to reorder (undoable), or use the toolbar's bring-to-front /
-  send-to-back and the `Ctrl+]` / `Ctrl+[` shortcuts.
-
-### History, saving, sides
-
-- **Undo/redo**: 50-step snapshot history — `Ctrl+Z` / `Ctrl+Y`
-  (`Ctrl+Shift+Z`). The toolbar arrows disable when there's nothing to undo.
-- **Save**: the **Save** button (or `Ctrl+S`) persists to your browser's
-  IndexedDB; it's enabled only when there are unsaved changes. Enable
-  **Auto-save templates** in Settings to save automatically as you work.
-- **New template** starts a fresh one (current unsaved changes are replaced —
-  save first).
-- Full shortcut list: [keyboard_shortcuts.md](keyboard_shortcuts.md).
-
----
-
-## 6. Library, Settings & About
-
-**Library** — placeholder page; pre-designed templates are planned. Use PSD
-Studio or the Editor meanwhile.
+**Documentation** — the in-app guides hub: a quick-start summary of the PSD
+Studio workflow plus links to this manual, the troubleshooting guide, the
+keyboard-shortcut reference, the developer manual and the changelog (the
+markdown sources live in the repository's `docs/` folder).
 
 **Settings**
 
 | Section | Setting | Notes |
 |---|---|---|
+| Appearance | **Color palette** | Classic / Warm Lime / Carbon Teal, each with its own dark and light mode. |
 | Appearance | **Dark / Light** tiles | Same as the header toggle; applies instantly and is remembered. |
-| Editor | **Measurement units** | Millimetres (mm) or inches (in) — used by the editor's property inputs and size readout. |
-| Editor | **Auto-save templates** | Save template changes automatically while editing (default on). |
 | Privacy & data | Informational | "No server / Local storage / No account" — nothing to configure. |
 
 **About** — current version chip, "100% Client-Side" badge, the author's
@@ -403,7 +345,7 @@ profile (GitHub / Instagram / copy email), featured projects and licence info.
 
 ---
 
-## 7. Printing guide
+## 6. Printing guide
 
 ### Getting the best print results
 
@@ -429,14 +371,14 @@ profile (GitHub / Instagram / copy email), featured projects and licence info.
 
 ---
 
-## 8. Privacy & offline use
+## 7. Privacy & offline use
 
 - **100% client-side** — parsing, rendering, colour conversion and ZIP
   packaging all happen in your browser. There is no server, no analytics, no
   account.
 - **Where your data lives:** Excel rows, photos and rendered cards exist only
-  in the browser tab's memory (and the ZIP you download). Uploaded fonts,
-  editor templates and imposition settings are stored in the browser's
+  in the browser tab's memory (and the ZIP you download). Uploaded fonts and
+  imposition settings are stored in the browser's
   **IndexedDB/localStorage** so they survive reloads — clearing site data
   removes them.
 - **Offline:** after the first visit, the app is served from the service
@@ -445,7 +387,7 @@ profile (GitHub / Instagram / copy email), featured projects and licence info.
 
 ---
 
-## 9. Reference: supported files & limits
+## 8. Reference: supported files & limits
 
 | Item | Supported | Notes |
 |---|---|---|
@@ -455,16 +397,13 @@ profile (GitHub / Instagram / copy email), featured projects and licence info.
 | Fonts | `.ttf .otf .woff .woff2` | Persisted locally; matched to PSD font names |
 | Export | CMYK JPG, CMYK PDF (per card, per person double-sided, or imposed sheets) | Packaged as `id-cards.zip` |
 | Naming tokens | `{Row}`, `{Column}`, `{{Column}}` | e.g. `{Name}_{ID}` |
-| History | 50 undo steps | Editor only |
-| Card preset | CR80 85.6 × 54 mm | Editor's default template size |
 | Sheets | A4/A3/Letter/Legal/Tabloid/custom; mm/cm/in/pt; bleed, gap, margin, crop marks, numbering | Imposition panel |
-| Barcodes | Placeholder boxes only | Real QR/1D rendering not wired in yet |
+| Barcodes | Not yet available | Real QR/1D rendering is planned |
 
 ### Known limitations
 
 - UI is English-only (multi-language support was removed in v0.3.1).
-- Barcode elements render as labelled boxes; QR/1D rendering is not yet
-  active.
+- Barcode/QR rendering is not yet available (planned).
 - One photo is matched per row; per-placeholder photo mapping is not
   available.
 - PSD bytes are not persisted between sessions — re-upload per session.

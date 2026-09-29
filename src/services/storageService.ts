@@ -6,14 +6,6 @@ export interface KeyValueRecord {
   value: unknown;
 }
 
-/** Template record stored in IndexedDB (serialised CardTemplate) */
-export interface TemplateRecord {
-  id: string;
-  name: string;
-  modifiedDate: string;
-  data: unknown;
-}
-
 /** PSD project record (placeholders + design metadata) */
 export interface PsdProjectRecord {
   id: string;
@@ -41,7 +33,6 @@ export interface FontRecord {
  */
 export class IdStackDatabase extends Dexie {
   public keyValue!: Table<KeyValueRecord, string>;
-  public templates!: Table<TemplateRecord, string>;
   public fonts!: Table<FontRecord, string>;
   public psdProjects!: Table<PsdProjectRecord, string>;
 
@@ -49,7 +40,6 @@ export class IdStackDatabase extends Dexie {
     super('id-stack');
     this.version(1).stores({
       keyValue: 'key',
-      templates: 'id, name, modifiedDate',
       fonts: 'name, fileName',
     });
     this.version(2).stores({
@@ -106,40 +96,6 @@ export async function deleteFromIndexedDB(key: string): Promise<void> {
 export async function listIndexedDBKeys(): Promise<string[]> {
   const records = await getDatabase().keyValue.toArray();
   return records.map((record) => record.key);
-}
-
-/**
- * Save (or update) a template.
- * @param record - Template record to persist
- */
-export async function saveTemplateRecord(record: TemplateRecord): Promise<void> {
-  await getDatabase().templates.put(record);
-}
-
-/**
- * Load a template by id.
- * @param id - Template id
- * @returns The template record or null
- */
-export async function loadTemplateRecord(id: string): Promise<TemplateRecord | null> {
-  const record = await getDatabase().templates.get(id);
-  return record ?? null;
-}
-
-/**
- * Delete a template by id.
- * @param id - Template id
- */
-export async function deleteTemplateRecord(id: string): Promise<void> {
-  await getDatabase().templates.delete(id);
-}
-
-/**
- * List all stored templates (summaries only — data is not returned).
- * @returns Template records, newest modification first
- */
-export async function listTemplateRecords(): Promise<TemplateRecord[]> {
-  return getDatabase().templates.orderBy('modifiedDate').reverse().toArray();
 }
 
 /**

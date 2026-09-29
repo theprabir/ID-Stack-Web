@@ -4,11 +4,9 @@ import {
   parseExcelFile,
   getColumnNames,
   getPreview,
-  collectTemplatePlaceholders,
   validateData,
   isSupportedSpreadsheet,
 } from '@/services/excelService';
-import type { CardTemplate, CanvasElement } from '@/types/template';
 import type { ExcelData, ColumnMapping } from '@/types/data';
 
 /** Build a File from an array-of-arrays workbook */
@@ -24,45 +22,6 @@ function makeExcelFile(rows: unknown[][], name = 'test.xlsx'): File {
 
 function makeCsvFile(content: string): File {
   return new File([content], 'data.csv', { type: 'text/csv' });
-}
-
-function makeElement(id: string, overrides: Partial<CanvasElement> = {}): CanvasElement {
-  return {
-    id,
-    name: id,
-    type: 'text',
-    x: 0,
-    y: 0,
-    width: 20,
-    height: 6,
-    rotation: 0,
-    opacity: 1,
-    locked: false,
-    visible: true,
-    zIndex: 0,
-    ...overrides,
-  };
-}
-
-function makeTemplate(overrides: Partial<CardTemplate> = {}): CardTemplate {
-  const emptySide = {
-    sideType: 'front' as const,
-    canvasWidth: 85.6,
-    canvasHeight: 54,
-    backgroundColor: '#FFFFFF',
-    elements: [] as CanvasElement[],
-  };
-  return {
-    id: 't1',
-    name: 'Test',
-    version: '1.0',
-    createdDate: '2026-01-01',
-    modifiedDate: '2026-01-01',
-    frontSide: emptySide,
-    backSide: { ...emptySide, sideType: 'back' as const },
-    metadata: {},
-    ...overrides,
-  };
 }
 
 describe('excelService — parsing', () => {
@@ -145,47 +104,6 @@ describe('excelService — helpers', () => {
     expect(getPreview(data, 2)).toHaveLength(2);
     expect(getPreview(data, 0)).toHaveLength(0);
     expect(getPreview(data, 99)).toHaveLength(3);
-  });
-});
-
-describe('excelService — collectTemplatePlaceholders', () => {
-  it('collects placeholder element columns and {{Token}} text tokens', () => {
-    const template = makeTemplate({
-      frontSide: {
-        sideType: 'front',
-        canvasWidth: 85.6,
-        canvasHeight: 54,
-        backgroundColor: '#FFF',
-        elements: [
-          makeElement('p1', { type: 'placeholder', columnName: 'Name' }),
-          makeElement('t1', { type: 'text', text: 'ID: {{ID}} — Dept: {{Department}}' }),
-        ],
-      },
-      backSide: {
-        sideType: 'back',
-        canvasWidth: 85.6,
-        canvasHeight: 54,
-        backgroundColor: '#FFF',
-        elements: [makeElement('p2', { type: 'placeholder', columnName: 'Photo' })],
-      },
-    });
-    expect(collectTemplatePlaceholders(template)).toEqual(['Name', 'ID', 'Department', 'Photo']);
-  });
-
-  it('deduplicates repeated placeholders', () => {
-    const template = makeTemplate({
-      frontSide: {
-        sideType: 'front',
-        canvasWidth: 85.6,
-        canvasHeight: 54,
-        backgroundColor: '#FFF',
-        elements: [
-          makeElement('t1', { type: 'text', text: '{{Name}}' }),
-          makeElement('t2', { type: 'text', text: '{{ Name }} again' }),
-        ],
-      },
-    });
-    expect(collectTemplatePlaceholders(template)).toEqual(['Name']);
   });
 });
 

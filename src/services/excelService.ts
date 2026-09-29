@@ -127,46 +127,6 @@ export function getPreview(data: ExcelData, rowCount: number): DataRow[] {
   return data.rows.slice(0, Math.max(0, rowCount));
 }
 
-/**
- * Collect all placeholder names referenced by a template.
- * Placeholders come from elements of type 'placeholder' (columnName) and
- * from `{{Column}}` patterns inside text elements.
- *
- * @param template - The card template to scan
- * @returns Unique placeholder names in first-seen order
- */
-export function collectTemplatePlaceholders(template: {
-  frontSide: { elements: { type: string; columnName?: string; text?: string }[] };
-  backSide: { elements: { type: string; columnName?: string; text?: string }[] };
-}): string[] {
-  const placeholders: string[] = [];
-  const seen = new Set<string>();
-
-  const scan = (elements: { type: string; columnName?: string; text?: string }[]): void => {
-    for (const element of elements) {
-      if (element.type === 'placeholder' && element.columnName) {
-        if (!seen.has(element.columnName)) {
-          seen.add(element.columnName);
-          placeholders.push(element.columnName);
-        }
-      } else if (element.type === 'text' && element.text) {
-        const matches = element.text.matchAll(/\{\{([^}]+)\}\}/g);
-        for (const match of matches) {
-          const name = match[1]?.trim();
-          if (name && !seen.has(name)) {
-            seen.add(name);
-            placeholders.push(name);
-          }
-        }
-      }
-    }
-  };
-
-  scan(template.frontSide.elements);
-  scan(template.backSide.elements);
-  return placeholders;
-}
-
 /** Options for data validation */
 export interface ValidateOptions {
   /** Treat these placeholders as mandatory (e.g. mapped photo column) */

@@ -4,10 +4,6 @@ import {
   loadFromIndexedDB,
   deleteFromIndexedDB,
   listIndexedDBKeys,
-  saveTemplateRecord,
-  loadTemplateRecord,
-  listTemplateRecords,
-  deleteTemplateRecord,
   saveFontRecord,
   listFontRecords,
   deleteFontRecord,
@@ -40,20 +36,6 @@ describe('storageService', () => {
     await expect(listIndexedDBKeys()).resolves.toContain('a');
     await deleteFromIndexedDB('a');
     await expect(loadFromIndexedDB('a')).resolves.toBeNull();
-  });
-
-  it('saves, loads and deletes templates', async () => {
-    const record = {
-      id: 'tpl-1',
-      name: 'Employee Card',
-      modifiedDate: '2026-09-25T00:00:00.000Z',
-      data: { frontSide: {}, backSide: {} },
-    };
-    await saveTemplateRecord(record);
-    await expect(loadTemplateRecord('tpl-1')).resolves.toMatchObject({ name: 'Employee Card' });
-    await expect(listTemplateRecords()).resolves.toHaveLength(1);
-    await deleteTemplateRecord('tpl-1');
-    await expect(loadTemplateRecord('tpl-1')).resolves.toBeNull();
   });
 
   it('saves, lists and deletes fonts', async () => {

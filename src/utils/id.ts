@@ -1,5 +1,5 @@
 /**
- * Generate a unique element/template id.
+ * Generate a unique id (photo records, etc.).
  * Uses Web Crypto when available, falls back to Math.random.
  * @returns A reasonably unique id string
  */

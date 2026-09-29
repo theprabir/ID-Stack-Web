@@ -29,8 +29,7 @@ fix, and check the linked section if you need the why.
 7. [Batch generation problems](#7-batch-generation-problems)
 8. [Printing problems](#8-printing-problems)
 9. [Storage & persistence problems](#9-storage--persistence-problems)
-10. [Editor problems](#10-editor-problems)
-11. [Reporting a bug](#11-reporting-a-bug)
+10. [Reporting a bug](#10-reporting-a-bug)
 
 ---
 
@@ -326,7 +325,7 @@ fix, and check the linked section if you need the why.
 
 ## 9. Storage & persistence problems
 
-**My settings/templates/imposition layout disappeared**
+**My settings/imposition layout disappeared**
 
 - They live in the browser's IndexedDB/localStorage for that site, profile
   and browser. Clearing browsing data ("Cookies and site data"), private
@@ -346,41 +345,7 @@ fix, and check the linked section if you need the why.
 
 ---
 
-## 10. Editor problems
-
-**Shortcut didn't work**
-
-- Shortcuts are ignored while typing in an input/textarea/select (so you can
-  type "V" in a name field). Click on empty canvas first.
-- The full, accurate list lives in
-  [keyboard_shortcuts.md](keyboard_shortcuts.md) — items marked *planned*
-  are not implemented yet.
-
-**Element can't be selected or moved**
-
-- It's probably **locked** (padlock in the Layers panel) — unlock it.
-- Hidden elements (eye icon) still occupy the list; toggle visibility.
-
-**Undo didn't revert my last change**
-
-- History captures committed changes (move/resize/property edits). Snapshot
-  depth is 50 — older steps are dropped.
-- Undo does not currently span switching Front/Back tabs mid-edit.
-
-**Saved template isn't there after reload**
-
-- Templates persist only after **Save** (`Ctrl+S`) — or enable
-  **Auto-save templates** in Settings. The Save button is enabled only when
-  there are unsaved changes.
-
-**Barcode tool shows a labelled box instead of a code**
-
-- Known limitation: barcode/QR rendering is not wired in yet; the tool
-  reserves layout space.
-
----
-
-## 11. Reporting a bug
+## 10. Reporting a bug
 
 When filing at
 [github.com/theprabir/ID-Stack-Web/issues](https://github.com/theprabir/ID-Stack-Web/issues),

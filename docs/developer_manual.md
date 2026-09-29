@@ -38,7 +38,6 @@ testing and release process.
 | Framework | **React 18 + TypeScript (strict)** | Functional components + hooks only |
 | Build | **Vite 5** | ES2022 target, `@` → `src/` alias |
 | UI | **Tailwind CSS 3 + shadcn/ui-style primitives** | `darkMode: 'class'`, design tokens in `tailwind.config.ts` |
-| Canvas editor | **Fabric.js 6** | Legacy template editor only |
 | PSD parsing | **ag-psd 31** | Patched for CMYK (see [PSD pipeline](#9-psd-pipeline-internals)) |
 | Excel parsing | **SheetJS (`xlsx`)** | First sheet, header row detection |
 | PDF | **pdf-lib** | CMYK pages + GTS_PDFX OutputIntent |
@@ -114,8 +113,8 @@ Node **≥ 18** required (`engines` in package.json).
 ├── sample-data/                # demo PSDs, employees.csv, photos/, fonts
 ├── scripts/                    # e.g. generate-icons.mjs (PWA icons)
 ├── tests/                      # Vitest suites (mirror src structure)
-│   ├── services/  hooks/  stores/  utils/  components/
-│   └── data-flow.test.ts       # Excel → template → cards integration
+│   ├── services/  stores/  utils/  components/
+│   └── *.test.ts               # service, store, util and component suites
 ├── dist/                       # build output (gitignored)
 └── src/
     ├── main.tsx                # bootstrap: SW + fonts → React
@@ -126,22 +125,18 @@ Node **≥ 18** required (`engines` in package.json).
     ├── components/
     │   ├── common/   # Header, Sidebar, Footer, ErrorBoundary, LoadingSpinner
     │   ├── ui/       # shadcn-style primitives (Button, Input, Select, …)
-    │   ├── editor/   # legacy Fabric editor UI (8 components)
-    │   ├── data/     # ExcelImport, PhotoImport, ColumnMapping, DataPreview,
-    │   │             # CardLivePreview
+│   ├── data/     # ExcelImport, PhotoImport, ColumnMapping, DataPreview
     │   └── psd/      # PsdUploader, LayerPicker, PsdCardPreview, BatchRunner,
     │                 # ImpositionPanel, FontManager, StudioStepper
-    ├── pages/        # PsdStudioPage (/), EditorPage, LibraryPage,
+    ├── pages/        # PsdStudioPage (/), DocumentationPage,
     │                 # SettingsPage, AboutPage
-    ├── stores/       # Zustand: psdStore, dataStore, templateStore,
-    │                 # canvasStore, settingsStore, uiStore
+    ├── stores/       # Zustand: psdStore, dataStore, uiStore
     ├── services/     # business logic (see §6) — no React here
     ├── workers/      # exportWorker.ts (CMYK JPEG encoding)
-    ├── hooks/        # useCanvas (Fabric bridge), useHistory (50-step undo),
-    │                 # useTheme
-    ├── constants/    # canvas.ts, units.ts, app.ts
-    ├── types/        # template.ts, psd.ts, data.ts (all data models)
-    ├── utils/        # units.ts (mm↔px), id.ts
+    ├── hooks/        # useTheme
+    ├── constants/    # app.ts
+    ├── types/        # psd.ts, data.ts (all data models)
+    ├── utils/        # id.ts
     └── test/         # Vitest setup + shims
 ```
 
@@ -154,10 +149,9 @@ Node **≥ 18** required (`engines` in package.json).
 ### Routing (`src/App.tsx`)
 
 ```
-/         PsdStudioPage     ← production workflow (home)
-/editor   EditorPage        ← legacy Fabric template editor
-/library  LibraryPage       ← template library (placeholder)
-/settings SettingsPage
+/         PsdStudioPage      ← production workflow (home)
+/documentation DocumentationPage ← guides & references
+/settings    SettingsPage
 /about    AboutPage
 *         → Navigate to /
 ```
@@ -177,22 +171,15 @@ client-side badge, credit).
 3. Render `<ThemeProvider → ErrorBoundary → App>` inside
    `ReactDOM.createRoot` (StrictMode).
 
-### Two parallel pipelines
+### Single pipeline (PSD-first)
 
-ID Stack carries **two** design pipelines on purpose:
+ID Stack has **one** design pipeline: Photoshop files are the source of truth;
+layers are parsed, the user marks placeholders, and generation re-composites
+the design with row data. Rendering is plain Canvas 2D
+(`psdCompositeService`), faithful to the PSD.
 
-1. **PSD-first pipeline (production, the home page).** Photoshop files are
-   the source of truth; layers are parsed, the user marks placeholders, and
-   generation re-composites the design with row data. Rendering is plain
-   Canvas 2D (`psdCompositeService`), faithful to the PSD.
-2. **Legacy editor pipeline (`/editor`).** Templates built in the Fabric
-   editor (elements in mm), persisted via `templateService`, previewed with
-   `previewService`. Kept for from-scratch design; the editor's
-   `{{Placeholder}}` tokens flow through the same `dataStore` mapping/
-   validation machinery.
-
-`dataStore` resolves placeholder keys from the PSD project first and falls
-back to editor-template tokens (`collectTemplatePlaceholders`).
+`dataStore` resolves placeholder keys from the PSD project's placeholder
+layers.
 
 ---
 
@@ -202,14 +189,10 @@ back to editor-template tokens (`collectTemplatePlaceholders`).
 |---|---|---|
 | `usePsdStore` | `project {front, back, placeholders}`, parse state, batch state/control, imposition settings | `loadPsd(file, side)` parses and drops that side's old placeholders; imposition settings persist to IndexedDB (`psd-imposition-settings` key) with a raw-pixel sanity guard (>500 discarded); `saveProject` intentionally stores placeholders only — **PSD bytes are not persisted** |
 | `useDataStore` | Excel data, photos, `mappings: Record<key, column>`, `photoMatchConfig/Result`, `validation` | `loadExcel` → parse → auto-map → validate; single `revalidate()` pipeline recomputes photo matching + validation; `autoMapColumns` matches keys to columns case-insensitively; photos are session-only (blob URLs) |
-| `useTemplateStore` | current editor template, current side, dirty flag | CRUD actions delegate to `templateService` |
-| `useCanvasStore` | zoom, pan, selection ids, current tool | Zoom clamped 0.1–4.0 |
-| `useSettingsStore` | unit (`mm`/`inch`), autoSave | localStorage `id-stack-settings` (zustand persist) |
 | `useUIStore` | theme, sidebarCollapsed, loading overlay | localStorage `id-stack-ui-preferences`; theme mirrored to IndexedDB by `ThemeProvider` |
 
-Stores are plain `create()` (except the two persisted ones) and never import
-each other except `dataStore → templateStore/psdStore` for placeholder
-resolution.
+Stores are plain `create()` (except the persisted ones) and never import
+each other except `dataStore → psdStore` for placeholder resolution.
 
 ---
 
@@ -224,17 +207,15 @@ modules.
 | `psdColorModePatch.ts` | Enables CMYK PSDs (ag-psd gates colour modes behind a whitelist); routes through `readPsdPatched` so exactly one reader instance exists |
 | `psdCompositeService.ts` | `compositeDesign()` — the pixel-faithful renderer: draws layer rasters in z-order, substitutes text/photos on placeholder layers with full styling + effects + masks |
 | `textStyleOracle.ts` + `inkScan.ts` | Parse-time calibration: measure the PSD's own raster of each text layer (size/weight/slant/colour/ink box/baseline) so substituted text lands exactly where the sample was |
-| `excelService.ts` | `parseExcelFile` (SheetJS, header detection, column dedupe, blank-row skip), `getPreview`, `collectTemplatePlaceholders`, `validateData` (duplicate IDs, missing required, missing photos, unmapped placeholders) |
+| `excelService.ts` | `parseExcelFile` (SheetJS, header detection, column dedupe, blank-row skip), `getPreview`, `validateData` (duplicate IDs, missing required, missing photos, unmapped placeholders) |
 | `photoService.ts` | Photo records with blob URLs, lenient matching (exact base name → fuzzy: spaces/underscores/case-insensitive), `processPhoto` centre-crop |
 | `batchService.ts` | `runBatch()` orchestrator: per-row render → CMYK encode → ZIP; pause/resume/cancel via control ref; per-row error isolation; ETA; sheet-mode accumulation |
-| `batchNaming.ts` | `buildName(template, row)` — `{Row}` (3-digit padded), `{Column}`, `{{Column}}`, filename sanitisation |
+| `batchNaming.ts` | `buildName(pattern, row)` — `{Row}` (3-digit padded), `{Column}`, `{{Column}}`, filename sanitisation |
 | `cmykExportService.ts` | LittleCMS WASM init, sRGB→CMYK transform, 4-component JPEG encode (APP14 transform=0), direct CMYK PDF (ICCBased colour space + GTS_PDFX OutputIntent), double-sided PDF |
 | `impositionService.ts` | `buildSheetsPdf()` — draws arranged card canvases, bleed, crop marks, sheet/slot numbering onto pdf-lib pages |
 | `impositionTypes.ts` | Pure geometry: `computeSheetLayout`, `arrangeSheets` (interleaved vs separate + duplex mirroring via `pairBacksForDuplex`), `deriveCardSizeFromDesign` (px ÷ DPI × 72 → unit), paper presets, `DEFAULT_IMPOSITION_SETTINGS` |
 | `workerPool.ts` + `workers/exportWorker.ts` | JPEG compression off the main thread (main-thread fallback when workers unavailable) |
 | `fontService.ts` | FontFace registry, IndexedDB persistence, bundled Arimo aliases (Arial/ArialMT/…), PostScript name matching (`matchPsdFont`, `resolveFontFamily`, `exactFontCss`), `preloadFontsForText` (awaited `document.fonts.load` before any measurement), name-table PostScript aliasing |
-| `templateService.ts` | Editor-template CRUD on Dexie; element upsert/remove helpers |
-| `previewService.ts` | Legacy editor live-preview renderer with `{{Token}}` substitution |
 | `storageService.ts` | Dexie schema + typed table access (see §8) |
 | `version.ts` | `__APP_VERSION__` passthrough |
 
@@ -273,12 +254,6 @@ Excel file ──parseExcelFile──▶ ExcelData        │      photos ──
 - Generation yields to the browser between rows (`requestAnimationFrame`) and
   honours `paused`/`cancelled` control refs polled from the store.
 
-### Legacy editor
-
-`ToolsPanel → canvasApi.addElementFromData → Fabric objects ⇄ serializeObject
-⇄ CanvasElement (mm) → templateStore → templateService → IndexedDB`;
-`useHistory` wraps every commit in a 50-step snapshot stack.
-
 ---
 
 ## 8. Storage: IndexedDB schema
@@ -288,12 +263,10 @@ Database **`id-stack`** (Dexie, `src/services/storageService.ts`):
 | Table (version) | Key | Contents |
 |---|---|---|
 | `keyValue` (v1) | `key` | Theme mirror, imposition settings (`psd-imposition-settings`), misc |
-| `templates` (v1) | `id`, indexed `name`, `modifiedDate` | Editor templates (serialised `CardTemplate`) |
 | `fonts` (v1) | `name`, indexed `fileName` | Uploaded font bytes (`ArrayBuffer`) for offline re-registration |
 | `psdProjects` (v2) | `id` | Project record: placeholders + metadata. `frontPsd/backPsd` columns exist but are stored **null** by design (browser storage limits) |
 
-localStorage keys: `id-stack-ui-preferences` (theme), `id-stack-settings`
-(units, auto-save).
+localStorage keys: `id-stack-ui-preferences` (theme).
 
 **Deliberate session-only state:** parsed PSDs (kept as blob URLs), Excel
 rows, photos, mappings, batch results. Reloading the page means re-uploading
@@ -461,14 +434,12 @@ npm run test:coverage # v8 coverage report
 - **Environment**: jsdom + `src/test/setup.ts` (Blob.arrayBuffer, object-URL
   shims, 2D-context mock, Image load simulation, fake-indexeddb).
 - **Suites worth studying**:
-  - `tests/data-flow.test.ts` — Excel → mapping → photos → validation →
-    preview integration.
   - `tests/services/imposition*.test.ts`, `dpiCardSize.test.ts` — sheet
     geometry, duplex pairing, PSD-derived card sizes.
   - `tests/services/textMirror.test.ts`, `textCalibration.test.ts`,
     `textClipping.test.ts` — the PSD text contract regressions.
   - `tests/services/cmyk*.test.ts` — APP14 patching, PDF orientation.
-  - `tests/hooks/useHistory.test.tsx`, stores, `units`.
+  - `tests/stores/`, `tests/utils/` — store and pure-function suites.
 - **Conventions**: pure services are tested without React; component tests
   use Testing Library; regression tests are added alongside every fixed bug
   (see CHANGELOG "Tests" sections) — keep that pattern.
@@ -487,12 +458,10 @@ npm run test:coverage # v8 coverage report
   change).
 - **Imposition previews** render at reduced scale (0.35) and cap sample rows
   (first 8) before painting the sheet preview.
-- **History** is a structuredClone-based snapshot stack capped at 50 —
-  templates are small; PSD data never enters history.
 - Targets (AGENTS.md): startup < 2 s, Excel import 1000 rows < 3 s, 100 cards
   < 30 s, no UI freezing, memory < 150 MB idle / < 800 MB batch.
-- When adding features: no `setTimeout`-free busy loops, dispose Fabric
-  canvases on unmount, never keep `File` references longer than needed.
+- When adding features: no `setTimeout`-free busy loops, dispose worker-pool
+  resources on teardown, never keep `File` references longer than needed.
 
 ---
 

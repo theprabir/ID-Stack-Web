@@ -7,7 +7,7 @@
 **Professional ID card design & batch printing — entirely in your browser.**
 
 [![Live](https://img.shields.io/badge/live-id--stack.vercel.app-0078D4?logo=vercel&logoColor=white)](https://id-stack.vercel.app)
-[![Version](https://img.shields.io/badge/version-0.6.13-6366f1)](https://github.com/theprabir/ID-Stack-Web/blob/main/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.6.15-6366f1)](https://github.com/theprabir/ID-Stack-Web/blob/main/CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-22c55e)](LICENSE)
 
 [**🌐 Launch the app**](https://id-stack.vercel.app) · [**📖 Changelog**](CHANGELOG.md) · [**🐛 Report an issue**](https://github.com/theprabir/ID-Stack-Web/issues)
@@ -19,12 +19,6 @@ No installation. No backend. No account. Your data never leaves your device.
 ---
 
 ## ✨ Features
-
-### 🎨 Design & Templates
-- 🖌️ **Photoshop-like template editor** — Fabric.js canvas with layers panel, precision properties, undo/redo (50-step) and Photoshop-style keyboard shortcuts
-- 🃏 **Dual-sided cards** — front + back with independent element sets
-- 📐 **Effects** — drop shadows, strokes/borders, fills, opacity per element
-- 🗂️ **Pre-designed template library** — start from a ready layout
 
 ### 🧩 PSD Workflow (the core)
 - 📥 **PSD import** — layered Photoshop files via ag-psd; layer tree flattened per side with rasters + composite preview
@@ -38,7 +32,7 @@ No installation. No backend. No account. Your data never leaves your device.
 - 📈 **Excel import** — .xlsx/.xls/.csv (SheetJS) with column mapping, auto-map and validation report (errors vs warnings per row)
 - 📷 **Photo pipeline** — multi-photo import with filename/column auto-matching and manual assignment
 - ⚡ **Batch generation** — hundreds of cards with progress bar, ETA, pause/resume/cancel and error list; CMYK JPEG encoding + DEFLATE run in a dedicated Web Worker
-- 📦 **ZIP export** — one file per card with `{Name}_{ID}` / `{{Column}}` naming templates
+- 📦 **ZIP export** — one file per card with `{Name}_{ID}` / `{{Column}}` naming patterns
 - 🎨 **CMYK export** — ICC-corrected CMYK JPEG (Adobe APP14 transform=0) and direct CMYK PDF (embedded ICC profile + GTS_PDFX OutputIntent)
 - 🖨️ **Imposition engine** — N cards per sheet on A4/A3/Letter/Legal/Tabloid or custom paper (mm/cm/in/pt) with bleed, gap, margin, crop marks, positioned numbering and live sheet preview
 - 👤 **One PDF per person** — double-sided cards export as a single 2-page PDF
@@ -55,7 +49,7 @@ No installation. No backend. No account. Your data never leaves your device.
 
 ## 🚀 Quick Start
 1. Open **[id-stack.vercel.app](https://id-stack.vercel.app)**
-2. Upload your front/back PSD designs (or pick a template)
+2. Upload your front/back PSD designs
 3. Mark the text/photo layers as placeholders
 4. Import your Excel data and photos, map the columns
 5. Preview a live card, then generate the batch
@@ -66,27 +60,30 @@ No installation. No backend. No account. Your data never leaves your device.
 | Phase | Description | Status |
 |---|---|---|
 | 1 | Project Foundation — Vite + React + TS strict, Tailwind/shadcn, routing, Zustand, layout, IndexedDB, PWA, ESLint/Prettier, Vitest | ✅ Complete |
-| 2 | Template Editor — Fabric.js canvas, tools/layers/properties panels, undo/redo, template save/load, effects | ✅ Complete |
-| 3 | Data Import — Excel (SheetJS), photos, column mapping, validation, live preview | ✅ Complete |
+| 3 | Data Import — Excel (SheetJS), photos, column mapping, validation | ✅ Complete |
 | 4 | Batch Processing — Web Worker rendering, progress, pause/resume/cancel, ZIP export | ✅ Complete |
-| 5 | PSD Import & Template Library — ag-psd parsing, pixel-faithful re-composition, guided 3-step PSD Studio | ✅ Complete |
+| 5 | PSD Import — ag-psd parsing, pixel-faithful re-composition, guided 3-step PSD Studio | ✅ Complete |
 | 6 | Imposition Engine — sheet layout, numbering, print-ready PDF (pdf-lib), sheet preview | ✅ Complete |
 | 7 | Polish & Production — font manager, error boundaries, performance, final testing, deployment | ✅ Complete |
 
+> The legacy scratch editor and its template library were removed in v0.6.15 —
+> ID Stack is now fully focused on pre-designed PSD files.
+
 **Upcoming / incomplete:**
 - 🌍 **All 11 UI language translations** — i18n was removed in v0.3.1; UI strings are currently English-only (the architecture's 11-language goal is not yet met)
-- 🔢 **Barcode/QR elements** — barcode tools render labelled boxes; real QR/1D rendering (qrcode + bwip-js) is not wired into templates yet
+- 🔢 **Barcode/QR rendering** — real QR/1D barcode drawing (qrcode + bwip-js) is not available in the output yet
 - 🖼️ **Per-placeholder photo columns** — one photo is matched per row; per-placeholder photo mapping is not available
 
 ## 📖 Documentation
 
-All guides live in the [`docs/`](docs/) folder:
+All guides live in the [`docs/`](docs/) folder — the in-app **Documentation**
+page links to the same files:
 
 | Document | For | Contents |
 |---|---|---|
-| [User manual](docs/user_manual.md) | Users | Every page and workflow: PSD Studio's 3 steps, the editor, output options, printing, privacy |
+| [User manual](docs/user_manual.md) | Users | Every page and workflow: PSD Studio's 3 steps, output options, printing, privacy |
 | [Developer manual](docs/developer_manual.md) | Contributors | Stack, architecture, services, data flow, PSD/CMYK/imposition internals, testing, releases |
-| [Keyboard shortcuts](docs/keyboard_shortcuts.md) | Everyone | Photoshop-style shortcut reference (implemented + planned) |
+| [Keyboard shortcuts](docs/keyboard_shortcuts.md) | Everyone | PSD Studio shortcut reference (implemented + planned) |
 | [Troubleshooting guide](docs/troubleshooting.md) | Users | Symptom-first fixes: parsing, fonts, data, generation, printing, storage |
 
 ## 🛠️ For Developers
@@ -129,7 +126,7 @@ Stop the server with `Ctrl+C`.
 Push to `main` — auto-deploys to Vercel → **https://id-stack.vercel.app**
 
 ## 🙏 Acknowledgments
-Built with React + TypeScript, Fabric.js, SheetJS, ag-psd, pdf-lib, Tailwind CSS + shadcn/ui, Vite — and Web Workers for the heavy lifting.
+Built with React + TypeScript, SheetJS, ag-psd, pdf-lib, Tailwind CSS + shadcn/ui, Vite — and Web Workers for the heavy lifting.
 
 ## 📄 License
 MIT License — see [LICENSE](LICENSE).

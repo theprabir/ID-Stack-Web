@@ -2,6 +2,56 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6.15] - 2026-09-29
+
+### Removed
+
+- **The legacy Editor and Template Library are gone.** ID Stack is now fully
+  focused on parsing and working with users' pre-designed PSD files; PSD
+  Studio is untouched. Deleted: the Fabric.js template editor
+  (`/editor` route, `EditorPage`, `components/editor/*`, `canvasStore`,
+  `templateStore`, `useCanvas`, `useHistory`, `types/template.ts`,
+  `constants/canvas.ts`, `templateService`, `previewService`, the
+  editor-only keyboard-shortcut tables), the `/library` placeholder page,
+  and the now-dead Settings "Editor" section (measurement units +
+  auto-save — the imposition panel has had its own unit setting all
+  along). `dataStore` placeholder resolution is PSD-only, the Dexie
+  `templates` table and its service functions were dropped, and the
+  orphaned `fabric`/`qrcode`/`bwip-js` dependencies were removed from the
+  bundle.
+
+### Added
+
+- **Documentation page.** A new sidebar item (`BookOpen` icon) and
+  `/documentation` route with a clean sectioned page: a three-card
+  quick-start strip (Upload → Mark placeholders → Generate), a guides
+  list linking the user manual, troubleshooting guide, keyboard
+  shortcuts, developer manual and changelog (with audience chips), and
+  the privacy note. Styled to match the Settings/About section-card
+  design language in both themes.
+
+### Documentation
+
+- README and `docs/*` purged of every editor/template mention: the Design
+  & Templates feature block and editor phase row, the manual's Editor and
+  Library chapters (sections renumbered; pages table updated to the four
+  remaining entries incl. Documentation), the developer manual's legacy
+  pipeline, stores/services rows and editor data-flow (the pipeline is
+  now documented as single/PSD-first), troubleshooting's Editor section,
+  and the keyboard-shortcuts reference (rewritten to the real, minimal
+  PSD Studio surface — no editor tables).
+- Version display surfaces now all track 0.6.15 (package.json →
+  `__APP_VERSION__` → footer chip + About; README badge updated).
+
+### Tests
+
+- Removed the suites of deleted features (`useHistory`, templateService,
+  previewService, settingsStore, units, data-flow) and their fixtures;
+  updated the storageService and excelService suites accordingly.
+- Full suite: 198 passed, 1 pre-existing failure unrelated to this change
+  (the partially-white-mask geometry regression present on the previous
+  release). Typecheck and lint clean on every touched file.
+
 ## [0.6.14] - 2026-09-28
 
 ### Fixed
@@ -42,6 +92,44 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (the partially-white-mask geometry regression present on the previous
   release; the v0.6.13 baseline also failed the matcher veto case this
   release rewrites).
+
+## [0.6.13] - 2026-09-28
+
+### Fixed
+
+- **About page version stale.** The About page hardcoded `0.6.3` and never
+  updated; it now imports `APP_VERSION` from `constants/app.ts` (sourced
+  from package.json at build time — the same constant the footer chip
+  uses), so every display surface tracks the release version.
+- **Vercel builds fixed (worker bundle format).** The export worker's
+  top-level `await import(...)` of the CMYK JPEG encoder forced
+  code-splitting in the worker graph, which the default `iife` worker
+  output cannot express ("UMD and IIFE output formats are not supported
+  for code-splitting builds") and broke the whole production build.
+  The encoder import is now static and `vite.config.ts` sets
+  `worker: { format: 'es' }` to match the `type: 'module'` worker.
+
+### Added
+
+- **Two new color palettes with persistent light/dark modes.** Three
+  palettes are now available — Classic, **Warm Lime** and **Carbon Teal** —
+  each with its own dark and light mode, selected from Settings
+  (mini UI-preview tiles; stale persisted palette ids fall back to
+  Classic). The chosen palette rides the `data-theme` attribute on
+  `<html>`, is mirrored to IndexedDB beside the light/dark choice, and
+  survives reloads via the persisted UI store.
+- **Three documentation manuals.** `docs/user_manual.md` (every page and
+  workflow), `docs/developer_manual.md` (stack, architecture, services,
+  data flow, storage, testing, releases) and `docs/troubleshooting.md`
+  (symptom-first fixes), all linked from README's documentation table.
+
+### Documentation
+
+- README rebuilt: product logo, badge row, categorised feature list,
+  live URL (https://id-stack.vercel.app), and a phase-status table with
+  explicit upcoming/incomplete items (11-language translations,
+  barcode/QR rendering, per-placeholder photo columns).
+- CHANGELOG backfilled the missing v0.6.7 entry (see its backfill note).
 
 ## [0.6.12] - 2026-09-28
 
@@ -190,23 +278,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `tests/services/textCalibration.test.ts` — one italic-veto oracle test.
 - `tests/services/textClipping.test.ts` — one partially-white-mask test.
   All three fail identically on unmodified HEAD (verified via stash).
-
-## [0.6.13] - 2026-09-28
-
-### Fixed
-
-- **About page version stale.** The About page hardcoded `0.6.3` and never
-  updated; it now imports `APP_VERSION` from `constants/app.ts` (sourced
-  from package.json at build time — the same constant the footer chip
-  uses), so every display surface tracks the release version.
-
-### Documentation
-
-- README rebuilt: product logo, badge row, categorised feature list,
-  live URL (https://id-stack.vercel.app), and a phase-status table with
-  explicit upcoming/incomplete items (11-language translations,
-  barcode/QR rendering, per-placeholder photo columns).
-- CHANGELOG backfilled the missing v0.6.7 entry (see its backfill note).
 
 ## [0.6.7] - 2026-09-27
 

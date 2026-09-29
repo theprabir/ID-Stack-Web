@@ -7,19 +7,13 @@ import type {
   PhotoMatchConfig,
   PhotoMatchResult,
 } from '@/types/data';
-import {
-  parseExcelFile,
-  validateData,
-  collectTemplatePlaceholders,
-  type ValidateOptions,
-} from '@/services/excelService';
+import { parseExcelFile, validateData, type ValidateOptions } from '@/services/excelService';
 import {
   loadPhotos as loadPhotosService,
   matchPhotos,
   disposePhotos,
   isSupportedImage,
 } from '@/services/photoService';
-import { useTemplateStore } from './templateStore';
 import { usePsdStore } from './psdStore';
 
 /** Number of rows shown in the preview table */
@@ -66,8 +60,8 @@ interface DataState {
 
 /**
  * Owns imported Excel data, photos, column mappings and validation state.
- * Derives placeholders from the current template so the mapping UI stays
- * in sync with the editor.
+ * Derives placeholders from the PSD design's placeholder layers so the
+ * mapping UI stays in sync with PSD Studio.
  */
 export const useDataStore = create<DataState>()((set, get) => ({
   excelData: null,
@@ -178,16 +172,9 @@ export const useDataStore = create<DataState>()((set, get) => ({
   autoMapColumns: () => {
     const { excelData } = get();
     if (!excelData) return;
-    // Placeholder keys come from the active PSD project when present,
-    // otherwise from the legacy editor template.
+    // Placeholder keys come from the PSD design's placeholder layers.
     const psdProject = usePsdStore.getState().project;
-    const keys =
-      psdProject.placeholders.length > 0
-        ? psdProject.placeholders.map((placeholder) => placeholder.key)
-        : (() => {
-            const template = useTemplateStore.getState().currentTemplate;
-            return template ? collectTemplatePlaceholders(template) : [];
-          })();
+    const keys = psdProject.placeholders.map((placeholder) => placeholder.key);
 
     const columnsLower = new Map(excelData.columns.map((column) => [column.toLowerCase(), column]));
     const mappings: Record<string, string> = {};
@@ -206,13 +193,7 @@ export const useDataStore = create<DataState>()((set, get) => ({
     }
 
     const psdProject = usePsdStore.getState().project;
-    const placeholders =
-      psdProject.placeholders.length > 0
-        ? psdProject.placeholders.map((placeholder) => placeholder.key)
-        : (() => {
-            const template = useTemplateStore.getState().currentTemplate;
-            return template ? collectTemplatePlaceholders(template) : [];
-          })();
+    const placeholders = psdProject.placeholders.map((placeholder) => placeholder.key);
 
     const mappingList: ColumnMapping[] = placeholders.map((placeholder) => ({
       placeholder,
