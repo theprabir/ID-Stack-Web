@@ -22,13 +22,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- **Documentation page.** A new sidebar item (`BookOpen` icon) and
-  `/documentation` route with a clean sectioned page: a three-card
-  quick-start strip (Upload → Mark placeholders → Generate), a guides
-  list linking the user manual, troubleshooting guide, keyboard
-  shortcuts, developer manual and changelog (with audience chips), and
-  the privacy note. Styled to match the Settings/About section-card
-  design language in both themes.
+- **Documentation page with in-app guide reader.** A new sidebar item
+  (`BookOpen` icon) and `/documentation` route with a clean sectioned
+  page: a three-card quick-start strip (Upload → Mark placeholders →
+  Generate), a guides list with audience chips, and the privacy note —
+  styled to match the Settings/About section-card design language in
+  both themes. Every guide — user manual, troubleshooting, keyboard
+  shortcuts, developer manual and the changelog — is bundled into the
+  app at build time (Vite `?raw` imports of the `docs/` markdown) and
+  rendered locally by react-markdown + remark-gfm with a themed element
+  map (tables, code chips, quotes, heading anchors); opening a guide
+  sets a shareable `?guide=<id>` query parameter, the browser back
+  button returns to the list, cross-references between manuals
+  navigate in-app, and each reader header keeps a "Source" link to the
+  markdown on GitHub. Fully offline — no docs fetch, no GitHub round-trip.
 
 ### Documentation
 

@@ -44,8 +44,9 @@ testing and release process.
 | Colour | **@kittl/little-cms** (WASM) | sRGB → CMYK ICC transform; bundled Ghostscript `default_cmyk.icc` |
 | JPEG | **jpeg-js** + custom APP14 patcher | True 4-component Adobe CMYK JPEG |
 | ZIP | **jszip** | Batch packaging |
-| Barcode/QR | `qrcode`, `bwip-js` | **Declared but not wired in** (barcode elements render labelled boxes) |
+| Barcode/QR | — | Not yet available in the output (planned) |
 | State | **Zustand 5** | `persist` middleware where needed |
+| Docs renderer | **react-markdown + remark-gfm** | Bundles `docs/*.md` via Vite `?raw` and renders them in the Documentation page |
 | Storage | **Dexie 4** (IndexedDB) | Database `id-stack` |
 | PWA | **vite-plugin-pwa** (Workbox) | Auto-update SW, precache, Google Fonts runtime cache |
 | Tests | **Vitest + Testing Library + jsdom + fake-indexeddb** | `tests/**/*.test.{ts,tsx}` |

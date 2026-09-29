@@ -1,3 +1,5 @@
+import { useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   BookOpen,
   Code2,
@@ -6,62 +8,20 @@ import {
   FileText,
   Rocket,
   ShieldCheck,
-  ExternalLink,
+  ChevronRight,
 } from 'lucide-react';
+import { GuideReader } from '@/components/documentation/GuideReader';
+import { GUIDES, findGuide } from '@/components/documentation/guides';
+import type { DocGuide } from '@/components/documentation/guides';
 
-/** One guide row rendered as a documentation card */
-interface DocGuide {
-  /** Absolute URL to the guide (GitHub, so it works from the deployed app) */
-  href: string;
-  Icon: typeof BookOpen;
-  name: string;
-  audience: string;
-  description: string;
-}
-
-const REPO_DOCS = 'https://github.com/theprabir/ID-Stack-Web/blob/main';
-
-/** The guides shipped in docs/, plus the changelog and repo */
-const GUIDES: DocGuide[] = [
-  {
-    href: `${REPO_DOCS}/docs/user_manual.md`,
-    Icon: BookOpen,
-    name: 'User manual',
-    audience: 'Users',
-    description:
-      'Every page and workflow: the PSD Studio wizard, uploads, placeholder picking, column mapping, batch generation and printing.',
-  },
-  {
-    href: `${REPO_DOCS}/docs/troubleshooting.md`,
-    Icon: LifeBuoy,
-    name: 'Troubleshooting',
-    audience: 'Users',
-    description:
-      'Symptom-first fixes for parsing, fonts, photos, generation and printing problems.',
-  },
-  {
-    href: `${REPO_DOCS}/docs/keyboard_shortcuts.md`,
-    Icon: Keyboard,
-    name: 'Keyboard shortcuts',
-    audience: 'Everyone',
-    description: 'The (currently minimal) PSD Studio keyboard reference — what works today.',
-  },
-  {
-    href: `${REPO_DOCS}/docs/developer_manual.md`,
-    Icon: Code2,
-    name: 'Developer manual',
-    audience: 'Contributors',
-    description:
-      'Stack, architecture, services, data flow, PSD/CMYK/imposition internals, testing and release process.',
-  },
-  {
-    href: `${REPO_DOCS}/CHANGELOG.md`,
-    Icon: FileText,
-    name: 'Changelog',
-    audience: 'Everyone',
-    description: 'What changed in every release, newest first.',
-  },
-];
+/** Maps a guide's registry icon key to its lucide component */
+const GUIDE_ICONS: Record<DocGuide['Icon'], typeof BookOpen> = {
+  book: BookOpen,
+  lifebuoy: LifeBuoy,
+  keyboard: Keyboard,
+  code: Code2,
+  file: FileText,
+};
 
 /** The workflow in three short steps, for the quick-start strip */
 const QUICK_START = [
@@ -83,11 +43,37 @@ const QUICK_START = [
 ];
 
 /**
- * In-app documentation hub: quick-start summary plus links to the full
- * guides (user manual, troubleshooting, shortcuts, developer manual and
- * the changelog) hosted in the repository.
+ * In-app documentation hub: quick-start summary, then the full guides
+ * (user manual, troubleshooting, shortcuts, developer manual, changelog)
+ * rendered right here from the markdown bundled at build time. Opening a
+ * guide sets `?guide=<id>` so links are shareable; the browser back button
+ * returns to the list.
  */
 export function DocumentationPage(): JSX.Element {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeGuide = findGuide(searchParams.get('guide'));
+
+  const openGuide = useCallback(
+    (id: string) => {
+      setSearchParams({ guide: id }, { replace: false });
+    },
+    [setSearchParams]
+  );
+
+  const closeGuide = useCallback(() => {
+    setSearchParams({}, { replace: false });
+  }, [setSearchParams]);
+
+  if (activeGuide) {
+    return (
+      <div className="mx-auto h-full max-w-5xl p-4 sm:p-6">
+        <div className="h-[calc(100vh-13rem)] overflow-hidden rounded-xl border bg-surface-panel transition-colors duration-300">
+          <GuideReader guide={activeGuide} onBack={closeGuide} />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-3xl space-y-8 p-6 sm:p-8">
       {/* Page header */}
@@ -141,38 +127,42 @@ export function DocumentationPage(): JSX.Element {
               Guides &amp; references
             </h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Markdown sources live in the repository's docs/ folder.
+              Read them right here — the markdown sources live in the repository's docs/ folder.
             </p>
           </div>
         </div>
         <ul className="divide-y px-2 py-2">
-          {GUIDES.map(({ href, Icon, name, audience, description }) => (
-            <li key={href}>
-              <a
-                href={href}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-start gap-3 rounded-lg px-3 py-3 transition-colors hover:bg-accent/10"
-              >
-                <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10">
-                  <Icon className="h-4 w-4 text-primary" aria-hidden="true" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-2">
-                    <span className="text-sm font-medium">{name}</span>
-                    <span className="rounded-full border px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-                      {audience}
+          {GUIDES.map((guide) => {
+            const Icon = GUIDE_ICONS[guide.Icon];
+            return (
+              <li key={guide.id}>
+                <button
+                  type="button"
+                  onClick={() => openGuide(guide.id)}
+                  className="flex w-full items-start gap-3 rounded-lg px-3 py-3 text-left transition-colors hover:bg-accent/10"
+                >
+                  <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10">
+                    <Icon className="h-4 w-4 text-primary" aria-hidden="true" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-2">
+                      <span className="text-sm font-medium">{guide.name}</span>
+                      <span className="rounded-full border px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                        {guide.audience}
+                      </span>
+                    </span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      {guide.description}
                     </span>
                   </span>
-                  <span className="mt-0.5 block text-xs text-muted-foreground">{description}</span>
-                </span>
-                <ExternalLink
-                  className="mt-1 h-4 w-4 shrink-0 text-muted-foreground"
-                  aria-hidden="true"
-                />
-              </a>
-            </li>
-          ))}
+                  <ChevronRight
+                    className="mt-1 h-4 w-4 shrink-0 text-muted-foreground"
+                    aria-hidden="true"
+                  />
+                </button>
+              </li>
+            );
+          })}
         </ul>
       </section>
 
@@ -190,8 +180,8 @@ export function DocumentationPage(): JSX.Element {
               Privacy first
             </h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              ID Stack is 100% client-side — designs, data and photos never leave your device. The
-              documentation links above open the project's public repository.
+              ID Stack is 100% client-side — designs, data and photos never leave your device. All
+              documentation is bundled with the app and rendered locally.
             </p>
           </div>
         </div>

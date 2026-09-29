@@ -328,9 +328,11 @@ preview of a real sheet:
 ## 5. Documentation, Settings & About
 
 **Documentation** — the in-app guides hub: a quick-start summary of the PSD
-Studio workflow plus links to this manual, the troubleshooting guide, the
-keyboard-shortcut reference, the developer manual and the changelog (the
-markdown sources live in the repository's `docs/` folder).
+Studio workflow plus the full guides rendered right inside the app — this
+manual, the troubleshooting guide, the keyboard-shortcut reference, the
+developer manual and the changelog. Guides open with a shareable
+`?guide=` link and a back button; their markdown sources live in the
+repository's `docs/` folder.
 
 **Settings**
 

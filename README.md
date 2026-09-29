@@ -76,8 +76,8 @@ No installation. No backend. No account. Your data never leaves your device.
 
 ## 📖 Documentation
 
-All guides live in the [`docs/`](docs/) folder — the in-app **Documentation**
-page links to the same files:
+All guides live in the [`docs/`](docs/) folder and are bundled into the app —
+the in-app **Documentation** page renders them right there:
 
 | Document | For | Contents |
 |---|---|---|
