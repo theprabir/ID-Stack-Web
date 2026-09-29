@@ -17,7 +17,8 @@ installation, no account, no upload of your data to any server.
 4. [PSD Studio — the main workflow](#4-psd-studio--the-main-workflow)
    - [Step 1 — Upload designs & data](#step-1--upload-designs--data)
    - [Step 2 — Choose placeholders](#step-2--choose-placeholders)
-   - [Step 3 — Generate](#step-3--generate)
+   - [Step 3 — Map columns & preview](#step-3--map-columns--preview)
+   - [Step 4 — Generate & print](#step-4--generate--print)
    - [Working across steps](#working-across-steps)
 5. [Documentation, Settings & About](#5-documentation-settings--about)
 6. [Printing guide](#6-printing-guide)
@@ -129,7 +130,7 @@ The window has three fixed areas:
 
 | Page | Purpose |
 |---|---|
-| **PSD Studio** | The guided 3-step production line: upload → placeholders → generate. This is where cards are made. |
+| **PSD Studio** | The guided 4-step production line: upload → placeholders → map & preview → generate. This is where cards are made. |
 | **Documentation** | Guides and references: quick start, user manual, troubleshooting, shortcuts. |
 | **Settings** | Color palette, dark/light theme, privacy info. |
 | **About** | Version, author, project links. |
@@ -138,9 +139,10 @@ The window has three fixed areas:
 
 ## 4. PSD Studio — the main workflow
 
-Open **PSD Studio** (the home page). Three numbered steps run across the top;
+Open **PSD Studio** (the home page). Four numbered steps run across the top;
 click a step chip to jump (steps unlock as prerequisites are met — see
-[Working across steps](#working-across-steps)).
+[Working across steps](#working-across-steps)). Steps 3 and 4 fit the
+viewport — their panels scroll internally instead of the page.
 
 ### Step 1 — Upload designs & data
 
@@ -212,9 +214,10 @@ side in Photoshop order, with a type icon (text / image / group):
 
 **Continue** to Step 3 once at least one placeholder is chosen.
 
-### Step 3 — Generate
+### Step 3 — Map columns & preview
 
-The left column holds mapping and data; the right holds preview and output.
+The left column holds the mapping and the data table; the right column holds
+the live card preview.
 
 **Column Mapping (left)**
 
@@ -249,9 +252,18 @@ A table with one row per placeholder:
   photos placed, fonts and effects applied — exactly what will be exported.
 - "Showing row N" confirms which row you're looking at.
 
-**Generate Cards (right, below)**
+**Continue** to Step 4 once every placeholder is mapped (unmapped ones are
+flagged in the validation report).
 
-Options first:
+---
+
+### Step 4 — Generate & print
+
+All controls sit in the left column; the live imposed-sheet preview sits in
+the right column — no scrolling between settings and preview. The panel
+scrolls internally if needed.
+
+**Output options (left)**:
 
 | Option | Choices | Meaning |
 |---|---|---|
@@ -276,10 +288,11 @@ file per card (or per person) named by your pattern — or, in Sheets mode, the
 imposed sheet PDFs (`sheet_Print.pdf` for the combined layout, or
 `sheet_Front_Back.pdf` / `sheet_Front.pdf` / `sheet_Back.pdf`).
 
-**Sheet layout (Sheets mode only)**
+**Sheet layout (left, Sheets mode only)**
 
-When Output layout = Sheets, a full **Imposition panel** appears with a live
-preview of a real sheet:
+When Output layout = Sheets, the full **Imposition panel** appears under the
+output options and the **live preview** renders right beside it (right
+column) with real sample cards:
 
 - **Paper** — A4 / A3 / Letter / Legal / Tabloid (11×17) / **Custom**
   (width + height fields appear), plus a **Landscape** checkbox.
@@ -315,7 +328,8 @@ preview of a real sheet:
 
 - All step panels **stay loaded** — you can move back and forth without losing
   anything; the step chips show what's reachable.
-- Gates: Step 2 needs a design or data; Step 3 needs at least one placeholder.
+- Gates: Step 2 needs a design or data; Step 3 needs at least one placeholder;
+  Step 4 needs data and placeholders.
 - Changing the Excel file re-runs auto-map and validation automatically.
 - Imposition settings **persist** between sessions (stored locally), so a
   re-run uses the same sheet layout.

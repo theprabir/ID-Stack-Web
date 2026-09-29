@@ -7,7 +7,7 @@
 **Professional ID card design & batch printing — entirely in your browser.**
 
 [![Live](https://img.shields.io/badge/live-id--stack.vercel.app-0078D4?logo=vercel&logoColor=white)](https://id-stack.vercel.app)
-[![Version](https://img.shields.io/badge/version-0.6.15-6366f1)](https://github.com/theprabir/ID-Stack-Web/blob/main/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.6.16-6366f1)](https://github.com/theprabir/ID-Stack-Web/blob/main/CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-22c55e)](LICENSE)
 
 [**🌐 Launch the app**](https://id-stack.vercel.app) · [**📖 Changelog**](CHANGELOG.md) · [**🐛 Report an issue**](https://github.com/theprabir/ID-Stack-Web/issues)
@@ -62,7 +62,7 @@ No installation. No backend. No account. Your data never leaves your device.
 | 1 | Project Foundation — Vite + React + TS strict, Tailwind/shadcn, routing, Zustand, layout, IndexedDB, PWA, ESLint/Prettier, Vitest | ✅ Complete |
 | 3 | Data Import — Excel (SheetJS), photos, column mapping, validation | ✅ Complete |
 | 4 | Batch Processing — Web Worker rendering, progress, pause/resume/cancel, ZIP export | ✅ Complete |
-| 5 | PSD Import — ag-psd parsing, pixel-faithful re-composition, guided 3-step PSD Studio | ✅ Complete |
+| 5 | PSD Import — ag-psd parsing, pixel-faithful re-composition, guided 4-step PSD Studio | ✅ Complete |
 | 6 | Imposition Engine — sheet layout, numbering, print-ready PDF (pdf-lib), sheet preview | ✅ Complete |
 | 7 | Polish & Production — font manager, error boundaries, performance, final testing, deployment | ✅ Complete |
 

@@ -17,7 +17,7 @@ import { ColumnMapping } from '@/components/data/ColumnMapping';
 import { cn } from '@/lib/utils';
 
 /** Total wizard steps in the PSD Studio */
-const TOTAL_STEPS = 3;
+const TOTAL_STEPS = 4;
 
 const STEPS: StudioStep[] = [
   {
@@ -32,19 +32,28 @@ const STEPS: StudioStep[] = [
   },
   {
     number: 3,
-    label: 'Generate',
-    description: 'Map columns, preview, then generate cards or printable sheets',
+    label: 'Map Columns & Preview',
+    description: 'Map placeholder columns, inspect the data and preview cards',
+  },
+  {
+    number: 4,
+    label: 'Generate & Print',
+    description: 'Output options, imposition layout and batch generation',
   },
 ];
 
 /**
- * PSD Studio — a 3-step wizard:
+ * PSD Studio — a 4-step wizard:
  * 1. Upload designs & data (PSD front/back + Excel + photos)
  * 2. Choose placeholders (text/photo layers per side)
- * 3. Generate (mapping, live preview, batch output as ZIP or imposed sheets)
+ * 3. Map columns & preview (mapping, full data table, live card preview)
+ * 4. Generate & print (output options, imposition, batch output as ZIP or
+ *    imposed sheets)
  *
  * All step panels stay mounted (hidden when inactive) so nothing is lost
  * while navigating back and forth; the underlying stores keep their state.
+ * Steps 3–4 render inside a fixed-height frame whose panels scroll
+ * internally, so the whole step fits on screen without page scrolling.
  */
 export function PsdStudioPage(): JSX.Element {
   const project = usePsdStore((state) => state.project);
@@ -80,7 +89,7 @@ export function PsdStudioPage(): JSX.Element {
   const readyToGenerate = designsReady && placeholdersReady && dataReady;
 
   // Highest step reachable right now (used for chip clicking and Next).
-  const maxReachableStep = !designsReady && !dataReady ? 1 : placeholdersReady ? 3 : 2;
+  const maxReachableStep = !designsReady && !dataReady ? 1 : placeholdersReady ? 4 : 2;
 
   const step1Blocked =
     !designsReady && !dataReady
@@ -89,15 +98,34 @@ export function PsdStudioPage(): JSX.Element {
   const step2Blocked = !placeholdersReady
     ? 'Choose at least one placeholder layer to continue.'
     : null;
+  const step3Blocked = !readyToGenerate
+    ? 'Import data and choose placeholders to unlock generation.'
+    : null;
+
+  // Steps 3–4 fit the viewport: the page frame stops scrolling and the
+  // step panels scroll internally instead.
+  const isFramedStep = step === 3 || step === 4;
 
   return (
-    <div className="themed-scrollbar h-full overflow-auto p-6 sm:p-8">
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">PSD Studio</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Design, map and generate ID cards from layered Photoshop files.
-          </p>
+    <div
+      className={cn(
+        'themed-scrollbar flex h-full flex-col p-6 sm:p-8',
+        isFramedStep ? 'max-xl:overflow-y-auto xl:overflow-hidden' : 'overflow-auto'
+      )}
+    >
+      <div
+        className={cn(
+          'flex shrink-0 flex-wrap items-center justify-between gap-3',
+          isFramedStep ? 'mb-2' : 'mb-5'
+        )}
+      >
+        <div className={cn(isFramedStep && 'min-w-0')}>
+          <h1 className={cn('font-semibold', isFramedStep ? 'text-lg' : 'text-2xl')}>PSD Studio</h1>
+          {!isFramedStep && (
+            <p className="mt-1 text-sm text-muted-foreground">
+              Design, map and generate ID cards from layered Photoshop files.
+            </p>
+          )}
         </div>
         <StudioStepper
           steps={STEPS}
@@ -108,7 +136,11 @@ export function PsdStudioPage(): JSX.Element {
       </div>
 
       {/* Step 1 — Upload designs, Excel and photos (stays mounted, hidden) */}
-      <section hidden={step !== 1} aria-hidden={step !== 1}>
+      <section
+        hidden={step !== 1}
+        aria-hidden={step !== 1}
+        className={step !== 1 ? 'hidden' : 'shrink-0'}
+      >
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           <div className="flex flex-col gap-4">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -135,7 +167,11 @@ export function PsdStudioPage(): JSX.Element {
       </section>
 
       {/* Step 2 — Choose placeholders (stays mounted, hidden) */}
-      <section hidden={step !== 2} aria-hidden={step !== 2}>
+      <section
+        hidden={step !== 2}
+        aria-hidden={step !== 2}
+        className={step !== 2 ? 'hidden' : 'shrink-0'}
+      >
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           <LayerPicker side="front" />
           <LayerPicker side="back" />
@@ -152,11 +188,15 @@ export function PsdStudioPage(): JSX.Element {
         </div>
       </section>
 
-      {/* Step 3 — Generate (stays mounted, hidden) */}
-      <section hidden={step !== 3} aria-hidden={step !== 3}>
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          {/* Left: mapping + data table */}
-          <div className="flex flex-col gap-4">
+      {/* Step 3 — Map columns & preview (stays mounted, hidden) */}
+      <section
+        hidden={step !== 3}
+        aria-hidden={step !== 3}
+        className={step !== 3 ? 'hidden' : 'flex min-h-0 flex-1 flex-col gap-3'}
+      >
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-2">
+          {/* Left: mapping on top, full data table below */}
+          <div className="themed-scrollbar flex min-h-0 flex-col gap-4 xl:overflow-y-auto xl:pr-1">
             {project.placeholders.length > 0 && excelData && (
               <ColumnMapping
                 placeholders={project.placeholders.map((placeholder) => ({
@@ -171,11 +211,20 @@ export function PsdStudioPage(): JSX.Element {
               selectedRowIndex={selectedRowIndex}
               onSelectRow={setSelectedRowIndex}
             />
+
+            {/* Sample of mapped rows for quick sanity check */}
+            {sampleRows.length > 0 && project.placeholders.length > 0 && (
+              <p className="shrink-0 text-xs text-muted-foreground">
+                Sample row keys:{' '}
+                {project.placeholders.map((placeholder) => `{{${placeholder.key}}}`).join(' ')} —
+                mapped columns: {Object.values(mappings).filter(Boolean).join(', ') || 'none yet'}
+              </p>
+            )}
           </div>
 
-          {/* Right: live preview + batch generation */}
-          <div className="flex flex-col gap-4">
-            <div className="flex items-center gap-2">
+          {/* Right: live card preview for the selected row — always whole in frame */}
+          <div className="flex min-h-0 flex-col gap-2">
+            <div className="flex shrink-0 items-center gap-2">
               <button
                 type="button"
                 role="tab"
@@ -205,40 +254,52 @@ export function PsdStudioPage(): JSX.Element {
                 Back
               </button>
             </div>
-            <PsdCardPreview side={previewSide} row={selectedRow} widthPx={340} />
-
-            {readyToGenerate && excelData && photoMatches ? (
-              <BatchRunner project={project} excelData={excelData} photoMatches={photoMatches} />
-            ) : (
-              <div className="rounded-lg border bg-surface-panel p-4 text-sm text-muted-foreground">
-                Complete the earlier steps to unlock generation.
-              </div>
-            )}
-
-            {/* Sample of mapped rows for quick sanity check */}
-            {sampleRows.length > 0 && project.placeholders.length > 0 && (
-              <p className="text-xs text-muted-foreground">
-                Sample row keys:{' '}
-                {project.placeholders.map((placeholder) => `{{${placeholder.key}}}`).join(' ')} —
-                mapped columns: {Object.values(mappings).filter(Boolean).join(', ') || 'none yet'}
-              </p>
-            )}
+            <div className="min-h-0 flex-1">
+              <PsdCardPreview side={previewSide} row={selectedRow} fitContainer />
+            </div>
           </div>
         </div>
-        <div className="mt-4">
+        <div className="mt-3 shrink-0">
           <StudioNavButtons
             currentStep={3}
             totalSteps={TOTAL_STEPS}
+            canProceed={readyToGenerate}
+            blockedReason={step3Blocked}
+            onBack={() => setStep(2)}
+            onNext={() => setStep(4)}
+          />
+        </div>
+      </section>
+
+      {/* Step 4 — Generate & print (stays mounted, hidden) */}
+      <section
+        hidden={step !== 4}
+        aria-hidden={step !== 4}
+        className={step !== 4 ? 'hidden' : 'flex min-h-0 flex-1 flex-col'}
+      >
+        <div className="min-h-0 flex-1">
+          {readyToGenerate && excelData && photoMatches ? (
+            <BatchRunner project={project} excelData={excelData} photoMatches={photoMatches} />
+          ) : (
+            <div className="flex h-full items-center justify-center rounded-lg border bg-surface-panel p-4 text-sm text-muted-foreground">
+              Complete the earlier steps to unlock generation.
+            </div>
+          )}
+        </div>
+        <div className="mt-3 shrink-0">
+          <StudioNavButtons
+            currentStep={4}
+            totalSteps={TOTAL_STEPS}
             canProceed
             blockedReason={null}
-            onBack={() => setStep(2)}
-            onNext={() => setStep(3)}
+            onBack={() => setStep(3)}
+            onNext={() => setStep(4)}
           />
         </div>
       </section>
 
       {isParsing && (
-        <p className="mt-3 text-xs text-muted-foreground" role="status">
+        <p className="mt-3 shrink-0 text-xs text-muted-foreground" role="status">
           Parsing design…
         </p>
       )}

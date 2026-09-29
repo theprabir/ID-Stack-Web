@@ -257,156 +257,237 @@ export function BatchRunner({ project, excelData, photoMatches }: BatchRunnerPro
 
   return (
     <section
-      className="rounded-lg border bg-surface-panel p-4 transition-colors duration-300"
+      className="flex h-full flex-col rounded-lg border bg-surface-panel p-4 transition-colors duration-300"
       aria-labelledby="batch-runner-title"
     >
-      <div className="mb-3 flex items-center gap-2">
+      <div className="mb-3 flex shrink-0 items-center gap-2">
         <Play className="h-5 w-5 text-primary" aria-hidden="true" />
         <h2 id="batch-runner-title" className="text-sm font-semibold">
           Generate Cards
         </h2>
       </div>
 
-      {/* Options */}
-      <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <div>
-          <Label htmlFor="batch-format" className="mb-1 block text-xs text-muted-foreground">
-            Format
-          </Label>
-          <Select
-            id="batch-format"
-            value={options.format}
-            disabled={isRunning}
-            onChange={(event) =>
-              setOptions((current) => ({ ...current, format: event.target.value as 'jpg' | 'pdf' }))
-            }
-          >
-            <option value="jpg">JPG (CMYK)</option>
-            <option value="pdf">PDF (CMYK)</option>
-          </Select>
-        </div>
-        <div>
-          <Label htmlFor="batch-sides" className="mb-1 block text-xs text-muted-foreground">
-            Sides
-          </Label>
-          <Select
-            id="batch-sides"
-            value={options.sides}
-            disabled={isRunning}
-            onChange={(event) =>
-              setOptions((current) => ({
-                ...current,
-                sides: event.target.value as 'both' | 'front' | 'back',
-              }))
-            }
-          >
-            <option value="both">Front + Back</option>
-            <option value="front">Front only</option>
-            <option value="back">Back only</option>
-          </Select>
-        </div>
-        <div>
-          <Label htmlFor="batch-naming" className="mb-1 block text-xs text-muted-foreground">
-            File naming
-          </Label>
-          <Input
-            id="batch-naming"
-            value={options.naming}
-            disabled={isRunning}
-            onChange={(event) =>
-              setOptions((current) => ({ ...current, naming: event.target.value }))
-            }
-            className="h-10 text-xs"
-            placeholder="{Name}_{Row}"
-          />
-        </div>
-        <div>
-          <Label htmlFor="batch-output-mode" className="mb-1 block text-xs text-muted-foreground">
-            Output layout
-          </Label>
-          <Select
-            id="batch-output-mode"
-            value={options.outputMode}
-            disabled={isRunning || options.format !== 'pdf'}
-            onChange={(event) =>
-              setOptions((current) => ({
-                ...current,
-                outputMode: event.target.value as 'cards' | 'sheets',
-              }))
-            }
-            className="h-10 text-xs"
-          >
-            <option value="cards">Cards (one file each)</option>
-            <option value="sheets" disabled={options.format !== 'pdf'}>
-              Sheets (imposed, PDF only)
-            </option>
-          </Select>
-        </div>
-        <div className="flex items-end">
-          {isRunning ? (
-            <div className="flex w-full gap-1">
-              {control === 'running' ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex-1"
-                  onClick={() => setControl('paused')}
-                >
-                  <Pause className="h-4 w-4" aria-hidden="true" />
-                  Pause
-                </Button>
+      {/* Two-column layout: controls left, live preview right */}
+      <div className="themed-scrollbar grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto pr-1 lg:grid-cols-2">
+        {/* Options + progress (left) */}
+        <div className="flex min-w-0 flex-col">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="batch-format" className="mb-1 block text-xs text-muted-foreground">
+                Format
+              </Label>
+              <Select
+                id="batch-format"
+                value={options.format}
+                disabled={isRunning}
+                onChange={(event) =>
+                  setOptions((current) => ({
+                    ...current,
+                    format: event.target.value as 'jpg' | 'pdf',
+                  }))
+                }
+              >
+                <option value="jpg">JPG (CMYK)</option>
+                <option value="pdf">PDF (CMYK)</option>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="batch-sides" className="mb-1 block text-xs text-muted-foreground">
+                Sides
+              </Label>
+              <Select
+                id="batch-sides"
+                value={options.sides}
+                disabled={isRunning}
+                onChange={(event) =>
+                  setOptions((current) => ({
+                    ...current,
+                    sides: event.target.value as 'both' | 'front' | 'back',
+                  }))
+                }
+              >
+                <option value="both">Front + Back</option>
+                <option value="front">Front only</option>
+                <option value="back">Back only</option>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="batch-naming" className="mb-1 block text-xs text-muted-foreground">
+                File naming
+              </Label>
+              <Input
+                id="batch-naming"
+                value={options.naming}
+                disabled={isRunning}
+                onChange={(event) =>
+                  setOptions((current) => ({ ...current, naming: event.target.value }))
+                }
+                className="h-10 text-xs"
+                placeholder="{Name}_{Row}"
+              />
+            </div>
+            <div>
+              <Label
+                htmlFor="batch-output-mode"
+                className="mb-1 block text-xs text-muted-foreground"
+              >
+                Output layout
+              </Label>
+              <Select
+                id="batch-output-mode"
+                value={options.outputMode}
+                disabled={isRunning || options.format !== 'pdf'}
+                onChange={(event) =>
+                  setOptions((current) => ({
+                    ...current,
+                    outputMode: event.target.value as 'cards' | 'sheets',
+                  }))
+                }
+                className="h-10 text-xs"
+              >
+                <option value="cards">Cards (one file each)</option>
+                <option value="sheets" disabled={options.format !== 'pdf'}>
+                  Sheets (imposed, PDF only)
+                </option>
+              </Select>
+            </div>
+            <div className="flex items-end">
+              {isRunning ? (
+                <div className="flex w-full gap-1">
+                  {control === 'running' ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1"
+                      onClick={() => setControl('paused')}
+                    >
+                      <Pause className="h-4 w-4" aria-hidden="true" />
+                      Pause
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1"
+                      onClick={() => setControl('running')}
+                    >
+                      <Play className="h-4 w-4" aria-hidden="true" />
+                      Resume
+                    </Button>
+                  )}
+                  <Button variant="destructive" size="sm" onClick={() => setControl('cancelled')}>
+                    <Square className="h-4 w-4" aria-hidden="true" />
+                  </Button>
+                </div>
               ) : (
                 <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex-1"
-                  onClick={() => setControl('running')}
+                  variant="default"
+                  className="w-full"
+                  onClick={() => void start()}
+                  disabled={excelData.rows.length === 0}
                 >
                   <Play className="h-4 w-4" aria-hidden="true" />
-                  Resume
+                  Generate {excelData.rows.length} card(s)
                 </Button>
               )}
-              <Button variant="destructive" size="sm" onClick={() => setControl('cancelled')}>
-                <Square className="h-4 w-4" aria-hidden="true" />
-              </Button>
             </div>
-          ) : (
+          </div>
+
+          {/* Imposition settings (sheets mode) — left column, under the options */}
+          {options.outputMode === 'sheets' && options.format === 'pdf' && (
+            <div className="mt-3 space-y-2">
+              <div className="flex items-center gap-2">
+                <Grid3x3 className="h-4 w-4 text-primary" aria-hidden="true" />
+                <h3 className="text-xs font-semibold">Sheet layout — everything is adjustable</h3>
+              </div>
+              <ImpositionPanel
+                settings={imposition}
+                disabled={isRunning}
+                onChange={setImpositionSettings}
+              />
+            </div>
+          )}
+
+          {/* Progress */}
+          {batchState && (
+            <div className="mt-3">
+              <div
+                className="h-2 w-full overflow-hidden rounded-full bg-surface-card"
+                role="progressbar"
+                aria-valuenow={Math.round(progress)}
+                aria-valuemin={0}
+                aria-valuemax={100}
+              >
+                <div
+                  className="h-full bg-primary transition-[width] duration-200"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+              <p className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                {control === 'paused' && <Pause className="h-3 w-3" aria-hidden="true" />}
+                {isZipping && <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />}
+                {batchState.current} / {batchState.total} cards
+                {batchState.etaSeconds > 1 && control === 'running' && (
+                  <>
+                    {' · '}
+                    {batchState.etaSeconds > 60
+                      ? `${Math.ceil(batchState.etaSeconds / 60)} min left`
+                      : `${Math.round(batchState.etaSeconds)}s left`}
+                  </>
+                )}
+              </p>
+              {batchState.errors.length > 0 && (
+                <ul className="themed-scrollbar mt-1 max-h-20 overflow-auto rounded border bg-surface-card p-1.5 text-xs text-destructive">
+                  {batchState.errors.slice(0, 10).map((error, index) => (
+                    <li key={`${error.rowIndex}-${index}`}>
+                      Row {error.rowIndex + 1}: {error.message}
+                    </li>
+                  ))}
+                  {batchState.errors.length > 10 && (
+                    <li>…and {batchState.errors.length - 10} more</li>
+                  )}
+                </ul>
+              )}
+            </div>
+          )}
+
+          {/* Download */}
+          {zipUrl && (
             <Button
               variant="default"
-              className="w-full"
-              onClick={() => void start()}
-              disabled={excelData.rows.length === 0}
+              className="mt-3 w-full"
+              onClick={() => {
+                const link = document.createElement('a');
+                link.href = zipUrl;
+                link.download = 'id-cards.zip';
+                link.click();
+              }}
             >
-              <Play className="h-4 w-4" aria-hidden="true" />
-              Generate {excelData.rows.length} card(s)
+              <Download className="h-4 w-4" aria-hidden="true" />
+              Download ZIP
             </Button>
           )}
         </div>
-      </div>
 
-      {/* Imposition settings + live preview (sheets mode) */}
-      {options.outputMode === 'sheets' && options.format === 'pdf' && (
-        <div className="mb-3 space-y-2">
-          <div className="flex items-center gap-2">
-            <Grid3x3 className="h-4 w-4 text-primary" aria-hidden="true" />
-            <h3 className="text-xs font-semibold">Sheet layout — everything is adjustable</h3>
-          </div>
-          <ImpositionPanel
-            settings={imposition}
-            disabled={isRunning}
-            onChange={setImpositionSettings}
-          />
-          <div className="flex items-start gap-2">
-            <FileStack className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-            <div className="min-w-0 flex-1">
-              <p className="text-xs text-muted-foreground">
-                Live preview with real cards — updates instantly as you change any setting. Empty
-                slots are dashed; blue = trim line.
+        {/* Right: live sheet preview (sheets mode) — fixed-height internal scroll */}
+        <div className="flex min-w-0 flex-col">
+          {options.outputMode === 'sheets' && options.format === 'pdf' ? (
+            <>
+              <div className="mb-2 flex shrink-0 items-center gap-2">
+                <FileStack className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+                <h3 className="text-xs font-semibold">Live sheet preview</h3>
+              </div>
+              <p className="mb-2 shrink-0 text-xs text-muted-foreground">
+                Real cards — updates instantly as you change any setting. Empty slots are dashed;
+                blue = trim line.
               </p>
               {sheetSummary && (
-                <p className="mt-0.5 text-xs font-medium text-foreground">{sheetSummary}</p>
+                <p className="mb-2 shrink-0 text-xs font-medium text-foreground">{sheetSummary}</p>
               )}
-              <div ref={previewCanvasRef} className="mt-1 rounded border bg-surface-card p-1">
+              <div
+                ref={previewCanvasRef}
+                className="themed-scrollbar min-h-48 flex-1 overflow-auto rounded border bg-surface-card p-1"
+              >
                 {isRenderingPreview && (
                   <p
                     className="flex items-center gap-1.5 p-2 text-xs text-muted-foreground"
@@ -417,68 +498,15 @@ export function BatchRunner({ project, excelData, photoMatches }: BatchRunnerPro
                   </p>
                 )}
               </div>
+            </>
+          ) : (
+            <div className="flex h-full min-h-48 items-center justify-center rounded border border-dashed bg-surface-canvas p-4 text-center text-xs text-muted-foreground">
+              Switch output layout to <strong className="mx-1">Sheets</strong> (PDF format) to
+              design the imposed sheet here with a live preview.
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Progress */}
-      {batchState && (
-        <div className="mb-3">
-          <div
-            className="h-2 w-full overflow-hidden rounded-full bg-surface-card"
-            role="progressbar"
-            aria-valuenow={Math.round(progress)}
-            aria-valuemin={0}
-            aria-valuemax={100}
-          >
-            <div
-              className="h-full bg-primary transition-[width] duration-200"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-          <p className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-            {control === 'paused' && <Pause className="h-3 w-3" aria-hidden="true" />}
-            {isZipping && <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />}
-            {batchState.current} / {batchState.total} cards
-            {batchState.etaSeconds > 1 && control === 'running' && (
-              <>
-                {' · '}
-                {batchState.etaSeconds > 60
-                  ? `${Math.ceil(batchState.etaSeconds / 60)} min left`
-                  : `${Math.round(batchState.etaSeconds)}s left`}
-              </>
-            )}
-          </p>
-          {batchState.errors.length > 0 && (
-            <ul className="themed-scrollbar mt-1 max-h-20 overflow-auto rounded border bg-surface-card p-1.5 text-xs text-destructive">
-              {batchState.errors.slice(0, 10).map((error, index) => (
-                <li key={`${error.rowIndex}-${index}`}>
-                  Row {error.rowIndex + 1}: {error.message}
-                </li>
-              ))}
-              {batchState.errors.length > 10 && <li>…and {batchState.errors.length - 10} more</li>}
-            </ul>
           )}
         </div>
-      )}
-
-      {/* Download */}
-      {zipUrl && (
-        <Button
-          variant="default"
-          className="w-full"
-          onClick={() => {
-            const link = document.createElement('a');
-            link.href = zipUrl;
-            link.download = 'id-cards.zip';
-            link.click();
-          }}
-        >
-          <Download className="h-4 w-4" aria-hidden="true" />
-          Download ZIP
-        </Button>
-      )}
+      </div>
     </section>
   );
 }

@@ -2,6 +2,44 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6.16] - 2026-09-29
+
+### Changed
+
+- **PSD Studio is now a 4-step wizard — the old Step 3 is split in two so
+  the whole page fits on screen without scrolling up and down.** Pure
+  layout change; no behaviour, state or gate was altered.
+
+  1. **Upload Designs & Data** (unchanged)
+  2. **Choose Placeholders** (unchanged)
+  3. **Map Columns & Preview** — left column: column mapping on top and
+     the Data & Validation table below; right column: the live card
+     preview with its Front/Back tabs.
+  4. **Generate & Print** — left column: output options, the sheet-layout
+     (imposition) panel, run controls and progress; right column: the
+     live imposed-sheet preview, always beside the controls instead of
+     far below them.
+
+  On steps 3–4 the page frame no longer scrolls: the panels scroll
+  internally within the viewport (narrow screens fall back to normal
+  page scrolling). The framed steps use a compact header (smaller
+  title, subtitle hidden) so the working area gets the full viewport,
+  and the Step 3 card preview scales to its container (`max-width`/
+  `max-height`) so the WHOLE card is always visible without scrolling.
+  The Data & Validation table now shows **all rows** in a
+  fixed-height, internally-scrolling body with a sticky header
+  (previously capped at the first 5) — row-click → live-preview still
+  drives the card preview. BatchRunner keeps its single source of truth
+  for imposition settings and all batch semantics untouched; only the
+  JSX was restructured. All step panels remain mounted (hidden) so
+  navigating between steps still loses nothing.
+
+### Tests
+
+- The wizard max-update-depth regression passes unchanged against the
+  4-step flow; full suite 198 passed with the one pre-existing
+  textClipping geometry failure unrelated to this release.
+
 ## [0.6.15] - 2026-09-29
 
 ### Removed

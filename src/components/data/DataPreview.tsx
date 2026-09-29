@@ -1,8 +1,6 @@
-import { useMemo } from 'react';
 import { AlertTriangle, CheckCircle2, Table2, XCircle, ImagePlus } from 'lucide-react';
 import type { ExcelData } from '@/types/data';
-import { useDataStore, PREVIEW_ROW_COUNT } from '@/stores/dataStore';
-import { getPreview } from '@/services/excelService';
+import { useDataStore } from '@/stores/dataStore';
 import { cn } from '@/lib/utils';
 
 interface DataPreviewProps {
@@ -10,17 +8,24 @@ interface DataPreviewProps {
   /** Row index selected for the live card preview */
   selectedRowIndex: number | null;
   onSelectRow: (rowIndex: number) => void;
+  /**
+   * Table body max height in px — the table scrolls internally and shows
+   * ALL rows (default 260). Pass a larger value on tall layouts.
+   */
+  tableMaxHeightPx?: number;
 }
 
 /**
- * Validation report + data table. Shows the first rows of imported data,
- * lets the user pick a row for the live card preview and lists all
- * validation issues with severity icons.
+ * Validation report + data table. Shows ALL imported rows in a
+ * fixed-height internally-scrolling table (sticky header), lets the user
+ * pick a row for the live card preview and lists all validation issues
+ * with severity icons.
  */
 export function DataPreview({
   excelData,
   selectedRowIndex,
   onSelectRow,
+  tableMaxHeightPx = 260,
 }: DataPreviewProps): JSX.Element {
   const validation = useDataStore((state) => state.validation);
   const photos = useDataStore((state) => state.photos);
@@ -28,10 +33,7 @@ export function DataPreview({
   const matchResult = useDataStore((state) => state.photoMatchResult);
   const assignPhotoManually = useDataStore((state) => state.assignPhotoManually);
 
-  const previewRows = useMemo(
-    () => (excelData ? getPreview(excelData, PREVIEW_ROW_COUNT) : []),
-    [excelData]
-  );
+  const rowCount = excelData?.rows.length ?? 0;
 
   const errorCount = validation?.issues.filter((issue) => issue.severity === 'error').length ?? 0;
   const warningCount =
@@ -116,7 +118,7 @@ export function DataPreview({
             Manual photo assignment
           </h3>
           <div className="themed-scrollbar max-h-72 space-y-2 overflow-auto rounded-md border bg-surface-card p-2">
-            {previewRows.map((row) => {
+            {excelData.rows.map((row) => {
               const assignedPhotoId = matchConfig.manualAssignments?.[row.rowIndex];
               const assigned = photos.find((photo) => photo.id === assignedPhotoId);
               const auto = matchResult?.assignments.get(row.rowIndex);
@@ -197,10 +199,13 @@ export function DataPreview({
         </div>
       )}
 
-      {/* Data table */}
-      <div className="themed-scrollbar overflow-x-auto rounded-md border">
+      {/* Data table — ALL rows, fixed height, scrolls internally */}
+      <div
+        className="themed-scrollbar overflow-auto rounded-md border"
+        style={{ maxHeight: `${tableMaxHeightPx}px` }}
+      >
         <table className="w-full text-xs">
-          <thead className="bg-surface-card">
+          <thead className="sticky top-0 z-10 bg-surface-card shadow-[0_1px_0_hsl(var(--border))]">
             <tr className="text-left">
               <th
                 className="px-2 py-1.5 font-medium text-muted-foreground"
@@ -214,7 +219,7 @@ export function DataPreview({
             </tr>
           </thead>
           <tbody>
-            {previewRows.map((row) => (
+            {excelData.rows.map((row) => (
               <tr
                 key={row.rowIndex}
                 onClick={() => onSelectRow(row.rowIndex)}
@@ -248,7 +253,7 @@ export function DataPreview({
         </table>
       </div>
       <p className="mt-1 text-xs text-muted-foreground">
-        Click a row to preview that card in the live preview.
+        Showing all {rowCount} row(s) — click one to preview that card in the live preview.
       </p>
     </section>
   );

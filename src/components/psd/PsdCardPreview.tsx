@@ -6,19 +6,27 @@ import { usePsdStore } from '@/stores/psdStore';
 import { useDataStore } from '@/stores/dataStore';
 import { compositeDesign } from '@/services/psdCompositeService';
 import { LoadingSpinner } from '@/components/common';
+import { cn } from '@/lib/utils';
 
 interface PsdCardPreviewProps {
   side: SideType;
   row: DataRow | null;
-  /** Display width in px */
+  /** Display width in px (ignored when fitContainer is set) */
   widthPx?: number;
+  /** Stretch with the parent and always show the WHOLE card (no scrolling) */
+  fitContainer?: boolean;
 }
 
 /**
  * Live preview of the composited PSD design for one row: placeholders get
  * row data/photos, everything else stays pixel-identical to the design.
  */
-export function PsdCardPreview({ side, row, widthPx = 320 }: PsdCardPreviewProps): JSX.Element {
+export function PsdCardPreview({
+  side,
+  row,
+  widthPx = 320,
+  fitContainer = false,
+}: PsdCardPreviewProps): JSX.Element {
   const design = usePsdStore((state) => state.project[side]);
   const placeholders = usePsdStore((state) => state.project.placeholders);
   const mappings = useDataStore((state) => state.mappings);
@@ -69,17 +77,25 @@ export function PsdCardPreview({ side, row, widthPx = 320 }: PsdCardPreviewProps
 
   return (
     <section
-      className="rounded-lg border bg-surface-panel p-4 transition-colors duration-300"
+      className={cn(
+        'rounded-lg border bg-surface-panel p-4 transition-colors duration-300',
+        fitContainer && 'flex h-full min-h-0 flex-col'
+      )}
       aria-labelledby={`psd-preview-${side}`}
     >
-      <div className="mb-3 flex items-center gap-2">
+      <div className="mb-3 flex shrink-0 items-center gap-2">
         <Eye className="h-5 w-5 text-primary" aria-hidden="true" />
         <h2 id={`psd-preview-${side}`} className="text-sm font-semibold">
           Live Preview — {sideLabel}
         </h2>
       </div>
 
-      <div className="flex justify-center rounded-md bg-surface-canvas p-4 transition-colors duration-300">
+      <div
+        className={cn(
+          'rounded-md bg-surface-canvas p-4 transition-colors duration-300',
+          fitContainer ? 'flex min-h-0 flex-1 items-center justify-center' : 'flex justify-center'
+        )}
+      >
         {error ? (
           <p className="text-sm text-destructive" role="alert">
             {error}
@@ -96,14 +112,18 @@ export function PsdCardPreview({ side, row, widthPx = 320 }: PsdCardPreviewProps
             }}
             role="img"
             aria-label={`${sideLabel} preview`}
-            className="h-auto max-w-full rounded shadow-md"
-            style={{ maxWidth: widthPx }}
+            className="rounded shadow-md"
+            style={
+              fitContainer
+                ? { maxWidth: '100%', maxHeight: '100%', width: 'auto', height: 'auto' }
+                : { maxWidth: widthPx, height: 'auto' }
+            }
           />
         ) : (
           <LoadingSpinner />
         )}
       </div>
-      <p className="mt-2 text-center text-xs text-muted-foreground">
+      <p className="mt-2 shrink-0 text-center text-xs text-muted-foreground">
         {row ? `Showing row ${row.rowIndex + 1}` : 'Select a row to see live data'}
       </p>
     </section>
