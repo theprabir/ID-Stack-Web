@@ -252,7 +252,8 @@ export function registerFontFace(family: string, buffer: ArrayBuffer): FontFaceR
   }
 
   // Begin loading asynchronously.
-  fontFace.load()
+  void fontFace
+    .load()
     .then((loaded) => {
       record.loaded = loaded;
       document.fonts.add(fontFace);
@@ -293,9 +294,6 @@ export function registerFontFace(family: string, buffer: ArrayBuffer): FontFaceR
     const family = file.name.replace(/\.[^.]+$/, '');
     const buffer = await file.arrayBuffer();
     const record = registerFontFace(family, buffer);
-    // Register PostScript alias so PSD font names can match this font even
-    // when the registration name differs from the embedded PostScript name.
-    registerPostScriptAlias(family, buffer);
     // Skip if font face registration queued but not yet loaded.
     if (!record.loaded) {
       // Add to load queue so the caller can wait for readiness.
@@ -304,6 +302,13 @@ export function registerFontFace(family: string, buffer: ArrayBuffer): FontFaceR
       fontLoadQueue[family] = queue;
       continue;
     }
+    registerPostScriptAlias(family, buffer);
+    const fontRecord: FontRecord = {
+      name: family,
+      fileName: file.name,
+      buffer,
+      addedDate: new Date().toISOString(),
+    };
     try {
       await saveFontRecord(record);
     } catch {
@@ -579,8 +584,6 @@ export function registerPostScriptAlias(family: string, buffer: ArrayBuffer): vo
     }
   } catch {
     // Malformed name table — the family still resolves by name matching.
-    // Register the family name as an alias as a fallback.
-    postScriptAliasFamilies.set(normaliseFontName(family), family);
   }
 }
 
