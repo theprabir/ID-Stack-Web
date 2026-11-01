@@ -18,7 +18,7 @@ export function sideKeyOf(side: SideType): 'front' | 'back' {
 export type PsdLayerKind = 'text' | 'image' | 'group' | 'shape' | 'other';
 
 /** Role the user assigns to a chosen placeholder layer */
-export type PlaceholderRole = 'text' | 'photo';
+export type PlaceholderRole = 'text' | 'photo' | 'barcode';
 
 /** Stroke position relative to the layer edge (Photoshop semantics) */
 export type PsdStrokePosition = 'inside' | 'center' | 'outside';
@@ -277,6 +277,17 @@ export interface PsdTextRun {
 }
 
 /** A user-chosen placeholder layer on one side */
+export interface BarcodeConfig {
+  /** Symbology type: code128, qrcode, ean13, etc. */
+  symbology: 'code128' | 'qrcode' | 'ean13';
+  /** Barcode/QR color (CSS color) */
+  color: string;
+  /** Barcode/QR width in pixels */
+  width: number;
+  /** Barcode/QR height in pixels */
+  height: number;
+}
+
 export interface PsdPlaceholder {
   /** PsdLayerInfo.id */
   layerId: string;
@@ -286,6 +297,8 @@ export interface PsdPlaceholder {
   side: SideType;
   /** Placeholder key used for Excel mapping (defaults to layer name) */
   key: string;
+  /** Barcode configuration (optional, for BARCODE role placeholders) */
+  barcodeConfig?: BarcodeConfig;
 }
 
 /** Parsed PSD for one card face */

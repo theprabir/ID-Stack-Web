@@ -176,11 +176,60 @@ export const useDataStore = create<DataState>()((set, get) => ({
     const psdProject = usePsdStore.getState().project;
     const keys = psdProject.placeholders.map((placeholder) => placeholder.key);
 
-    const columnsLower = new Map(excelData.columns.map((column) => [column.toLowerCase(), column]));
+    const synonymDictionary: Record<string, string[]> = {
+      Name: ['empname', 'fullname', 'employee name', 'user', 'first name', 'last name'],
+      ID: ['empid', 'serial', 'roll no', 'employee id'],
+      Photo: ['image', 'picture', 'profile'],
+      // Add more synonyms as needed
+    };
+
+    const scoreMapping = (placeholder: string, column: string): number => {
+      const phLower = placeholder.toLowerCase();
+      const colLower = column.toLowerCase();
+
+      // Score 100: Exact match (case-insensitive)
+      if (phLower === colLower) return 100;
+
+      // Score 80: Column header is a substring of placeholder name (or vice versa)
+      if (phLower.includes(colLower) || colLower.includes(phLower)) return 80;
+
+      // Score 60: Column header matches a value in the Synonym Dictionary
+      for (const [key, synonyms] of Object.entries(synonymDictionary)) {
+        if (key.toLowerCase() === phLower) {
+          if (synonyms.some((syn) => colLower === syn.toLowerCase())) return 60;
+        }
+        // Also check if column matches a synonym for any placeholder
+        if (synonyms.some((syn) => colLower === syn.toLowerCase())) {
+          // Check if this column would map to this placeholder
+          return 60;
+        }
+      }
+
+      // Score 40: Both strings share a common "core" keyword
+      const phWords = phLower.split(/\s+/);
+      const colWords = colLower.split(/\s+/);
+      const sharedWords = phWords.filter((w) => colWords.includes(w));
+      if (sharedWords.length > 0) return 40;
+
+      // Default: no match
+      return 0;
+    };
+
     const mappings: Record<string, string> = {};
     for (const key of keys) {
-      const column = columnsLower.get(key.toLowerCase());
-      if (column) mappings[key] = column;
+      let bestColumn: string | null = null;
+      let bestScore = 0;
+      for (const column of excelData.columns) {
+        const score = scoreMapping(key, column);
+        if (score > bestScore) {
+          bestScore = score;
+          bestColumn = column;
+        }
+      }
+      // Only map if score is above threshold (e.g., > 40)
+      if (bestScore > 40 && bestColumn) {
+        mappings[key] = bestColumn;
+      }
     }
     set({ mappings });
   },

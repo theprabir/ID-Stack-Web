@@ -41,7 +41,7 @@ interface PsdState extends PsdStoreBatchSlice {
   /** Remove the design of one side (and its placeholders). */
   clearSide: (side: SideType) => void;
   /** Toggle/drop placeholder selection. */
-  addPlaceholder: (layer: PsdLayerInfo, side: SideType, role: 'text' | 'photo') => void;
+  addPlaceholder: (layer: PsdLayerInfo, side: SideType, role: 'text' | 'photo' | 'barcode') => void;
   removePlaceholder: (layerId: string) => void;
   renamePlaceholderKey: (layerId: string, key: string) => void;
   /** Persist the project (PSD bytes + placeholders) to IndexedDB. */

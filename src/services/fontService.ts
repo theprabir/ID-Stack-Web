@@ -294,6 +294,9 @@ export function registerFontFace(family: string, buffer: ArrayBuffer): FontFaceR
     const family = file.name.replace(/\.[^.]+$/, '');
     const buffer = await file.arrayBuffer();
     const record = registerFontFace(family, buffer);
+    // Register PostScript alias so PSD font names can match this font even
+    // when the registration name differs from the embedded PostScript name.
+    registerPostScriptAlias(family, buffer);
     // Skip if font face registration queued but not yet loaded.
     if (!record.loaded) {
       // Add to load queue so the caller can wait for readiness.
@@ -302,13 +305,6 @@ export function registerFontFace(family: string, buffer: ArrayBuffer): FontFaceR
       fontLoadQueue[family] = queue;
       continue;
     }
-    registerPostScriptAlias(family, buffer);
-    const fontRecord: FontRecord = {
-      name: family,
-      fileName: file.name,
-      buffer,
-      addedDate: new Date().toISOString(),
-    };
     try {
       await saveFontRecord(record);
     } catch {
@@ -554,7 +550,12 @@ export function registerPostScriptAlias(family: string, buffer: ArrayBuffer): vo
         break;
       }
     }
-    if (nameOffset < 0) return;
+    if (nameOffset < 0) {
+      // Also register the family name as an alias so PSD font names can match even
+      // when the font binary has no PostScript name table.
+      postScriptAliasFamilies.set(normaliseFontName(family), family);
+      return;
+    }
     const count = view.getUint16(nameOffset + 2);
     const stringOffset = nameOffset + view.getUint16(nameOffset + 4);
     for (let index = 0; index < count; index += 1) {
@@ -571,11 +572,16 @@ export function registerPostScriptAlias(family: string, buffer: ArrayBuffer): vo
       } else {
         decoded = new TextDecoder('utf-16be').decode(bytes);
       }
+      // Register alias from PostScript name to family
       postScriptAliasFamilies.set(normaliseFontName(decoded), family);
+      // Also register alias from family name to support reverse matching
+      postScriptAliasFamilies.set(normaliseFontName(family), family);
       return;
     }
   } catch {
     // Malformed name table — the family still resolves by name matching.
+    // Register the family name as an alias as a fallback.
+    postScriptAliasFamilies.set(normaliseFontName(family), family);
   }
 }
 
