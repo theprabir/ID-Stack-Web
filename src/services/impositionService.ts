@@ -18,12 +18,12 @@ import {
   PDFRawStream,
   PDFString,
   PDFFont,
-  StandardFonts,
   type PDFRef,
 } from 'pdf-lib';
 import type { ImpositionSettings, SheetLayout } from './impositionTypes';
 import { computeSheetLayout, arrangeSheets } from './impositionTypes';
 import { initCmykEngine, canvasToCmykBytes } from './cmykExportService';
+import { registerFontFace, listLoadedFontFamilies } from './fontService';
 import cmykProfileUrl from '@/assets/profiles/default_cmyk.icc?url';
 
 /** The producer string written into exported PDF documents */
@@ -40,13 +40,48 @@ async function getCmykProfileBytes(): Promise<Uint8Array> {
   return profileCache;
 }
 
-/** Encode a JS string as a Latin-1 Uint8Array (PDF content streams are ASCII) */
-function latin1(text: string): Uint8Array {
-  const bytes = new Uint8Array(text.length);
-  for (let index = 0; index < text.length; index += 1) {
-    bytes[index] = text.charCodeAt(index) & 0xff;
+/** Get a registered PDFFont from a font family name, embedding it if needed */
+async function getPDFFont(pdf: PDFDocument, family: string): Promise<PDFFont> {
+  // Check if font is already embedded in the document's resources
+  const resources = pdf.context.obj;
+  // Try to find the font in existing resources
+  let font: PDFFont | undefined;
+  try {
+    // Check if __NumberFont is already embedded
+    const fontRef = resources?.['__NumberFont'];
+    if (fontRef && fontRef.satisfies(PDFName)) {
+      font = await pdf.extractFont(fontRef);
+    }
+  } catch {
+    // Font not found, will embed it
   }
-  return bytes;
+  if (font) return font;
+
+  // Font not embedded yet — find the fontFace record and embed the buffer
+  const familyMatch = listLoadedFontFamilies().find((f) => normaliseFontName(f) === normaliseFontName(family));
+  if (!familyMatch) {
+    // Fallback to Helvetica if custom font not found
+    return await pdf.embedFont(StandardFonts.Helvetica);
+  }
+
+  // Get the fontFace record and its buffer
+  const fontFaceRecord = loadedFamilies.get(familyMatch);
+  if (!fontFaceRecord) {
+    return await pdf.embedFont(StandardFonts.Helvetica);
+  }
+
+  try {
+    const embeddedFont = await pdf.embedFont(fontFaceRecord.buffer);
+    return embeddedFont;
+  } catch {
+    // Failed to embed — fallback to Helvetica
+    return await pdf.embedFont(StandardFonts.Helvetica);
+  }
+}
+
+/** Normalise a font name for comparison */
+function normaliseFontName(name: string): string {
+  return name.toLowerCase().replace(/[\s\-_]/g, '');
 }
 
 /** Parse a hex colour ("#rrggbb" or "#rgb") into 0–1 RGB components */
@@ -139,7 +174,7 @@ export async function buildSheetsPdf(
   const profileRef = pdf.context.register(profileStream);
   const iccBased = pdf.context.obj([PDFName.of('ICCBased'), profileRef]);
 
-  const numberFont: PDFFont = await pdf.embedFont(StandardFonts.Helvetica);
+  const numberFont: PDFFont = await getPDFFont(pdf, '__NumberFont');
   const [nr, ng, nb] = hexToRgb(settings.numbering.color);
   const cardNumRgb = hexToRgb(settings.cardNumbers?.color ?? '#000000');
   const markRgb = hexToRgb(settings.cropMarkColor);

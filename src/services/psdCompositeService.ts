@@ -30,7 +30,7 @@ import type {
 import { sideKeyOf } from '@/types/psd';
 import type { DataRow, PhotoRecord } from '@/types/data';
 import { loadImageElement } from './psdService';
-import { resolveFontFamily, preloadFontsForText, exactFontCss } from './fontService';
+import { resolveFontFamily, preloadFontsForText, exactFontCss, fontGuard, waitForFontLoading } from './fontService';
 
 /** A value lookup: placeholder key → string for the current row */
 export type RowResolver = (key: string) => string;
@@ -1060,6 +1060,14 @@ function drawTextContent(
   family: string,
   substituted: boolean
 ): void {
+  // FONT GUARD: Ensure the font family is fully loaded before any rendering.
+  // Prevents font flicker (text starts as Arial then jumps to custom font)
+  // and ensures legacy glyphs are rendered correctly.
+  if (!fontGuard(family)) {
+    // Font not loaded yet — return early. The caller should ensure fonts
+    // are preloaded via preloadFontsForText before rendering.
+    return;
+  }
   const text = layer.text!;
   const effects = layer.effects;
   // Photoshop colour overlay (solidFill effect) replaces the text fill.

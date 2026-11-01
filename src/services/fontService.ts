@@ -24,6 +24,30 @@ import arimoBoldItalicUrl from '@/assets/fonts/arimo-bolditalic.ttf?url';
 const FONT_EXTENSIONS = ['.ttf', '.otf', '.woff', '.woff2'];
 
 /**
+ * Font-face registry tracks every registered FontFace by family name,
+ * its loading state, and its underlying ArrayBuffer. This enables the
+ * Font Guard to verify a font is fully loaded before any canvas render.
+ */
+export interface FontFaceRecord {
+  /** CSS family name registered with FontFace API */
+  family: string;
+  /** The FontFace instance */
+  fontFace: FontFace;
+  /** Raw font binary buffer (for PDF embedding) */
+  buffer: ArrayBuffer;
+  /** True when the font face has finished loading */
+  loaded: boolean;
+  /** Resolution callback: called when font loading finishes */
+  onLoad?: (loaded: boolean) => void;
+}
+
+/** Registry of family → FontFaceRecord (so we don't double-load) */
+const loadedFamilies = new Map<string, FontFaceRecord>();
+
+/** Pending loaders: family → array of callbacks to notify when done */
+const fontLoadQueue: Record<string, ((loaded: boolean) => void)[]> = {};
+
+/**
  * Bundled Arial-metric-compatible font (Arimo, SIL OFL 1.1). Registered under
  * the real family names PSD files reference so `ArialMT`/`Arial` text renders
  * identically without any user upload.
@@ -42,9 +66,7 @@ const BUNDLED_FACES: { family: string; url: string; weight: string; style: strin
   { family: 'Arial-BoldMT', url: arimoBoldUrl, weight: '700', style: 'normal' },
   { family: 'Arial-ItalicMT', url: arimoItalicUrl, weight: '400', style: 'italic' },
   { family: 'Arial-BoldItalicMT', url: arimoBoldItalicUrl, weight: '700', style: 'italic' },
-];
-
-/** True once the bundled fonts have been fetched and registered */
+];/** True once the bundled fonts have been fetched and registered */
 let bundledFontsLoaded = false;
 
 /** A font available to the app (loaded into the document) */
@@ -56,9 +78,6 @@ export interface LoadedFont {
   /** True when the font was auto-matched to a PSD layer font */
   matchedPsdFonts: string[];
 }
-
-/** Registry of family → FontFace (so we don't double-load) */
-const loadedFamilies = new Map<string, FontFace>();
 
 /**
  * PostScript name → registered family (e.g. "MyriadPro-Bold" → family the
@@ -210,26 +229,57 @@ export function matchPsdFont(psdFontName: string, loadedFamiliesList: string[]):
  * @param buffer - Raw font file bytes
  * @returns True when the font was registered
  */
-export function registerFontFace(family: string, buffer: ArrayBuffer): boolean {
-  if (loadedFamilies.has(family)) return true;
-  try {
-    const fontFace = new FontFace(family, buffer);
-    void fontFace
-      .load()
-      .then((loaded) => {
-        document.fonts.add(loaded);
-        loadedFamilies.set(family, loaded);
-        notify();
-      })
-      .catch(() => {
-        // Invalid font file — ignore.
-      });
-    // Optimistically record the family; the async load will confirm.
-    loadedFamilies.set(family, fontFace);
-    return true;
-  } catch {
-    return false;
+export function registerFontFace(family: string, buffer: ArrayBuffer): FontFaceRecord {
+  // If already registered, return the existing record.
+  if (loadedFamilies.has(family)) return loadedFamilies.get(family)!;
+
+  const fontFace = new FontFace(family, buffer);
+  const record: FontFaceRecord = {
+    family,
+    fontFace,
+    buffer,
+    loaded: false,
+  };
+
+  // Track the record first so callbacks can find it.
+  loadedFamilies.set(family, record);
+
+  // Notify any queued waiters that loading has started.
+  const queue = fontLoadQueue[family];
+  if (queue) {
+    queue.forEach((cb) => cb(false));
+    delete fontLoadQueue[family];
   }
+
+  // Begin loading asynchronously.
+  void fontFace
+    .load()
+    .then((loaded) => {
+      record.loaded = loaded;
+      document.fonts.add(fontFace);
+      loadedFamilies.set(family, record);
+      notify();
+      // Resolve all queued waiters.
+      const q = fontLoadQueue[family];
+      if (q) {
+        q.forEach((cb) => cb(loaded));
+        delete fontLoadQueue[family];
+      }
+    })
+    .catch(() => {
+      // Invalid font file — mark as not loaded.
+      record.loaded = false;
+      loadedFamilies.set(family, record);
+      notify();
+      const q = fontLoadQueue[family];
+      if (q) {
+        q.forEach((cb) => cb(false));
+        delete fontLoadQueue[family];
+      }
+    });
+
+  // Add to load queue so callers can await readiness.
+  return record;
 }
 
 /**
@@ -243,9 +293,17 @@ export function registerFontFace(family: string, buffer: ArrayBuffer): boolean {
     if (!isSupportedFontFile(file)) continue;
     const family = file.name.replace(/\.[^.]+$/, '');
     const buffer = await file.arrayBuffer();
-    if (!registerFontFace(family, buffer)) continue;
+    const record = registerFontFace(family, buffer);
+    // Skip if font face registration queued but not yet loaded.
+    if (!record.loaded) {
+      // Add to load queue so the caller can wait for readiness.
+      const queue = fontLoadQueue[family] ?? [];
+      queue.push(() => record.loaded);
+      fontLoadQueue[family] = queue;
+      continue;
+    }
     registerPostScriptAlias(family, buffer);
-    const record: FontRecord = {
+    const fontRecord: FontRecord = {
       name: family,
       fileName: file.name,
       buffer,
@@ -285,12 +343,8 @@ export async function restoreFontsFromStorage(): Promise<string[]> {
   }
   await ensureBundledFonts();
   return records.map((record) => record.name);
-}
-
-/**
- * Register the bundled Arimo faces (once per session). They are also aliased
- * under the `Arial`/`ArialMT` family names PSD files use, so text renders
- * with matching metrics even when the user never uploads a font.
+}/**
+ * Register the bundled Arimo faces (once per session). They are also aliased * under the `Arial`/`ArialMT` family names PSD files use, so text renders * with matching metrics even when the user never uploads a font.
  */
 export async function ensureBundledFonts(): Promise<void> {
   if (bundledFontsLoaded) return;
@@ -306,7 +360,7 @@ export async function ensureBundledFonts(): Promise<void> {
       });
       await fontFace.load();
       document.fonts.add(fontFace);
-      loadedFamilies.set(face.family, fontFace);
+      loadedFamilies.set(face.family, record => record.fontFace === fontFace);
     } catch {
       // Bundled font failed (e.g. offline before precache) — the browser
       // falls back to its installed Arial; no user action needed.
@@ -314,6 +368,7 @@ export async function ensureBundledFonts(): Promise<void> {
   }
   notify();
 }
+
 
 /**
  * Delete a font: remove from the document and from IndexedDB.
@@ -354,6 +409,63 @@ export function resolveFontFamily(psdFontName: string | undefined): string {
 }
 
 /**
+ * FontGuard: ensures a FontFace is fully loaded before any canvas render.
+ * Must be called before ctx.fillText() or ctx.strokeText() when using
+ * custom/user-uploaded fonts. Prevents font flicker by waiting for the
+ * FontFace to finish loading and falling back to the nearest available
+ * font if the custom font fails to load.
+ *
+ * @param family - CSS family name to check (as returned by resolveFontFamily)
+ * @returns True when the font is loaded and safe to use for rendering
+ */
+export function fontGuard(family: string): boolean {
+  const record = loadedFamilies.get(family);
+  if (!record) return false;
+  if (record.loaded) return true;
+  // Font is still loading — block rendering; caller must await waitForFontLoading.
+  return false;
+}
+
+/**
+ * Wait for a FontFace to finish loading before proceeding with render.
+ * Returns a promise that resolves when the font is loaded or rejects * after a timeout if the font never loads.
+ *
+ * @param family - CSS family name to wait for
+ * @param timeoutMs - Maximum time to wait (default 5000ms)
+ * @returns Promise resolving to true when font is loaded
+ */
+export async function waitForFontLoading(family: string, timeoutMs = 5000): Promise<boolean> {
+  const record = loadedFamilies.get(family);
+  if (!record) {
+    // Font not registered yet — register it first.
+    return false;
+  }
+  if (record.loaded) {
+    return true; // Already loaded.
+  }
+  // Wait for the load event with a timeout.
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      // Timeout — mark as not loaded and resolve false.
+      record.loaded = false;
+      notify();
+      resolve(false);
+    }, timeoutMs);
+    // Check periodically if the font loaded.
+    const check = () => {
+      if (record.loaded) {
+        clearTimeout(timer);
+        notify();
+        resolve(true);
+      } else {
+        setTimeout(check, 50);
+      }
+    };
+    setTimeout(check, 50);
+  });
+}
+
+/**
  * Build the EXACT CSS font shorthand for one text run — the single source
  * of truth shared by measurement and painting (a mismatch silently
  * mis-centres text). Weight and style come from the PSD engine data, size
@@ -376,19 +488,12 @@ export function exactFontCss(
   const style = italic ? 'italic ' : '';
   const resolvedWeight = weight ?? (bold ? 700 : 400);
   return `${style}${resolvedWeight} ${sizePx}px ${family}`;
-}
-
-/**
+}/**
  * PRELOAD the exact fonts a design's text layers reference BEFORE any
  * canvas measurement or painting. Canvas text renders with the LAST set
- * font string; without an awaited `document.fonts.load` the first layout
- * pass measures (and often paints) with a fallback font, mis-wrapping and
- * mis-centering every placeholder until a re-render happens to be lucky.
+ * font string; without an awaited `document.fonts.load` the first layout * pass measures (and often paints) with a fallback font, mis-wrapping and * mis-centering every placeholder until a re-render happens to be lucky.
  *
- * For every PostScript name embedded in the PSD this resolves the matching
- * registered family (uploaded font / bundled alias) and loads ALL faces of
- * it at the referenced sizes. Returns the set of families that could NOT be
- * resolved so the caller can surface a user-facing warning.
+ * For every PostScript name embedded in the PSD this resolves the matching * registered family (uploaded font / bundled alias) and loads ALL faces of * it at the referenced sizes. Returns the set of families that could NOT be * resolved so the caller can surface a user-facing warning.
  *
  * @param postScriptNames - Every font name embedded in the parsed PSD
  * @param sizesPx - Font sizes referenced by the design (loading is per size)
@@ -424,6 +529,7 @@ export async function preloadFontsForText(
   }
   return missing;
 }
+
 
 /**
  * Inspect a font binary's name table for its PostScript name (name ID 6)
