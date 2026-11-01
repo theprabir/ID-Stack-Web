@@ -252,8 +252,7 @@ export function registerFontFace(family: string, buffer: ArrayBuffer): FontFaceR
   }
 
   // Begin loading asynchronously.
-  void fontFace
-    .load()
+  fontFace.load()
     .then((loaded) => {
       record.loaded = loaded;
       document.fonts.add(fontFace);
