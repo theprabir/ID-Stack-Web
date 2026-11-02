@@ -184,8 +184,11 @@ export const useDataStore = create<DataState>()((set, get) => ({
     };
 
     const scoreMapping = (placeholder: string, column: string): number => {
-      const phLower = placeholder.toLowerCase();
-      const colLower = column.toLowerCase();
+      const phLower = placeholder.toLowerCase().trim();
+      const colLower = column.toLowerCase().trim();
+      // Empty headers must never match: String.includes('') is always true,
+      // so a blank column would otherwise score 80 against every placeholder.
+      if (phLower.length === 0 || colLower.length === 0) return 0;
 
       // Score 100: Exact match (case-insensitive)
       if (phLower === colLower) return 100;
@@ -193,17 +196,13 @@ export const useDataStore = create<DataState>()((set, get) => ({
       // Score 80: Column header is a substring of placeholder name (or vice versa)
       if (phLower.includes(colLower) || colLower.includes(phLower)) return 80;
 
-      // Score 60: Column header matches a value in the Synonym Dictionary
-      for (const [key, synonyms] of Object.entries(synonymDictionary)) {
-        if (key.toLowerCase() === phLower) {
-          if (synonyms.some((syn) => colLower === syn.toLowerCase())) return 60;
-        }
-        // Also check if column matches a synonym for any placeholder
-        if (synonyms.some((syn) => colLower === syn.toLowerCase())) {
-          // Check if this column would map to this placeholder
-          return 60;
-        }
-      }
+      // Score 60: Column header matches a synonym FOR THIS placeholder only.
+      // (Matching synonyms of *any* placeholder wrongly paired e.g. the
+      // column "User" with the placeholder "Photo" — "user" is a Name synonym.)
+      const synonyms = Object.entries(synonymDictionary).find(
+        ([key]) => key.toLowerCase() === phLower
+      )?.[1];
+      if (synonyms?.some((syn) => colLower === syn.toLowerCase())) return 60;
 
       // Score 40: Both strings share a common "core" keyword
       const phWords = phLower.split(/\s+/);

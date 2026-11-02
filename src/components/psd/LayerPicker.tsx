@@ -1,8 +1,17 @@
 import { useMemo, useState } from 'react';
-import { MousePointerClick, Type, Image as ImageIcon, X, FolderClosed, EyeOff } from 'lucide-react';
+import {
+  MousePointerClick,
+  Type,
+  Image as ImageIcon,
+  Barcode as BarcodeIcon,
+  X,
+  FolderClosed,
+  EyeOff,
+} from 'lucide-react';
 import type { SideType, PsdLayerKind } from '@/types/psd';
 import { usePsdStore } from '@/stores/psdStore';
 import { Button, Input } from '@/components/ui';
+import { BarcodeSettings } from './BarcodeSettings';
 import { cn } from '@/lib/utils';
 
 interface LayerPickerProps {
@@ -19,8 +28,10 @@ const KIND_ICON: Record<PsdLayerKind, typeof Type> = {
 
 /**
  * Layer list for one side with placeholder role selection: text layers get
- * a "Use as text" action, raster layers a "Use as photo" action; selected
- * layers are highlighted with an editable mapping key.
+ * a "Use as text" action, raster layers "Use as photo" / "Use as barcode"
+ * actions (any demo image can become the barcode placeholder); selected
+ * layers are highlighted with an editable mapping key. Barcode settings
+ * (toggle + symbology/colours) render below the list.
  */
 export function LayerPicker({ side }: LayerPickerProps): JSX.Element {
   const design = usePsdStore((state) => state.project[side]);
@@ -164,15 +175,27 @@ export function LayerPicker({ side }: LayerPickerProps): JSX.Element {
                     </Button>
                   )}
                   {(layer.kind === 'image' || layer.kind === 'shape') && layer.hasPixels && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-7 gap-1 px-2 text-xs"
-                      onClick={() => addPlaceholder(layer, side, 'photo')}
-                    >
-                      <ImageIcon className="h-3 w-3" aria-hidden="true" />
-                      Photo
-                    </Button>
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 gap-1 px-2 text-xs"
+                        onClick={() => addPlaceholder(layer, side, 'photo')}
+                      >
+                        <ImageIcon className="h-3 w-3" aria-hidden="true" />
+                        Photo
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 gap-1 px-2 text-xs"
+                        onClick={() => addPlaceholder(layer, side, 'barcode')}
+                        title="Use this image as a barcode placeholder"
+                      >
+                        <BarcodeIcon className="h-3 w-3" aria-hidden="true" />
+                        Barcode
+                      </Button>
+                    </>
                   )}
                 </div>
               )}
@@ -183,6 +206,10 @@ export function LayerPicker({ side }: LayerPickerProps): JSX.Element {
       {layers.length === 0 && (
         <p className="mt-2 text-xs text-muted-foreground">No layers match the filter.</p>
       )}
+
+      <div className="mt-3">
+        <BarcodeSettings side={side} />
+      </div>
     </section>
   );
 }

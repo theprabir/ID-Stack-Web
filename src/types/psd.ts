@@ -278,13 +278,15 @@ export interface PsdTextRun {
 
 /** A user-chosen placeholder layer on one side */
 export interface BarcodeConfig {
-  /** Symbology type: code128, qrcode, ean13, etc. */
+  /** Symbology type: code128, qrcode, ean13 */
   symbology: 'code128' | 'qrcode' | 'ean13';
-  /** Barcode/QR color (CSS color) */
+  /** Barcode/QR bar colour (CSS color) */
   color: string;
-  /** Barcode/QR width in pixels */
+  /** Background colour behind the symbol (CSS color) */
+  background: string;
+  /** Placeholder width in design px (element occupies exactly this box) */
   width: number;
-  /** Barcode/QR height in pixels */
+  /** Placeholder height in design px */
   height: number;
 }
 
@@ -297,8 +299,10 @@ export interface PsdPlaceholder {
   side: SideType;
   /** Placeholder key used for Excel mapping (defaults to layer name) */
   key: string;
-  /** Barcode configuration (optional, for BARCODE role placeholders) */
+  /** Barcode configuration (present when the layer was chosen as barcode) */
   barcodeConfig?: BarcodeConfig;
+  /** Toggle: render a live barcode (true) or keep the demo image (false) */
+  barcodeEnabled?: boolean;
 }
 
 /** Parsed PSD for one card face */

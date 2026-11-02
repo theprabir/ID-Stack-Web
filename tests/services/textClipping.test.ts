@@ -511,6 +511,11 @@ async function inkBoxOf(
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       const index = (y * width + x) * 4;
+      // Fully transparent pixels are NOT ink: in a real browser they show
+      // the card's white background through. The mock's destination-in
+      // zeroes alpha but leaves the painted RGB behind, so without this
+      // skip a masked (clipped) glyph would still register as ink.
+      if (data[index + 3] === 0) continue;
       const isWhite =
         data[index] === 255 && data[index + 1] === 255 && data[index + 2] === 255;
       if (isWhite) continue;

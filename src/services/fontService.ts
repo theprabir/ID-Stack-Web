@@ -251,18 +251,19 @@ export function registerFontFace(family: string, buffer: ArrayBuffer): FontFaceR
     delete fontLoadQueue[family];
   }
 
-  // Begin loading asynchronously.
-  void fontFace
+  // Begin loading asynchronously. `FontFace.load()` resolves with the
+  // FontFace instance itself — not a boolean — so record success explicitly.
+  fontFace
     .load()
-    .then((loaded) => {
-      record.loaded = loaded;
-      document.fonts.add(fontFace);
+    .then((loadedFace) => {
+      record.loaded = true;
+      document.fonts.add(loadedFace);
       loadedFamilies.set(family, record);
       notify();
       // Resolve all queued waiters.
       const q = fontLoadQueue[family];
       if (q) {
-        q.forEach((cb) => cb(loaded));
+        q.forEach((cb) => cb(true));
         delete fontLoadQueue[family];
       }
     })
@@ -294,14 +295,12 @@ export function registerFontFace(family: string, buffer: ArrayBuffer): FontFaceR
     const family = file.name.replace(/\.[^.]+$/, '');
     const buffer = await file.arrayBuffer();
     const record = registerFontFace(family, buffer);
-    // Skip if font face registration queued but not yet loaded.
-    if (!record.loaded) {
-      // Add to load queue so the caller can wait for readiness.
-      const queue = fontLoadQueue[family] ?? [];
-      queue.push(() => record.loaded);
-      fontLoadQueue[family] = queue;
-      continue;
-    }
+    // Wait for the FontFace to finish loading: alias registration and
+    // persistence must only happen once the binary has been validated.
+    // (Skipping here — as the old code did — left every fresh upload
+    // un-aliased and un-persisted, so PSD PostScript names never matched.)
+    if (!record.loaded) await waitForFontLoading(family);
+    if (!record.loaded) continue; // Invalid font file — skip it.
     registerPostScriptAlias(family, buffer);
     const fontRecord: FontRecord = {
       name: family,
@@ -310,7 +309,7 @@ export function registerFontFace(family: string, buffer: ArrayBuffer): FontFaceR
       addedDate: new Date().toISOString(),
     };
     try {
-      await saveFontRecord(record);
+      await saveFontRecord(fontRecord);
     } catch {
       // Persistence failure shouldn't block the in-session font.
     }
@@ -323,6 +322,18 @@ export function registerFontFace(family: string, buffer: ArrayBuffer): FontFaceR
 /** Families currently registered in the document */
 export function listLoadedFontFamilies(): string[] {
   return [...loadedFamilies.keys()];
+}
+
+/**
+ * Registry lookup for a registered family — exposes the raw font binary
+ * (the PDF exporter embeds uploaded fonts straight from this buffer) without
+ * leaking the mutable Map itself.
+ *
+ * @param family - Exact registered family name
+ * @returns The family's record, or undefined when not registered
+ */
+export function getFontRecord(family: string): FontFaceRecord | undefined {
+  return loadedFamilies.get(family);
 }
 
 /**
@@ -360,7 +371,16 @@ export async function ensureBundledFonts(): Promise<void> {
       });
       await fontFace.load();
       document.fonts.add(fontFace);
-      loadedFamilies.set(face.family, record => record.fontFace === fontFace);
+      // One record per family (the map is family-keyed); keep the first
+      // face (regular weight) as the representative record.
+      if (!loadedFamilies.has(face.family)) {
+        loadedFamilies.set(face.family, {
+          family: face.family,
+          fontFace,
+          buffer,
+          loaded: true,
+        });
+      }
     } catch {
       // Bundled font failed (e.g. offline before precache) — the browser
       // falls back to its installed Arial; no user action needed.
@@ -376,9 +396,9 @@ export async function ensureBundledFonts(): Promise<void> {
  * @param family - Family name to remove
  */
 export async function removeFont(family: string): Promise<void> {
-  const fontFace = loadedFamilies.get(family);
-  if (fontFace) {
-    document.fonts.delete(fontFace);
+  const record = loadedFamilies.get(family);
+  if (record) {
+    document.fonts.delete(record.fontFace);
     loadedFamilies.delete(family);
   }
   try {
@@ -415,15 +435,27 @@ export function resolveFontFamily(psdFontName: string | undefined): string {
  * FontFace to finish loading and falling back to the nearest available
  * font if the custom font fails to load.
  *
+ * Accepts the CSS family value produced by `resolveFontFamily` — a quoted
+ * family ("Akruti") or a candidate list ("Akruti", "Akruti X", sans-serif).
+ * Only a REGISTERED custom font that is actively loading blocks rendering:
+ * unknown families and failed loads return true so text still paints with
+ * the browser's fallback instead of disappearing entirely.
+ *
  * @param family - CSS family name to check (as returned by resolveFontFamily)
- * @returns True when the font is loaded and safe to use for rendering
+ * @returns True when it is safe to render with this family
  */
 export function fontGuard(family: string): boolean {
-  const record = loadedFamilies.get(family);
-  if (!record) return false;
+  const candidate = family
+    .split(',')[0]
+    ?.replace(/^\s*["']+|["']+\s*$/g, '')
+    .trim();
+  if (!candidate) return true;
+  const record = loadedFamilies.get(candidate);
+  if (!record) return true; // Browser-managed family — safe to draw.
   if (record.loaded) return true;
-  // Font is still loading — block rendering; caller must await waitForFontLoading.
-  return false;
+  // Custom font registered but still loading — block this frame; the font
+  // registry notifies subscribers when it finishes so a re-render happens.
+  return record.fontFace.status === 'error';
 }
 
 /**
@@ -445,15 +477,21 @@ export async function waitForFontLoading(family: string, timeoutMs = 5000): Prom
   }
   // Wait for the load event with a timeout.
   return new Promise((resolve) => {
+    let settled = false;
     const timer = setTimeout(() => {
       // Timeout — mark as not loaded and resolve false.
+      if (settled) return;
+      settled = true;
       record.loaded = false;
       notify();
       resolve(false);
     }, timeoutMs);
-    // Check periodically if the font loaded.
+    // Check periodically if the font loaded. `settled` stops the poll chain
+    // after either outcome so a timeout cannot leave it running forever.
     const check = () => {
+      if (settled) return;
       if (record.loaded) {
+        settled = true;
         clearTimeout(timer);
         notify();
         resolve(true);
@@ -532,18 +570,30 @@ export async function preloadFontsForText(
 
 
 /**
- * Inspect a font binary's name table for its PostScript name (name ID 6)
- * and record a family alias so PSD-embedded PostScript names resolve even
- * when the user's file/registration name differs (e.g. the file says
- * "MyriadPro Bold.ttf" but the embedded name is "MyriadPro-Bold").
+ * Inspect a font binary's name table and record family aliases so any name
+ * a PSD might reference resolves to the registered family — even when the
+ * user's file name differs (e.g. the file says "AKBALAN.ttf" but the binary
+ * is "AkrutiOriBalabadra-99Normal").
+ *
+ * All four PSD-relevant name IDs are registered:
+ *  - 1  family name (what Photoshop often shows)
+ *  - 4  full name
+ *  - 6  PostScript name (what ag-psd exposes as font.name)
+ *  - 16 typographic family
  *
  * @param family - Family the font was registered under
  * @param buffer - Raw font file bytes
  */
 export function registerPostScriptAlias(family: string, buffer: ArrayBuffer): void {
+  // The registration family itself always resolves.
+  postScriptAliasFamilies.set(normaliseFontName(family), family);
   try {
     const view = new DataView(buffer);
-    if (view.byteLength < 12 || view.getUint32(0) !== 0x00010000) return; // not TrueType
+    if (view.byteLength < 12) return;
+    const signature = view.getUint32(0);
+    // 0x00010000 = TrueType outlines, 'OTTO' = OpenType/CFF outlines.
+    // Both carry an identical `name` table (WOFF is compressed — skipped).
+    if (signature !== 0x00010000 && signature !== 0x4f54544f) return;
     const tableCount = view.getUint16(4);
     let nameOffset = -1;
     for (let index = 0; index < tableCount; index += 1) {
@@ -554,33 +604,28 @@ export function registerPostScriptAlias(family: string, buffer: ArrayBuffer): vo
         break;
       }
     }
-    if (nameOffset < 0) {
-      // Also register the family name as an alias so PSD font names can match even
-      // when the font binary has no PostScript name table.
-      postScriptAliasFamilies.set(normaliseFontName(family), family);
-      return;
-    }
+    if (nameOffset < 0) return; // No name table — the family alias above stands.
     const count = view.getUint16(nameOffset + 2);
     const stringOffset = nameOffset + view.getUint16(nameOffset + 4);
     for (let index = 0; index < count; index += 1) {
       const record = nameOffset + 6 + index * 12;
       const platform = view.getUint16(record);
       const nameId = view.getUint16(record + 6);
+      // Only the names a PSD text layer can reference (1/4/6/16).
+      if (nameId !== 1 && nameId !== 4 && nameId !== 6 && nameId !== 16) continue;
       const length = view.getUint16(record + 8);
       const offset = view.getUint16(record + 10);
-      if (nameId !== 6) continue; // PostScript name
       const bytes = new Uint8Array(buffer, stringOffset + offset, length);
       let decoded: string;
-      if (platform === 1 || platform === 0) {
-        decoded = String.fromCharCode(...bytes);
-      } else {
+      if (platform === 3 || platform === 0) {
+        // Windows/Unicode platforms store UTF-16BE.
         decoded = new TextDecoder('utf-16be').decode(bytes);
+      } else {
+        decoded = String.fromCharCode(...bytes);
       }
-      // Register alias from PostScript name to family
+      // Skip empty/garbled entries (e.g. lone U+0000 prefixes).
+      if (!decoded || decoded.includes('\u0000')) continue;
       postScriptAliasFamilies.set(normaliseFontName(decoded), family);
-      // Also register alias from family name to support reverse matching
-      postScriptAliasFamilies.set(normaliseFontName(family), family);
-      return;
     }
   } catch {
     // Malformed name table — the family still resolves by name matching.

@@ -26,11 +26,13 @@ import type {
   PsdLayerEffects,
   PsdTextStyleOracle,
   PsdGradientFill,
+  BarcodeConfig,
 } from '@/types/psd';
 import { sideKeyOf } from '@/types/psd';
 import type { DataRow, PhotoRecord } from '@/types/data';
 import { loadImageElement } from './psdService';
-import { resolveFontFamily, preloadFontsForText, exactFontCss, fontGuard, waitForFontLoading } from './fontService';
+import { resolveFontFamily, preloadFontsForText, exactFontCss, fontGuard } from './fontService';
+import { renderBarcode } from './barcodeService';
 
 /** A value lookup: placeholder key → string for the current row */
 export type RowResolver = (key: string) => string;
@@ -1509,6 +1511,60 @@ function drawTextLayer(
 }
 
 /**
+ * Draw a live barcode into the chosen image placeholder's exact box.
+ *
+ * The demo image the user picked only defines the box — its pixels are
+ * replaced by a freshly generated symbol for the row's mapped value:
+ * 1. the box is filled with the configured background colour (this is
+ *     also the element's exact width × height),
+ * 2. the bwip-js render is contain-fitted and centred, so module bars are
+ *     never distorted regardless of the box aspect.
+ *
+ * @param context - Stage context already positioned in design space
+ * @param layer - The image layer chosen as the barcode placeholder
+ * @param value - Raw value to encode (no normalisation applied)
+ * @param config - Symbology, colours and design-px box size
+ * @param scale - Pixel scale
+ */
+async function drawBarcodeLayer(
+  context: CanvasRenderingContext2D,
+  layer: PsdLayerInfo,
+  value: string,
+  config: BarcodeConfig,
+  scale: number
+): Promise<void> {
+  const bounds = layer.bounds;
+  const boxLeft = Math.round(bounds.left * scale);
+  const boxTop = Math.round(bounds.top * scale);
+  const boxWidth = Math.max(1, Math.round((bounds.right - bounds.left) * scale));
+  const boxHeight = Math.max(1, Math.round((bounds.bottom - bounds.top) * scale));
+
+  const barcode = await renderBarcode(value, {
+    ...config,
+    width: boxWidth,
+    height: boxHeight,
+  });
+
+  context.save();
+  // Background fills the EXACT placeholder box (bwip's own background may
+  // be smaller after module quantisation — same colour, so it blends).
+  context.fillStyle = config.background;
+  context.fillRect(boxLeft, boxTop, boxWidth, boxHeight);
+  // Contain-fit: uniform scale, centred — modules stay square/scannable.
+  const fit = Math.min(boxWidth / Math.max(1, barcode.width), boxHeight / Math.max(1, barcode.height));
+  const drawWidth = barcode.width * fit;
+  const drawHeight = barcode.height * fit;
+  context.drawImage(
+    barcode,
+    boxLeft + (boxWidth - drawWidth) / 2,
+    boxTop + (boxHeight - drawHeight) / 2,
+    drawWidth,
+    drawHeight
+  );
+  context.restore();
+}
+
+/**
  * Draw a photo into the placeholder layer's bounds with the placeholder's
  * original Photoshop styling: drop shadow, stroke, colour overlay and
  * layer/vector mask clipping. The photo is centre-cropped to the layer's
@@ -2018,6 +2074,42 @@ export async function compositeDesign(
       // Unmapped/empty → keep the original sample text (design as authored).
       const content = substituted.length > 0 ? substituted : (layer.text?.content ?? '');
       drawTextLayer(context, layer, content, scale, canvas.width, canvas.height);
+    } else if (placeholder?.role === 'barcode') {
+      // IMAGE AS BARCODE: the chosen layer is a demo barcode image; when
+      // the toggle is on and the row has a value, its pixels are replaced
+      // by a live symbol sized to the layer's exact bounds. Toggle off or
+      // no value → the demo image stays (the original raster path).
+      const value = resolver(placeholder.key);
+      const config = placeholder.barcodeConfig;
+      const enabled = placeholder.barcodeEnabled !== false;
+      if (enabled && config && value.length > 0) {
+        const stage = makeCanvas(canvas.width, canvas.height);
+        const stageContext = stage.getContext('2d');
+        if (stageContext) {
+          try {
+            await drawBarcodeLayer(stageContext, layer, value, config, scale);
+            let rendered: HTMLCanvasElement = stage;
+            if (layer.clipped) {
+              const base = layers[layerIndex - 1];
+              if (base && !base.clipped) {
+                rendered = await applyClippingMask(
+                  stage,
+                  design.layerRasters[base.id],
+                  base,
+                  scale
+                );
+              }
+            }
+            context.drawImage(rendered, 0, 0);
+          } catch {
+            // Invalid value for the symbology (e.g. non-numeric EAN-13):
+            // keep the demo image instead of dropping the layer.
+            await drawRasterLayer(context, layer, design.layerRasters[layer.id], scale);
+          }
+        }
+      } else {
+        await drawRasterLayer(context, layer, design.layerRasters[layer.id], scale);
+      }
     } else if (isPhotoPlaceholder) {
       const photo = options.getPhoto?.(options.row?.rowIndex ?? -1);
       if (photo) {

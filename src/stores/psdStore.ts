@@ -1,5 +1,11 @@
 import { create } from 'zustand';
-import type { PsdProject, PsdPlaceholder, PsdLayerInfo, SideType } from '@/types/psd';
+import type {
+  PsdProject,
+  PsdPlaceholder,
+  PsdLayerInfo,
+  SideType,
+  BarcodeConfig,
+} from '@/types/psd';
 import { parsePsdFile } from '@/services/psdService';
 import {
   savePsdProjectRecord,
@@ -44,6 +50,10 @@ interface PsdState extends PsdStoreBatchSlice {
   addPlaceholder: (layer: PsdLayerInfo, side: SideType, role: 'text' | 'photo' | 'barcode') => void;
   removePlaceholder: (layerId: string) => void;
   renamePlaceholderKey: (layerId: string, key: string) => void;
+  /** Turn a barcode placeholder on/off (renders live barcode vs demo image) */
+  setBarcodeEnabled: (layerId: string, enabled: boolean) => void;
+  /** Merge partial barcode settings (symbology, colours) into a placeholder */
+  updateBarcodeConfig: (layerId: string, config: Partial<BarcodeConfig>) => void;
   /** Persist the project (PSD bytes + placeholders) to IndexedDB. */
   saveProject: () => Promise<void>;
   /** Imposition settings (persisted per project, survive reloads) */
@@ -145,8 +155,48 @@ export const usePsdStore = create<PsdState>()((set, get) => ({
       role,
       side,
       key: layer.name,
+      // Barcode layers start enabled with sensible defaults sized to the
+      // chosen image's exact bounds (the demo barcode's box).
+      ...(role === 'barcode'
+        ? {
+            barcodeEnabled: true,
+            barcodeConfig: {
+              symbology: 'code128',
+              color: '#000000',
+              background: '#ffffff',
+              width: Math.max(1, Math.round(layer.bounds.right - layer.bounds.left)),
+              height: Math.max(1, Math.round(layer.bounds.bottom - layer.bounds.top)),
+            } satisfies BarcodeConfig,
+          }
+        : {}),
     };
     set({ project: { ...project, placeholders: [...project.placeholders, placeholder] } });
+  },
+
+  setBarcodeEnabled: (layerId, enabled) => {
+    const project = get().project;
+    set({
+      project: {
+        ...project,
+        placeholders: project.placeholders.map((placeholder) =>
+          placeholder.layerId === layerId ? { ...placeholder, barcodeEnabled: enabled } : placeholder
+        ),
+      },
+    });
+  },
+
+  updateBarcodeConfig: (layerId, config) => {
+    const project = get().project;
+    set({
+      project: {
+        ...project,
+        placeholders: project.placeholders.map((placeholder) =>
+          placeholder.layerId === layerId && placeholder.barcodeConfig
+            ? { ...placeholder, barcodeConfig: { ...placeholder.barcodeConfig, ...config } }
+            : placeholder
+        ),
+      },
+    });
   },
 
   removePlaceholder: (layerId) => {

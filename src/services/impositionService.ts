@@ -18,12 +18,13 @@ import {
   PDFRawStream,
   PDFString,
   PDFFont,
+  StandardFonts,
   type PDFRef,
 } from 'pdf-lib';
 import type { ImpositionSettings, SheetLayout } from './impositionTypes';
 import { computeSheetLayout, arrangeSheets } from './impositionTypes';
 import { initCmykEngine, canvasToCmykBytes } from './cmykExportService';
-import { registerFontFace, listLoadedFontFamilies } from './fontService';
+import { listLoadedFontFamilies, getFontRecord } from './fontService';
 import cmykProfileUrl from '@/assets/profiles/default_cmyk.icc?url';
 
 /** The producer string written into exported PDF documents */
@@ -40,43 +41,51 @@ async function getCmykProfileBytes(): Promise<Uint8Array> {
   return profileCache;
 }
 
-/** Get a registered PDFFont from a font family name, embedding it if needed */
+/** Encode a JS string as a Latin-1 Uint8Array (PDF content streams are ASCII) */
+function latin1(text: string): Uint8Array {
+  const bytes = new Uint8Array(text.length);
+  for (let index = 0; index < text.length; index += 1) {
+    bytes[index] = text.charCodeAt(index) & 0xff;
+  }
+  return bytes;
+}
+
+/** Per-document cache of embedded fonts, keyed by normalised family */
+const embeddedFonts = new WeakMap<PDFDocument, Map<string, PDFFont>>();
+
+/**
+ * Get a PDFFont for a family, embedding the raw uploaded .ttf/.otf buffer
+ * when a registered font matches (so custom/legacy glyphs survive in the
+ * exported PDF instead of reverting to a standard font), falling back to
+ * Helvetica otherwise. Embedded fonts are cached per PDF document.
+ */
 async function getPDFFont(pdf: PDFDocument, family: string): Promise<PDFFont> {
-  // Check if font is already embedded in the document's resources
-  const resources = pdf.context.obj;
-  // Try to find the font in existing resources
-  let font: PDFFont | undefined;
-  try {
-    // Check if __NumberFont is already embedded
-    const fontRef = resources?.['__NumberFont'];
-    if (fontRef && fontRef.satisfies(PDFName)) {
-      font = await pdf.extractFont(fontRef);
+  const key = normaliseFontName(family);
+  let cache = embeddedFonts.get(pdf);
+  if (!cache) {
+    cache = new Map<string, PDFFont>();
+    embeddedFonts.set(pdf, cache);
+  }
+  const cached = cache.get(key);
+  if (cached) return cached;
+
+  let embedded: PDFFont | undefined;
+  const familyMatch = listLoadedFontFamilies().find(
+    (name) => normaliseFontName(name) === key
+  );
+  if (familyMatch) {
+    const record = getFontRecord(familyMatch);
+    if (record) {
+      try {
+        embedded = await pdf.embedFont(new Uint8Array(record.buffer));
+      } catch {
+        embedded = undefined; // Unsupported/invalid binary — fall back below.
+      }
     }
-  } catch {
-    // Font not found, will embed it
   }
-  if (font) return font;
-
-  // Font not embedded yet — find the fontFace record and embed the buffer
-  const familyMatch = listLoadedFontFamilies().find((f) => normaliseFontName(f) === normaliseFontName(family));
-  if (!familyMatch) {
-    // Fallback to Helvetica if custom font not found
-    return await pdf.embedFont(StandardFonts.Helvetica);
-  }
-
-  // Get the fontFace record and its buffer
-  const fontFaceRecord = loadedFamilies.get(familyMatch);
-  if (!fontFaceRecord) {
-    return await pdf.embedFont(StandardFonts.Helvetica);
-  }
-
-  try {
-    const embeddedFont = await pdf.embedFont(fontFaceRecord.buffer);
-    return embeddedFont;
-  } catch {
-    // Failed to embed — fallback to Helvetica
-    return await pdf.embedFont(StandardFonts.Helvetica);
-  }
+  const result = embedded ?? (await pdf.embedFont(StandardFonts.Helvetica));
+  cache.set(key, result);
+  return result;
 }
 
 /** Normalise a font name for comparison */

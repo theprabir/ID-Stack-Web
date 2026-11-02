@@ -34,7 +34,7 @@ function SectionHeader({
   badge?: string;
 }) {
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-2 mb-4 pb-2 border-b border-slate-800/60">
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-2 mb-4 pb-2 border-b border-border">
       <div>
         <h2 className="text-sm sm:text-base font-semibold text-slate-100 flex items-center gap-2">
           {title}
@@ -76,7 +76,7 @@ export function AboutPage(): JSX.Element {
 
   return (
     <div className="w-full max-w-5xl mx-auto space-y-6 sm:space-y-8 p-3.5 sm:p-6 lg:p-8 font-sans antialiased text-slate-100 overflow-x-hidden">
-      <header className="relative overflow-hidden rounded-xl sm:rounded-2xl border border-slate-800/80 bg-gradient-to-br from-slate-900 via-slate-900/95 to-slate-950 p-4 sm:p-6 lg:p-8 shadow-sm">
+      <header className="relative overflow-hidden rounded-xl sm:rounded-2xl border border-border bg-gradient-to-br from-surface-card via-surface-panel to-surface-deepest p-4 sm:p-6 lg:p-8 shadow-sm">
         <div className="absolute -top-24 -right-24 h-48 sm:h-64 w-48 sm:w-64 rounded-full bg-indigo-500/10 blur-3xl pointer-events-none" />
         <div className="absolute -bottom-24 -left-24 h-48 sm:h-64 w-48 sm:w-64 rounded-full bg-emerald-500/10 blur-3xl pointer-events-none" />
 
@@ -107,7 +107,7 @@ export function AboutPage(): JSX.Element {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 pt-2 md:pt-0 border-t md:border-t-0 border-slate-800/60 justify-between md:justify-end">
+          <div className="flex items-center gap-2 pt-2 md:pt-0 border-t md:border-t-0 border-border justify-between md:justify-end">
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-medium">
               <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
               <span>100% Client-Side</span>
@@ -133,13 +133,13 @@ export function AboutPage(): JSX.Element {
           badge="Author Profile"
         />
 
-        <div className="rounded-xl sm:rounded-2xl border border-slate-800/80 bg-slate-900/60 p-4 sm:p-6 shadow-sm hover:border-slate-700/80 transition-colors">
+        <div className="rounded-xl sm:rounded-2xl border border-border bg-surface-panel p-4 sm:p-6 shadow-sm hover:border-slate-700/80 transition-colors">
           <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 sm:gap-6">
             {/* Creator Avatar */}
             <div className="relative shrink-0">
               {!avatarFailed ? (
                 <img
-                  src={`${APP_AUTHOR_GITHUB}.png`}
+                  src="/author.png"
                   alt={APP_AUTHOR_NAME}
                   className="h-16 w-16 sm:h-20 sm:w-20 rounded-2xl border-2 border-indigo-500/30 object-cover shadow-md"
                   onError={() => setAvatarFailed(true)}
@@ -161,7 +161,7 @@ export function AboutPage(): JSX.Element {
                   {APP_AUTHOR_NAME}
                 </h3>
                 <p className="text-xs font-medium text-indigo-400 mt-0.5">
-                  Software Engineer & Open Source Developer
+                  Open Source Developer & AI/ML Enthusiast
                 </p>
               </div>
 
@@ -171,7 +171,7 @@ export function AboutPage(): JSX.Element {
               </p>
 
               {/* Action Buttons */}
-              <div className="pt-1 sm:pt-2 flex flex-col xs:flex-row flex-wrap items-stretch sm:items-center justify-center sm:justify-start gap-2">
+              <div className="pt-1 sm:pt-2 flex flex-row flex-wrap items-stretch sm:items-center justify-center sm:justify-start gap-2">
                 <a
                   href={APP_AUTHOR_GITHUB}
                   target="_blank"
@@ -225,7 +225,7 @@ export function AboutPage(): JSX.Element {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5">
           {/* ID Stack Card */}
-          <div className="rounded-xl sm:rounded-2xl border border-slate-800/80 bg-slate-900/60 p-4 sm:p-6 flex flex-col justify-between hover:border-slate-700/80 transition-colors">
+          <div className="rounded-xl sm:rounded-2xl border border-border bg-surface-panel p-4 sm:p-6 flex flex-col justify-between hover:border-slate-700/80 transition-colors">
             <div>
               <div className="flex items-center justify-between gap-2 mb-3">
                 <div className="flex items-center gap-3 min-w-0">
@@ -266,7 +266,7 @@ export function AboutPage(): JSX.Element {
               </div>
             </div>
 
-            <div className="mt-5 sm:mt-6 pt-3.5 border-t border-slate-800/60 flex items-center justify-between text-xs">
+            <div className="mt-5 sm:mt-6 pt-3.5 border-t border-border flex items-center justify-between text-xs">
               <span className="text-slate-400 font-mono text-[11px]">Version {APP_VERSION}</span>
               <a
                 href={APP_REPO_URL}
@@ -281,7 +281,7 @@ export function AboutPage(): JSX.Element {
           </div>
 
           {/* Lipika Project Card */}
-          <div className="rounded-xl sm:rounded-2xl border border-slate-800/80 bg-slate-900/60 p-4 sm:p-6 flex flex-col justify-between hover:border-indigo-500/40 transition-colors">
+          <div className="rounded-xl sm:rounded-2xl border border-border bg-surface-panel p-4 sm:p-6 flex flex-col justify-between hover:border-indigo-500/40 transition-colors">
             <div>
               <div className="flex items-center justify-between gap-2 mb-3">
                 <div className="flex items-center gap-3 min-w-0">
@@ -330,7 +330,7 @@ export function AboutPage(): JSX.Element {
               </div>
             </div>
 
-            <div className="mt-5 sm:mt-6 pt-3.5 border-t border-slate-800/60 flex items-center justify-between text-xs">
+            <div className="mt-5 sm:mt-6 pt-3.5 border-t border-border flex items-center justify-between text-xs">
               <span className="text-slate-400 font-mono text-[11px]">lipika.co.in</span>
               <a
                 href={LIPIKA_URL}
@@ -353,7 +353,7 @@ export function AboutPage(): JSX.Element {
         />
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-4">
-          <div className="rounded-xl border border-slate-800/80 bg-slate-900/40 p-4">
+          <div className="rounded-xl border border-border bg-surface-panel p-4">
             <div className="flex items-center gap-2 text-emerald-400 mb-1.5">
               <ShieldCheck className="h-4 w-4 shrink-0" />
               <h4 className="text-xs font-semibold text-slate-200">100% In-Browser</h4>
@@ -364,7 +364,7 @@ export function AboutPage(): JSX.Element {
             </p>
           </div>
 
-          <div className="rounded-xl border border-slate-800/80 bg-slate-900/40 p-4">
+          <div className="rounded-xl border border-border bg-surface-panel p-4">
             <div className="flex items-center gap-2 text-indigo-400 mb-1.5">
               <Scale className="h-4 w-4 shrink-0" />
               <h4 className="text-xs font-semibold text-slate-200">Open Source MIT</h4>
@@ -374,7 +374,7 @@ export function AboutPage(): JSX.Element {
             </p>
           </div>
 
-          <div className="rounded-xl border border-slate-800/80 bg-slate-900/40 p-4 sm:col-span-2 lg:col-span-1">
+          <div className="rounded-xl border border-border bg-surface-panel p-4 sm:col-span-2 lg:col-span-1">
             <div className="flex items-center gap-2 text-indigo-400 mb-1.5">
               <Cpu className="h-4 w-4 shrink-0" />
               <h4 className="text-xs font-semibold text-slate-200">Fast Performance</h4>
@@ -386,7 +386,7 @@ export function AboutPage(): JSX.Element {
         </div>
       </section>
 
-      <footer className="pt-4 border-t border-slate-800/60 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-400">
+      <footer className="pt-4 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-400">
         <div className="flex items-center gap-2 text-center sm:text-left">
           <Terminal className="h-3.5 w-3.5 text-indigo-400 shrink-0" />
           <span>
