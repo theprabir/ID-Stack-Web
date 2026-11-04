@@ -4,7 +4,7 @@ ID Stack currently has a **minimal keyboard surface** — the app is wizard- and
 form-driven, so almost everything is a click away and no global shortcuts are
 bound yet.
 
-## PSD Studio
+## ID Studio
 
 | Action | Windows | macOS |
 |---|---|---|

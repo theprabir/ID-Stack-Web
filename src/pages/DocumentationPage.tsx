@@ -98,7 +98,7 @@ export function DocumentationPage(): JSX.Element {
               Quick start
             </h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              The whole workflow is the PSD Studio wizard on the home page.
+              The whole workflow is the ID Studio wizard on the home page.
             </p>
           </div>
         </div>

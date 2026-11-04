@@ -65,8 +65,8 @@ testing and release process.
 ## 2. Getting started
 
 ```bash
-git clone https://github.com/theprabir/ID-Stack-Web.git
-cd ID-Stack-Web
+git clone https://github.com/theprabir/id-stack-web.git
+cd id-stack-web
 npm install
 npm run dev        # http://localhost:5173/
 ```
@@ -129,7 +129,7 @@ Node **≥ 18** required (`engines` in package.json).
 │   ├── data/     # ExcelImport, PhotoImport, ColumnMapping, DataPreview
     │   └── psd/      # PsdUploader, LayerPicker, PsdCardPreview, BatchRunner,
     │                 # ImpositionPanel, FontManager, StudioStepper
-    ├── pages/        # PsdStudioPage (/), DocumentationPage,
+    ├── pages/        # IdStudioPage (/), DocumentationPage,
     │                 # SettingsPage, AboutPage
     ├── stores/       # Zustand: psdStore, dataStore, uiStore
     ├── services/     # business logic (see §6) — no React here
@@ -150,7 +150,7 @@ Node **≥ 18** required (`engines` in package.json).
 ### Routing (`src/App.tsx`)
 
 ```
-/         PsdStudioPage      ← production workflow (home)
+/         IdStudioPage      ← production workflow (home)
 /documentation DocumentationPage ← guides & references
 /settings    SettingsPage
 /about    AboutPage
@@ -224,7 +224,7 @@ modules.
 
 ## 7. Data flow
 
-### Production (PSD Studio)
+### Production (ID Studio)
 
 ```
 PSD file ──parsePsdFile──▶ PsdDesign {layers, compositeUrl, layerRasters}

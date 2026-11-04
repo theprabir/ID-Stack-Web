@@ -2,6 +2,34 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.7.3] - 2026-11-04
+
+### Changed
+
+- **“PSD Studio” is now “ID Studio”** — page title, sidebar, stepper,
+  documentation, README and changelog all use the new name (the page
+  component moved to `IdStudioPage`; PSD file/parsing names are unchanged).
+- **More height for the mapping and generation panels (Steps 3–4).** The
+  framed steps no longer spend 24–32 px of page padding above the title and
+  below the Back/Next row, and that row's top spacing was tightened — about
+  50 px more working height, without shrinking any control.
+
+### Fixed
+
+- **A missing photo is now truly transparent.** Designers place the portrait
+  in a frame layer (oval or rounded shape) with the photo layer stacked at
+  identical bounds; previously only the photo was skipped, so records without
+  a photo showed/printed a dark placeholder. The frame layer(s) directly
+  beneath the photo with matching bounds are now hidden for that record too,
+  letting the card background show through. Layers with different bounds
+  (card backgrounds) and the design preview (no row selected) are untouched.
+
+### Tests
+
+- `barcodeComposite.test.ts` — the frame layer under a missing photo is not
+  painted, a different-bounds backdrop is kept, and the design preview still
+  shows the frame; the matched-photo path is the positive control.
+
 ## [0.7.2] - 2026-11-04
 
 ### Added
@@ -73,7 +101,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- **PSD Studio is now a 4-step wizard — the old Step 3 is split in two so
+- **ID Studio is now a 4-step wizard — the old Step 3 is split in two so
   the whole page fits on screen without scrolling up and down.** Pure
   layout change; no behaviour, state or gate was altered.
 
@@ -151,7 +179,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   pipeline, stores/services rows and editor data-flow (the pipeline is
   now documented as single/PSD-first), troubleshooting's Editor section,
   and the keyboard-shortcuts reference (rewritten to the real, minimal
-  PSD Studio surface — no editor tables).
+  ID Studio surface — no editor tables).
 - Version display surfaces now all track 0.6.15 (package.json →
   `__APP_VERSION__` → footer chip + About; README badge updated).
 
@@ -425,7 +453,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Batch naming preview** — the generate step shows the resolved file name
   for the first data row (`{Name}_{ID}` → `Asha_Kumar_E001`) live as tokens
   are edited, before the batch is committed.
-- `docs/keyboard_shortcuts.md` — documented the PSD Studio shortcuts
+- `docs/keyboard_shortcuts.md` — documented the ID Studio shortcuts
   (step navigation, preview front/back toggle, batch pause/resume).
 
 ## [0.6.8] - 2026-09-27
@@ -678,7 +706,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   @theprabir), and a dedicated **Lipika** project card (lipika.co.in — the
   author's Unicode ↔ Akruti/Sreelipi Odia converter) with description,
   feature tags and a Visit button.
-- **Design-language consistency pass across pages.** PSD Studio and Library
+- **Design-language consistency pass across pages.** ID Studio and Library
   now use the same page-header pattern as Settings/About (2xl title + muted
   subtitle, consistent padding), and the Library empty state got a proper
   framed icon tile and helpful copy.
@@ -749,7 +777,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   card size straight to the store (one idempotent write, after which the
   sync check passes and the effect bails). Also guards against non-finite
   design dimensions/derived sizes.
-- Tests: full-wizard regression test that mounts `PsdStudioPage`, navigates
+- Tests: full-wizard regression test that mounts `IdStudioPage`, navigates
   to Step 2, selects a placeholder and asserts no crash plus a correct
   DPI-derived card size persisted to the store (154 total).
 
@@ -943,9 +971,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- **PSD Studio is now a 3-step wizard.** The old single-page layout (and the
+- **ID Studio is now a 3-step wizard.** The old single-page layout (and the
   separate Data page) are consolidated into one guided flow, all inside the
-  PSD Studio tab:
+  ID Studio tab:
   1. **Upload Designs & Data** — PSD front/back upload, Excel import,
      photo import and font management
   2. **Choose Placeholders** — layer pickers for both sides
@@ -963,7 +991,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Removed
 
 - The **Data** sidebar tab and `/data` route — data upload now lives in
-  step 1 of PSD Studio (`DataImportPage.tsx` deleted).
+  step 1 of ID Studio (`DataImportPage.tsx` deleted).
 
 ## [0.5.1] - 2026-09-26
 
@@ -1141,7 +1169,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `psdService` (ag-psd): layered .psd parsing per card face, flattened layer tree with kinds (text/image/group), bounds/opacity/blend/effect flags, full text style extraction (font, size, colour, bold/italic/underline, tracking, leading, justification, style runs), per-layer rasters + composite preview
 - `psdCompositeService`: pixel-faithful card rendering — placeholder text layers re-drawn with row content in the original style; photo layers filled with the row's matched photo (centre-crop); ALL other layers drawn from original rasters untouched, in original order, opacity and blend mode
 - `LayerPicker` (front/back): filterable layer list, mark any text layer as text placeholder or raster layer as photo placeholder, editable mapping keys, remove
-- `PsdStudioPage` at `/`: guided workflow (upload designs → choose placeholders → import data → map columns → live preview → generate) with step indicator and front/back preview tabs
+- `IdStudioPage` at `/`: guided workflow (upload designs → choose placeholders → import data → map columns → live preview → generate) with step indicator and front/back preview tabs
 - `batchService`: chunked batch generation with `BatchState` progress (current/total/ETA/errors), pause/resume/cancel via control ref, JSZip packaging, PNG/JPG quality option, front/back/both sides
 - `BatchRunner`: options (format, sides, naming template), live progress bar, pause/resume/cancel controls, error list, ZIP download
 - `batchNaming`: `{Row}`, `{Column}`, `{{Column}}` templates with file-name sanitisation
@@ -1149,10 +1177,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Tests: placeholder key collection, row resolver semantics, batch naming (9 new; 80 total)
 
 ### Changed
-- App home is now PSD Studio (`/`); the legacy Fabric editor moved to `/editor`
+- App home is now ID Studio (`/`); the legacy Fabric editor moved to `/editor`
 - `dataStore` placeholders source: PSD project keys take precedence over editor template tokens
 - `ColumnMapping` now takes generic placeholder→column pairs (works for PSD keys and editor tokens)
-- Sidebar: PSD Studio / Editor / Data / Library / Settings / About
+- Sidebar: ID Studio / Editor / Data / Library / Settings / About
 
 ## [0.3.1] - 2026-09-25
 

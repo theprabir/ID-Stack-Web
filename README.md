@@ -7,10 +7,10 @@
 **Professional ID card design & batch printing — entirely in your browser.**
 
 [![Live](https://img.shields.io/badge/live-id--stack.vercel.app-0078D4?logo=vercel&logoColor=white)](https://id-stack.vercel.app)
-[![Version](https://img.shields.io/badge/version-0.7.2-6366f1)](https://github.com/theprabir/ID-Stack-Web/blob/main/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.7.3-6366f1)](https://github.com/theprabir/id-stack-web/blob/main/CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-22c55e)](LICENSE)
 
-[**🌐 Launch the app**](https://id-stack.vercel.app) · [**📖 Changelog**](CHANGELOG.md) · [**🐛 Report an issue**](https://github.com/theprabir/ID-Stack-Web/issues)
+[**🌐 Launch the app**](https://id-stack.vercel.app) · [**📖 Changelog**](CHANGELOG.md) · [**🐛 Report an issue**](https://github.com/theprabir/id-stack-web/issues)
 
 No installation. No backend. No account. Your data never leaves your device.
 
@@ -38,7 +38,7 @@ No installation. No backend. No account. Your data never leaves your device.
 - 🖨️ **Imposition engine** — N cards per sheet on A4/A3/Letter/Legal/Tabloid or custom paper (mm/cm/in/pt) with bleed, gap, margin, crop marks, positioned numbering and live sheet preview
 - 👤 **One PDF per person** — double-sided cards export as a single 2-page PDF
 - 🔢 **Barcode/QR placeholders** — pick any image layer as a barcode (Code 128, EAN-13/8, UPC, Code 39, QR via bwip-js) with per-placeholder colours, background and an enable toggle; symbols are sized to the exact placeholder box
-- 🩹 **Missing-photo workflow** — records without a photo render a blank image area (never a demo photo), Step 4 can include or exclude them (default on), and a one-click CSV export lists exactly which records still need photos
+- 🩹 **Missing-photo workflow** — records without a photo render a fully transparent image area (never a demo photo; the frame layer beneath it is hidden too), Step 4 can include or exclude them (default on), and a one-click CSV export lists exactly which records still need photos
 
 ### 🔐 Privacy & Platform
 - 🧠 **100 % client-side** — no server, no API, no database, no accounts; everything runs in your browser
@@ -65,7 +65,7 @@ No installation. No backend. No account. Your data never leaves your device.
 | 1 | Project Foundation — Vite + React + TS strict, Tailwind/shadcn, routing, Zustand, layout, IndexedDB, PWA, ESLint/Prettier, Vitest | ✅ Complete |
 | 3 | Data Import — Excel (SheetJS), photos, column mapping, validation | ✅ Complete |
 | 4 | Batch Processing — Web Worker rendering, progress, pause/resume/cancel, ZIP export | ✅ Complete |
-| 5 | PSD Import — ag-psd parsing, pixel-faithful re-composition, guided 4-step PSD Studio | ✅ Complete |
+| 5 | PSD Import — ag-psd parsing, pixel-faithful re-composition, guided 4-step ID Studio | ✅ Complete |
 | 6 | Imposition Engine — sheet layout, numbering, print-ready PDF (pdf-lib), sheet preview | ✅ Complete |
 | 7 | Polish & Production — font manager, error boundaries, performance, final testing, deployment | ✅ Complete |
 
@@ -83,9 +83,9 @@ the in-app **Documentation** page renders them right there:
 
 | Document | For | Contents |
 |---|---|---|
-| [User manual](docs/user_manual.md) | Users | Every page and workflow: PSD Studio's 4 steps, output options, printing, privacy |
+| [User manual](docs/user_manual.md) | Users | Every page and workflow: ID Studio's 4 steps, output options, printing, privacy |
 | [Developer manual](docs/developer_manual.md) | Contributors | Stack, architecture, services, data flow, PSD/CMYK/imposition internals, testing, releases |
-| [Keyboard shortcuts](docs/keyboard_shortcuts.md) | Everyone | PSD Studio shortcut reference (implemented + planned) |
+| [Keyboard shortcuts](docs/keyboard_shortcuts.md) | Everyone | ID Studio shortcut reference (implemented + planned) |
 | [Troubleshooting guide](docs/troubleshooting.md) | Users | Symptom-first fixes: parsing, fonts, data, generation, printing, storage |
 
 ## 🛠️ For Developers
@@ -96,8 +96,8 @@ the in-app **Documentation** page renders them right there:
 
 ### Installation
 ```bash
-git clone https://github.com/theprabir/ID-Stack-Web.git
-cd ID-Stack-Web
+git clone https://github.com/theprabir/id-stack-web.git
+cd id-stack-web
 npm install
 ```
 
@@ -134,4 +134,4 @@ Built with React + TypeScript, SheetJS, ag-psd, pdf-lib, Tailwind CSS + shadcn/u
 MIT License — see [LICENSE](LICENSE).
 
 ## 🐛 Reporting Issues & Support
-Use [GitHub Issues](https://github.com/theprabir/ID-Stack-Web/issues) to report bugs or request features, or contact the maintainer: **Prabir kumar Das** ([@theprabir](https://github.com/theprabir)).
+Use [GitHub Issues](https://github.com/theprabir/id-stack-web/issues) to report bugs or request features, or contact the maintainer: **Prabir kumar Das** ([@theprabir](https://github.com/theprabir)).

@@ -355,6 +355,91 @@ describe('compositeDesign — missing photo stays blank (v0.7.2)', () => {
     expect(fillsOf(card).filter((fill) => fill.kind === 'image')).toHaveLength(0);
   });
 
+  /** The frame/backdrop designers place the portrait in (same bounds) */
+  const frameLayer: PsdLayerInfo = {
+    ...photoLayer,
+    id: 'front/Frame',
+    name: 'Frame',
+  };
+  const frameDesign: PsdDesign = {
+    ...photoDesign,
+    layers: [frameLayer, photoLayer],
+    layerRasters: {
+      'front/Photo': 'data:image/png;base64,iVBORw0KGgo=',
+      'front/Frame': 'data:image/png;base64,iVBORw0KGgo=',
+    },
+  };
+
+  it('v0.7.3 — also hides the frame layer beneath the photo (same bounds)', async () => {
+    const card = await compositeDesign(frameDesign, {
+      placeholders: [photoPlaceholder],
+      mappings: { Photo: 'PhotoFile' },
+      row: { rowIndex: 0, values: { PhotoFile: 'missing.png' } },
+      getPhoto: () => undefined,
+      backgroundColor: '#ffffff',
+    });
+    // Neither the demo photo nor its oval frame may be painted: the area is
+    // fully transparent so the card background shows through.
+    expect(fillsOf(card).filter((fill) => fill.kind === 'image')).toHaveLength(0);
+  });
+
+  it('keeps a layer beneath the photo when its bounds differ (no over-hiding)', async () => {
+    const backdropLayer: PsdLayerInfo = {
+      ...frameLayer,
+      bounds: { left: 0, top: 0, right: 500, bottom: 800 },
+    };
+    const card = await compositeDesign(
+      {
+        ...frameDesign,
+        layers: [backdropLayer, photoLayer],
+        layerRasters: {
+          ...frameDesign.layerRasters,
+          'front/Frame': 'data:image/png;base64,iVBORw0KGgo=',
+        },
+      },
+      {
+        placeholders: [photoPlaceholder],
+        mappings: { Photo: 'PhotoFile' },
+        row: { rowIndex: 0, values: { PhotoFile: 'missing.png' } },
+        getPhoto: () => undefined,
+        backgroundColor: '#ffffff',
+      }
+    );
+    // The card-wide background layer is untouched (only the photo is skipped).
+    expect(fillsOf(card).filter((fill) => fill.kind === 'image').length).toBeGreaterThan(0);
+  });
+
+  it('with a photo, the frame stays painted (positive control)', async () => {
+    const photo = {
+      id: 'p1',
+      fileName: 'student.png',
+      baseName: 'student',
+      blobUrl: 'blob:student',
+      file: new File(['x'], 'student.png', { type: 'image/png' }),
+      width: 100,
+      height: 100,
+    };
+    const card = await compositeDesign(frameDesign, {
+      placeholders: [photoPlaceholder],
+      mappings: { Photo: 'PhotoFile' },
+      row: { rowIndex: 0, values: { PhotoFile: 'student.png' } },
+      getPhoto: () => photo,
+      backgroundColor: '#ffffff',
+    });
+    expect(fillsOf(card).filter((fill) => fill.kind === 'image').length).toBeGreaterThan(0);
+  });
+
+  it('design preview (no row) keeps the frame as authored', async () => {
+    const card = await compositeDesign(frameDesign, {
+      placeholders: [photoPlaceholder],
+      mappings: { Photo: 'PhotoFile' },
+      row: null,
+      backgroundColor: '#ffffff',
+    });
+    // Frame still visible so the design reads correctly while choosing layers.
+    expect(fillsOf(card).filter((fill) => fill.kind === 'image').length).toBeGreaterThan(0);
+  });
+
   it('a matched photo IS drawn (positive control)', async () => {
     const photo = {
       id: 'p1',

@@ -7,7 +7,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { PsdStudioPage } from '@/pages/PsdStudioPage';
+import { IdStudioPage } from '@/pages/IdStudioPage';
 import { usePsdStore } from '@/stores/psdStore';
 import { useDataStore } from '@/stores/dataStore';
 import { DEFAULT_IMPOSITION_SETTINGS } from '@/services/impositionTypes';
@@ -69,7 +69,7 @@ function fakeExcel(): ExcelData {
   };
 }
 
-describe('PsdStudioPage placeholder selection (max-update-depth regression)', () => {
+describe('IdStudioPage placeholder selection (max-update-depth regression)', () => {
   beforeEach(() => {
     usePsdStore.setState({
       project: { front: fakeDesign(), back: null, placeholders: [] },
@@ -98,7 +98,7 @@ describe('PsdStudioPage placeholder selection (max-update-depth regression)', ()
   it('selecting a text placeholder does not hit maximum update depth', async () => {
     render(
       <MemoryRouter initialEntries={['/']}>
-        <PsdStudioPage />
+        <IdStudioPage />
       </MemoryRouter>
     );
 

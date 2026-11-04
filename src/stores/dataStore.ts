@@ -61,7 +61,7 @@ interface DataState {
 /**
  * Owns imported Excel data, photos, column mappings and validation state.
  * Derives placeholders from the PSD design's placeholder layers so the
- * mapping UI stays in sync with PSD Studio.
+ * mapping UI stays in sync with ID Studio.
  */
 export const useDataStore = create<DataState>()((set, get) => ({
   excelData: null,

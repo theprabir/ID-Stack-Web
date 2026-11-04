@@ -197,11 +197,13 @@ fix, and check the linked section if you need the why.
 - Photos whose names match nothing are listed as unused; rename and
   re-import them.
 
-**A row has no photo (blank portrait)**
+**A row has no photo (transparent portrait)**
 
-- The photo window renders empty for that row. Assign one in **Manual**
-  mode, or add the missing file. Validation flags missing photos as
-  warnings when using column mode.
+- The photo window renders fully transparent for that row — the card
+  background shows through, and the frame layer directly beneath the photo
+  (same bounds) is hidden with it so no dark placeholder is printed. Assign
+  a photo in **Manual** mode, or add the missing file. Validation flags
+  missing photos as warnings when using column mode.
 
 **Photos look cropped oddly**
 
@@ -368,7 +370,7 @@ fix, and check the linked section if you need the why.
 ## 10. Reporting a bug
 
 When filing at
-[github.com/theprabir/ID-Stack-Web/issues](https://github.com/theprabir/ID-Stack-Web/issues),
+[github.com/theprabir/id-stack-web/issues](https://github.com/theprabir/id-stack-web/issues),
 include:
 
 1. Browser + version, OS, app version (footer chip or About page).

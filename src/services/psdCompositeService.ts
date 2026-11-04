@@ -288,6 +288,20 @@ function effectPadding(effects: PsdLayerEffects | undefined, scale: number): num
   return Math.ceil(pad * scale) + 2;
 }
 
+/** Two layer bounds cover the same box (1px slack for PSD rounding) */
+function sameLayerBounds(
+  a: { left: number; top: number; right: number; bottom: number },
+  b: { left: number; top: number; right: number; bottom: number }
+): boolean {
+  const slack = 1;
+  return (
+    Math.abs(a.left - b.left) <= slack &&
+    Math.abs(a.top - b.top) <= slack &&
+    Math.abs(a.right - b.right) <= slack &&
+    Math.abs(a.bottom - b.bottom) <= slack
+  );
+}
+
 /** Create an offscreen canvas of the given size */
 function makeCanvas(width: number, height: number): HTMLCanvasElement {
   const canvas = document.createElement('canvas');
@@ -2057,9 +2071,43 @@ export async function compositeDesign(
   // every other layer (v0.4.2 blank-output fix).
   const layers = design.layers;
 
+  /**
+   * v0.7.3 — layers hidden for THIS record because a photo is missing.
+   *
+   * Designers build the portrait window as a frame layer (an oval/rounded
+   * shape) with the photo layer stacked on top at identical bounds. Skipping
+   * only the photo left that frame painted, so records without a photo showed
+   * a dark placeholder instead of letting the card background show through.
+   * When a record has no photo, the photo layer AND the consecutive layers
+   * directly beneath it that share its exact bounds (its frame) are hidden,
+   * so the area is truly transparent. Placeholders and layers that merely
+   * happen to be large are never swallowed: the bounds must match, matching
+   * stops at the first layer that differs, and the pure design preview
+   * (row === null) keeps the design as authored.
+   */
+  const hiddenForMissingPhoto = new Set<string>();
+  if (options.row) {
+    const photo = options.getPhoto?.(options.row.rowIndex ?? -1);
+    if (!photo) {
+      for (const placeholder of placeholderByLayer.values()) {
+        if (placeholder.role !== 'photo') continue;
+        const photoIndex = layers.findIndex((layer) => layer.id === placeholder.layerId);
+        const photoLayer = photoIndex >= 0 ? layers[photoIndex] : undefined;
+        if (!photoLayer?.bounds) continue;
+        for (let belowIndex = photoIndex - 1; belowIndex >= 0; belowIndex -= 1) {
+          const below = layers[belowIndex];
+          if (!below || below.hidden || placeholderByLayer.has(below.id)) break;
+          if (!below.bounds || !sameLayerBounds(below.bounds, photoLayer.bounds)) break;
+          hiddenForMissingPhoto.add(below.id);
+        }
+      }
+    }
+  }
+
   for (let layerIndex = 0; layerIndex < layers.length; layerIndex += 1) {
     const layer = layers[layerIndex]!;
     if (layer.hidden) continue;
+    if (hiddenForMissingPhoto.has(layer.id)) continue;
     if (layer.kind === 'group') continue; // groups contribute no pixels
 
     const placeholder = placeholderByLayer.get(layer.id);
@@ -2132,8 +2180,9 @@ export async function compositeDesign(
           context.drawImage(rendered, 0, 0);
         }
       }
-      // v0.7.2 — no photo for this record → the area stays COMPLETELY blank:
-      // the PSD's demo photo is never printed (or shown in preview).
+      // v0.7.2/v0.7.3 — no photo for this record → the area stays COMPLETELY
+      // transparent: neither the demo photo nor the frame layer beneath it
+      // is painted, so the card background shows through.
     } else {
       // Untouched layer: draw the original raster exactly as-is.
       await drawRasterLayer(context, layer, design.layerRasters[layer.id], scale);

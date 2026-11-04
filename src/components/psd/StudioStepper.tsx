@@ -19,7 +19,7 @@ interface StudioStepperProps {
 }
 
 /**
- * Clickable step chips for the PSD Studio wizard. Completed and reachable
+ * Clickable step chips for the ID Studio wizard. Completed and reachable
  * steps can be clicked to move back and forth; future steps are locked
  * until their requirements are met.
  */
@@ -96,7 +96,7 @@ export function StudioNavButtons({
 }: StudioNavButtonsProps): JSX.Element {
   const isLast = currentStep === totalSteps;
   return (
-    <div className="flex items-center justify-between gap-3 border-t pt-3">
+    <div className="flex items-center justify-between gap-3 border-t pt-2">
       <Button variant="outline" onClick={onBack} disabled={currentStep === 1} className="gap-1">
         <ChevronLeft className="h-4 w-4" aria-hidden="true" />
         Back

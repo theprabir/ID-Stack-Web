@@ -1,19 +1,19 @@
 {
   "name": "id-stack",
   "private": true,
-  "version": "0.7.2",
+  "version": "0.7.3",
   "type": "module",
   "description": "ID Stack — Professional ID Card Design & Batch Printing Software — 100% client-side",
   "license": "MIT",
   "author": "Prabir kumar Das",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/theprabir/ID-Stack-Web.git"
+    "url": "git+https://github.com/theprabir/id-stack-web.git"
   },
   "bugs": {
-    "url": "https://github.com/theprabir/ID-Stack-Web/issues"
+    "url": "https://github.com/theprabir/id-stack-web/issues"
   },
-  "homepage": "https://github.com/theprabir/ID-Stack-Web#readme",
+  "homepage": "https://github.com/theprabir/id-stack-web#readme",
   "engines": {
     "node": ">=18.0.0"
   },

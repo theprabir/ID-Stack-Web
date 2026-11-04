@@ -14,7 +14,7 @@ installation, no account, no upload of your data to any server.
 1. [What is ID Stack?](#1-what-is-id-stack)
 2. [Getting started](#2-getting-started)
 3. [The workspace at a glance](#3-the-workspace-at-a-glance)
-4. [PSD Studio — the main workflow](#4-psd-studio--the-main-workflow)
+4. [ID Studio — the main workflow](#4-psd-studio--the-main-workflow)
    - [Step 1 — Upload designs & data](#step-1--upload-designs--data)
    - [Step 2 — Choose placeholders](#step-2--choose-placeholders)
    - [Step 3 — Map columns & preview](#step-3--map-columns--preview)
@@ -84,7 +84,7 @@ install ID Stack as a standalone app with its own window and taskbar icon.
    row per person. Only the **first sheet** of a workbook is read.
 3. *(Optional)* **Photos** named after the people, e.g. `Priya Sharma.jpg`.
 
-> Tip: the repository's [`sample-data/`](https://github.com/theprabir/ID-Stack-Web/tree/main/sample-data)
+> Tip: the repository's [`sample-data/`](https://github.com/theprabir/id-stack-web/tree/main/sample-data)
 > folder contains a working example (two sample PSDs, `employees.csv` and a
 > photos folder) you can use to try the whole flow end-to-end.
 
@@ -109,7 +109,7 @@ The window has three fixed areas:
 │ Header:  ID Stack logo ………………………………… theme toggle (🌙/☀️) │
 ├──────────┬───────────────────────────────────────────────┤
 │ Sidebar  │  Page content                                 │
-│ PSD Studio│                                              │
+│ ID Studio│                                              │
 │ Documentation │                                          │
 │ Settings │                                               │
 │ About    │                                               │
@@ -130,16 +130,16 @@ The window has three fixed areas:
 
 | Page | Purpose |
 |---|---|
-| **PSD Studio** | The guided 4-step production line: upload → placeholders → map & preview → generate. This is where cards are made. |
+| **ID Studio** | The guided 4-step production line: upload → placeholders → map & preview → generate. This is where cards are made. |
 | **Documentation** | Guides and references: quick start, user manual, troubleshooting, shortcuts. |
 | **Settings** | Color palette, dark/light theme, privacy info. |
 | **About** | Version, author, project links. |
 
 ---
 
-## 4. PSD Studio — the main workflow
+## 4. ID Studio — the main workflow
 
-Open **PSD Studio** (the home page). Four numbered steps run across the top;
+Open **ID Studio** (the home page). Four numbered steps run across the top;
 click a step chip to jump (steps unlock as prerequisites are met — see
 [Working across steps](#working-across-steps)). Steps 3 and 4 fit the
 viewport — their panels scroll internally instead of the page.
@@ -269,9 +269,10 @@ A table with one row per placeholder:
 
 - **Front / Back** tabs above the preview switch faces.
 - The preview is a real render: placeholders filled from the selected row,
-  photos placed (completely blank when a record has no photo — never the
-  PSD's demo photo), fonts and effects applied — exactly what will be
-  exported.
+  photos placed (fully transparent when a record has no photo — never the
+  PSD's demo photo, and the photo's frame layer is hidden too so the card
+  background shows through), fonts and effects applied — exactly what will
+  be exported.
 - "Showing row N" confirms which row you're looking at.
 
 **Continue** to Step 4 once every placeholder is mapped (unmapped ones are
@@ -297,7 +298,7 @@ scrolls internally if needed.
 **Missing-photo controls (left, under the output options)**:
 
 - **Include records without photos** — ON by default: every record is
-  generated, and a missing photo leaves the image area completely blank
+  generated, and a missing photo leaves the image area fully transparent
   (the PSD's demo photo is never printed). Turn it OFF to process only
   records that have a matched photo — the Generate button then shows the
   reduced count. The toggle resets to ON each time you open Step 4.
@@ -459,4 +460,4 @@ profile (GitHub / Instagram / copy email), featured projects and licence info.
 ---
 
 *ID Stack is open source (MIT). Issues and feature requests:
-[github.com/theprabir/ID-Stack-Web/issues](https://github.com/theprabir/ID-Stack-Web/issues).*
+[github.com/theprabir/id-stack-web/issues](https://github.com/theprabir/id-stack-web/issues).*

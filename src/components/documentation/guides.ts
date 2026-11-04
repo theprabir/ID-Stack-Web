@@ -28,7 +28,7 @@ export const GUIDES: DocGuide[] = [
     name: 'User manual',
     audience: 'Users',
     description:
-      'Every page and workflow: the PSD Studio wizard, uploads, placeholder picking, column mapping, batch generation and printing.',
+      'Every page and workflow: the ID Studio wizard, uploads, placeholder picking, column mapping, batch generation and printing.',
     source: userManualMd,
     githubUrl: `${REPO_DOCS}/docs/user_manual.md`,
   },
@@ -47,7 +47,7 @@ export const GUIDES: DocGuide[] = [
     Icon: 'keyboard',
     name: 'Keyboard shortcuts',
     audience: 'Everyone',
-    description: 'The (currently minimal) PSD Studio keyboard reference — what works today.',
+    description: 'The (currently minimal) ID Studio keyboard reference — what works today.',
     source: keyboardShortcutsMd,
     githubUrl: `${REPO_DOCS}/docs/keyboard_shortcuts.md`,
   },

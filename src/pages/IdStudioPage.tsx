@@ -16,7 +16,7 @@ import { ExcelImport, PhotoImport, DataPreview } from '@/components/data';
 import { ColumnMapping } from '@/components/data/ColumnMapping';
 import { cn } from '@/lib/utils';
 
-/** Total wizard steps in the PSD Studio */
+/** Total wizard steps in the ID Studio */
 const TOTAL_STEPS = 4;
 
 const STEPS: StudioStep[] = [
@@ -43,7 +43,7 @@ const STEPS: StudioStep[] = [
 ];
 
 /**
- * PSD Studio — a 4-step wizard:
+ * ID Studio — a 4-step wizard:
  * 1. Upload designs & data (PSD front/back + Excel + photos)
  * 2. Choose placeholders (text/photo layers per side)
  * 3. Map columns & preview (mapping, full data table, live card preview)
@@ -55,7 +55,7 @@ const STEPS: StudioStep[] = [
  * Steps 3–4 render inside a fixed-height frame whose panels scroll
  * internally, so the whole step fits on screen without page scrolling.
  */
-export function PsdStudioPage(): JSX.Element {
+export function IdStudioPage(): JSX.Element {
   const project = usePsdStore((state) => state.project);
   const isParsing = usePsdStore((state) => state.isParsing);
   const excelData = useDataStore((state) => state.excelData);
@@ -118,18 +118,23 @@ export function PsdStudioPage(): JSX.Element {
   return (
     <div
       className={cn(
-        'themed-scrollbar flex h-full flex-col p-6 sm:p-8',
-        isFramedStep ? 'max-xl:overflow-y-auto xl:overflow-hidden' : 'overflow-auto'
+        'themed-scrollbar flex h-full flex-col',
+        // v0.7.3 — framed steps (3–4) trade vertical page padding for content
+        // height: the generation panels are the tallest UI in the app, and the
+        // whitespace above the title and below the Back/Next row was wasted.
+        isFramedStep
+          ? 'px-6 py-3 sm:px-8 xl:overflow-hidden max-xl:overflow-y-auto'
+          : 'overflow-auto p-6 sm:p-8'
       )}
     >
       <div
         className={cn(
           'flex shrink-0 flex-wrap items-center justify-between gap-3',
-          isFramedStep ? 'mb-2' : 'mb-5'
+          isFramedStep ? 'mb-1.5' : 'mb-5'
         )}
       >
         <div className={cn(isFramedStep && 'min-w-0')}>
-          <h1 className={cn('font-semibold', isFramedStep ? 'text-lg' : 'text-2xl')}>PSD Studio</h1>
+          <h1 className={cn('font-semibold', isFramedStep ? 'text-lg' : 'text-2xl')}>ID Studio</h1>
           {!isFramedStep && (
             <p className="mt-1 text-sm text-muted-foreground">
               Design, map and generate ID cards from layered Photoshop files.
@@ -268,7 +273,7 @@ export function PsdStudioPage(): JSX.Element {
             </div>
           </div>
         </div>
-        <div className="mt-3 shrink-0">
+        <div className="mt-2 shrink-0">
           <StudioNavButtons
             currentStep={3}
             totalSteps={TOTAL_STEPS}
@@ -300,7 +305,7 @@ export function PsdStudioPage(): JSX.Element {
             </div>
           )}
         </div>
-        <div className="mt-3 shrink-0">
+        <div className="mt-2 shrink-0">
           <StudioNavButtons
             currentStep={4}
             totalSteps={TOTAL_STEPS}
