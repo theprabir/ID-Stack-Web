@@ -19,7 +19,7 @@ import {
 import { APP_VERSION } from '@/constants/app';
 const APP_AUTHOR_NAME = 'Prabir kumar Das';
 const APP_AUTHOR_GITHUB = 'https://github.com/theprabir';
-const APP_REPO_URL = 'https://github.com/theprabir/idstack';
+const APP_REPO_URL = 'https://github.com/theprabir/id-stack-web';
 const AUTHOR_EMAIL = 'prabirishere@gmail.com';
 const AUTHOR_INSTAGRAM = 'https://www.instagram.com/theprabir';
 const LIPIKA_URL = 'https://lipika.co.in';
