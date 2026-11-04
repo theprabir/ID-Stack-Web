@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { DataRow } from '@/types/data';
 import { usePsdStore } from '@/stores/psdStore';
 import { useDataStore, PREVIEW_ROW_COUNT } from '@/stores/dataStore';
@@ -60,6 +60,7 @@ export function PsdStudioPage(): JSX.Element {
   const isParsing = usePsdStore((state) => state.isParsing);
   const excelData = useDataStore((state) => state.excelData);
   const mappings = useDataStore((state) => state.mappings);
+  const revalidate = useDataStore((state) => state.revalidate);
   const photoMatchConfig = useDataStore((state) => state.photoMatchConfig);
   const photos = useDataStore((state) => state.photos);
   const [step, setStep] = useState(1);
@@ -81,6 +82,14 @@ export function PsdStudioPage(): JSX.Element {
     () => (excelData ? getPreview(excelData, PREVIEW_ROW_COUNT) : []),
     [excelData]
   );
+
+  // v0.7.2 fix: adding/removing a placeholder changes the required-key set,
+  // so validation must be re-derived (previously it went stale until the
+  // next manual mapping change).
+  useEffect(() => {
+    if (!excelData) return;
+    revalidate();
+  }, [project.placeholders, excelData, revalidate]);
 
   // Step gates: what must be ready to move forward.
   const designsReady = Boolean(project.front || project.back);
@@ -279,7 +288,12 @@ export function PsdStudioPage(): JSX.Element {
       >
         <div className="min-h-0 flex-1">
           {readyToGenerate && excelData && photoMatches ? (
-            <BatchRunner project={project} excelData={excelData} photoMatches={photoMatches} />
+            <BatchRunner
+              project={project}
+              excelData={excelData}
+              photoMatches={photoMatches}
+              isActive={step === 4}
+            />
           ) : (
             <div className="flex h-full items-center justify-center rounded-lg border bg-surface-panel p-4 text-sm text-muted-foreground">
               Complete the earlier steps to unlock generation.

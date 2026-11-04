@@ -2,6 +2,73 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.7.2] - 2026-11-04
+
+### Added
+
+- **Blank placeholders for missing data.** Records without a photo render a
+  completely empty image area — the PSD's demo photo is never printed (nor
+  shown in preview) — and a field with no Excel value renders nothing instead
+  of substituting the PSD's sample text. The pure design preview (no data row
+  selected) still shows the design as authored.
+- **Step 4 “Include records without photos” toggle** (default ON): process
+  every record, or only records with a matched photo. The toggle re-defaults
+  to enabled each time Step 4 is opened, and the Generate button always
+  shows the effective record count.
+- **Download missing-photo list** (Step 4): exports every record without a
+  matched photo as a UTF-8 (BOM) RFC-4180 CSV, downloadable on click — open
+  it in Excel to collect exactly the people you still need photos for.
+
+### Fixed
+
+- **Auto-map now re-runs validation** — the status line and row validity no
+  longer stay stale after clicking Auto-map (previously they kept reporting
+  import-time “not mapped” warnings).
+- **Validation refreshes when the placeholder set changes** — adding or
+  removing a placeholder updates the warnings immediately instead of
+  waiting for the next manual mapping edit.
+- **Production builds (Vercel)** — the remaining TypeScript errors in
+  `fontService`, `impositionService` and `psdCompositeService` that failed
+  `tsc --noEmit` are fixed; `npm run build` is green again.
+
+## [0.7.1] - 2026-11-02
+
+### Added
+
+- **Legacy (Akruti/Odia) font rendering — full pipeline fix.** Uploaded
+  fonts now register under the font’s **real internal name** (PostScript,
+  family and full font names parsed from the name table — the file name is
+  irrelevant), including OpenType/CFF (`OTTO`) files, so a PSD’s embedded
+  PostScript name resolves to the uploaded `.ttf`/`.otf`. A strict font
+  guard awaits `FontFace.load()` + `document.fonts.check()` before any
+  canvas `fillText` (no fallback flicker), and the PDF embeds the raw
+  uploaded buffer via `embedFont(buffer)` so legacy glyphs print correctly
+  on any device. Cell strings pass through raw — no Unicode normalisation
+  or shaping of legacy-encoded Excel data.
+- **Smart Auto-map (weighted fuzzy matching).** A synonym dictionary plus
+  weighted scores — 100 exact / 80 substring / 60 synonym / 40 shared
+  keyword — with a > 40 threshold, so `empname` → `Name`, `roll no` → `ID`
+  and `profile` → `Photo` map in one click.
+- **Image-as-barcode placeholders.** Any image layer can be chosen as a
+  barcode (demo image defines the box); symbology, colours and box settings
+  live on the placeholder with a per-placeholder enable toggle. Live
+  bwip-js symbols are sized to the layer’s exact bounds with an LRU cache;
+  invalid values fall back to the demo image instead of failing the render.
+- **About page refresh:** panel colours matched to the app background (clean
+  border separation, no patchy cards), author role updated to “Open Source
+  Developer & AI/ML Enthusiast”, GitHub/Instagram/E-mail buttons on one row,
+  and a bundled `public/author.png` avatar instead of fetching the GitHub
+  profile picture (no photo latency).
+
+### Fixed
+
+- **TypeScript build failures** introduced with the font/barcode work
+  (type errors across `fontService`, `impositionService` and
+  `psdCompositeService`) — `tsc --noEmit` passes again, unblocking Vercel.
+- **Smart-mapping guards** — a synonym of *another* placeholder no longer
+  maps onto it (`user` maps to Name only), and empty/blank column headers
+  never match any placeholder.
+
 ## [0.6.16] - 2026-09-29
 
 ### Changed

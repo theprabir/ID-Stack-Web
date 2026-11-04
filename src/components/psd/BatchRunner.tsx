@@ -13,12 +13,15 @@ import {
 import { renderJobPreview } from '@/services/impositionService';
 import { compositeDesign } from '@/services/psdCompositeService';
 import { ImpositionPanel } from './ImpositionPanel';
-import { Button, Input, Select, Label } from '@/components/ui';
+import { Button, Input, Select, Label, Checkbox } from '@/components/ui';
+import { getColumnNames, toCsv } from '@/services/excelService';
 
 interface BatchRunnerProps {
   project: PsdProject;
   excelData: ExcelData;
   photoMatches: PhotoMatchResult;
+  /** Whether Step 4 is the visible step — re-defaults the missing-photo toggle on each visit */
+  isActive: boolean;
 }
 
 /** Output options that are local to the batch panel (not persisted). */
@@ -33,7 +36,12 @@ type LocalBatchOptions = Omit<BatchOptions, 'imposition'>;
  * copy — mirroring them into component state previously caused a
  * store↔state echo loop ("Maximum update depth exceeded", v0.6.1).
  */
-export function BatchRunner({ project, excelData, photoMatches }: BatchRunnerProps): JSX.Element {
+export function BatchRunner({
+  project,
+  excelData,
+  photoMatches,
+  isActive,
+}: BatchRunnerProps): JSX.Element {
   const control = usePsdStore((state) => state.batchControl);
   const batchState = usePsdStore((state) => state.batchState);
   const setBatchControl = usePsdStore((state) => state.setBatchControl);
@@ -42,6 +50,31 @@ export function BatchRunner({ project, excelData, photoMatches }: BatchRunnerPro
   const imposition = usePsdStore((state) => state.impositionSettings);
   const setImpositionSettings = usePsdStore((state) => state.setImpositionSettings);
   const restoreImpositionSettings = usePsdStore((state) => state.restoreImpositionSettings);
+
+  // --- Missing-photo controls (v0.7.2) -----------------------------------
+  // Single source of truth: records with no matched photo (toggle + CSV).
+  const rowsMissingPhoto = useMemo(
+    () => excelData.rows.filter((row) => !photoMatches.assignments.has(row.rowIndex)),
+    [excelData.rows, photoMatches]
+  );
+
+  // Defaults to ENABLED on every visit to Step 4; a change the user makes
+  // applies for the rest of that visit.
+  const [includeMissingPhotos, setIncludeMissingPhotos] = useState(true);
+  const wasActiveRef = useRef(false);
+  useEffect(() => {
+    if (isActive && !wasActiveRef.current) setIncludeMissingPhotos(true);
+    wasActiveRef.current = isActive;
+  }, [isActive]);
+
+  // Records this run will actually produce.
+  const rowsToProcess = useMemo(
+    () =>
+      includeMissingPhotos
+        ? excelData.rows
+        : excelData.rows.filter((row) => photoMatches.assignments.has(row.rowIndex)),
+    [includeMissingPhotos, excelData.rows, photoMatches]
+  );
 
   const [options, setOptions] = useState<LocalBatchOptions>({
     format: 'jpg',
@@ -120,7 +153,7 @@ export function BatchRunner({ project, excelData, photoMatches }: BatchRunnerPro
   }>({ front: [], back: [] });
   const [isRenderingPreview, setIsRenderingPreview] = useState(false);
 
-  const previewRows = useMemo<DataRow[]>(() => excelData.rows.slice(0, 8), [excelData.rows]);
+  const previewRows = useMemo<DataRow[]>(() => rowsToProcess.slice(0, 8), [rowsToProcess]);
   const previewRowKey = useMemo(
     () => previewRows.map((row) => row.rowIndex).join(','),
     [previewRows]
@@ -196,13 +229,13 @@ export function BatchRunner({ project, excelData, photoMatches }: BatchRunnerPro
     if (imposition.arrangement === 'interleaved') {
       const frontRowsPerSheet = Math.max(1, Math.floor(layout.rows / 2));
       const perSheet = frontRowsPerSheet * layout.columns;
-      const sheets = Math.ceil(excelData.rows.length / perSheet) || 0;
+      const sheets = Math.ceil(rowsToProcess.length / perSheet) || 0;
       return `${layout.columns} × ${frontRowsPerSheet} pairs per sheet · ${sheets} sheet(s) (one PDF: sheet_Print.pdf)`;
     }
-    const frontSheets = Math.ceil(excelData.rows.length / layout.perSheet) || 0;
+    const frontSheets = Math.ceil(rowsToProcess.length / layout.perSheet) || 0;
     const backSheets = project.back ? frontSheets : 0;
     return `${layout.perSheet} cards per sheet · ${frontSheets} front + ${backSheets} back sheet(s)`;
-  }, [isPreviewActive, imposition, excelData.rows.length, project.back]);
+  }, [isPreviewActive, imposition, rowsToProcess.length, project.back]);
 
   const setControl = useCallback(
     (value: 'running' | 'paused' | 'cancelled' | 'done') => {
@@ -218,7 +251,7 @@ export function BatchRunner({ project, excelData, photoMatches }: BatchRunnerPro
     setBatchState({
       control: 'running',
       current: 0,
-      total: excelData.rows.length,
+      total: rowsToProcess.length,
       etaSeconds: 0,
       errors: [],
     });
@@ -226,7 +259,7 @@ export function BatchRunner({ project, excelData, photoMatches }: BatchRunnerPro
     const batchOptions: BatchOptions = { ...options, imposition };
     await runBatch(
       project,
-      excelData,
+      { ...excelData, rows: rowsToProcess },
       mappings,
       photoMatches,
       batchOptions,
@@ -246,7 +279,30 @@ export function BatchRunner({ project, excelData, photoMatches }: BatchRunnerPro
         },
       }
     );
-  }, [project, excelData, mappings, photoMatches, options, imposition, setBatchState, setControl]);
+  }, [
+    project,
+    excelData,
+    rowsToProcess,
+    mappings,
+    photoMatches,
+    options,
+    imposition,
+    setBatchState,
+    setControl,
+  ]);
+
+  /** Export the records with no matched photo as a UTF-8 CSV (v0.7.2). */
+  const downloadMissingPhotos = useCallback(() => {
+    if (rowsMissingPhoto.length === 0) return;
+    const csv = toCsv(getColumnNames(excelData), rowsMissingPhoto);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'missing-photos.csv';
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }, [excelData, rowsMissingPhoto]);
 
   const isRunning = control === 'running' || control === 'paused';
   const progress = batchState
@@ -384,13 +440,49 @@ export function BatchRunner({ project, excelData, photoMatches }: BatchRunnerPro
                   variant="default"
                   className="w-full"
                   onClick={() => void start()}
-                  disabled={excelData.rows.length === 0}
+                  disabled={rowsToProcess.length === 0}
                 >
                   <Play className="h-4 w-4" aria-hidden="true" />
-                  Generate {excelData.rows.length} card(s)
+                  Generate {rowsToProcess.length} card(s)
                 </Button>
               )}
             </div>
+          </div>
+
+          {/* Missing-photo controls (v0.7.2): include toggle + CSV download */}
+          <div className="mt-3 rounded-md border bg-surface-card/60 px-3 py-2.5">
+            <div className="flex items-center justify-between gap-3">
+              <label
+                htmlFor="include-missing-photos"
+                className="flex cursor-pointer items-center gap-2 text-xs font-medium"
+              >
+                <Checkbox
+                  id="include-missing-photos"
+                  checked={includeMissingPhotos}
+                  disabled={isRunning}
+                  onChange={(event) => setIncludeMissingPhotos(event.target.checked)}
+                />
+                Include records without photos
+              </label>
+              <span className="shrink-0 text-[11px] text-muted-foreground">
+                {rowsMissingPhoto.length} of {excelData.rows.length} missing
+              </span>
+            </div>
+            <p className="mt-1.5 text-[11px] text-muted-foreground">
+              {includeMissingPhotos
+                ? 'All records are generated; the photo area stays blank when a photo is missing.'
+                : 'Only records with a matched photo are generated.'}
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-2 w-full"
+              onClick={downloadMissingPhotos}
+              disabled={rowsMissingPhoto.length === 0 || isRunning}
+            >
+              <Download className="h-4 w-4" aria-hidden="true" />
+              Download missing-photo list ({rowsMissingPhoto.length})
+            </Button>
           </div>
 
           {/* Imposition settings (sheets mode) — left column, under the options */}

@@ -116,15 +116,17 @@ class RecordingContext {
     dw?: number,
     dh?: number
   ): void {
-    if (!isCanvas(source)) return;
+    // Record EVERY draw — element sources (photos, rasters) carry an
+    // undefined source so canvas-walking helpers still ignore them.
+    const canvasSource = isCanvas(source) ? source : undefined;
     this.fills().push({
       kind: 'image',
       x: dx,
       y: dy,
-      w: dw ?? source.width,
-      h: dh ?? source.height,
+      w: dw ?? canvasSource?.width ?? 0,
+      h: dh ?? canvasSource?.height ?? 0,
       color: '',
-      source,
+      source: canvasSource,
     });
   }
 }
@@ -303,5 +305,73 @@ describe('compositeDesign — image-as-barcode placeholders (v0.7.1)', () => {
     expect(chain).not.toBeNull();
     // bwip-js grows QR images in whole modules — ±2px quantisation allowed.
     expect(Math.abs(chain!.barcode.width - chain!.barcode.height)).toBeLessThanOrEqual(2);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* v0.7.2 — a record without a photo renders a BLANK image area         */
+/* ------------------------------------------------------------------ */
+describe('compositeDesign — missing photo stays blank (v0.7.2)', () => {
+  const photoLayer: PsdLayerInfo = {
+    id: 'front/Photo',
+    name: 'Photo',
+    path: ['Photo'],
+    kind: 'image',
+    hidden: false,
+    bounds: { left: 50, top: 60, right: 250, bottom: 320 },
+    opacity: 1,
+    blendMode: 'normal',
+    hasPixels: true,
+    hasEffects: false,
+    clipped: false,
+    childCount: 0,
+  };
+  const photoDesign: PsdDesign = {
+    fileName: 'photo-blank.psd',
+    width: 500,
+    height: 800,
+    horizontalResolution: 300,
+    layers: [photoLayer],
+    compositeUrl: '',
+    // The PSD's demo photo — must NEVER appear for a record without one.
+    layerRasters: { 'front/Photo': 'data:image/png;base64,iVBORw0KGgo=' },
+  };
+  const photoPlaceholder: PsdPlaceholder = {
+    layerId: 'front/Photo',
+    layerName: 'Photo',
+    role: 'photo',
+    side: 'front',
+    key: 'Photo',
+  };
+
+  it('no matched photo → the demo image is NOT drawn (blank area)', async () => {
+    const card = await compositeDesign(photoDesign, {
+      placeholders: [photoPlaceholder],
+      mappings: { Photo: 'PhotoFile' },
+      row: { rowIndex: 0, values: { PhotoFile: 'missing.png' } },
+      getPhoto: () => undefined,
+      backgroundColor: '#ffffff',
+    });
+    expect(fillsOf(card).filter((fill) => fill.kind === 'image')).toHaveLength(0);
+  });
+
+  it('a matched photo IS drawn (positive control)', async () => {
+    const photo = {
+      id: 'p1',
+      fileName: 'student.png',
+      baseName: 'student',
+      blobUrl: 'blob:student',
+      file: new File(['x'], 'student.png', { type: 'image/png' }),
+      width: 100,
+      height: 100,
+    };
+    const card = await compositeDesign(photoDesign, {
+      placeholders: [photoPlaceholder],
+      mappings: { Photo: 'PhotoFile' },
+      row: { rowIndex: 0, values: { PhotoFile: 'student.png' } },
+      getPhoto: () => photo,
+      backgroundColor: '#ffffff',
+    });
+    expect(fillsOf(card).filter((fill) => fill.kind === 'image').length).toBeGreaterThan(0);
   });
 });

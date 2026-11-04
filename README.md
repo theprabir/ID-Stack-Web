@@ -7,7 +7,7 @@
 **Professional ID card design & batch printing — entirely in your browser.**
 
 [![Live](https://img.shields.io/badge/live-id--stack.vercel.app-0078D4?logo=vercel&logoColor=white)](https://id-stack.vercel.app)
-[![Version](https://img.shields.io/badge/version-0.6.16-6366f1)](https://github.com/theprabir/ID-Stack-Web/blob/main/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.7.2-6366f1)](https://github.com/theprabir/ID-Stack-Web/blob/main/CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-22c55e)](LICENSE)
 
 [**🌐 Launch the app**](https://id-stack.vercel.app) · [**📖 Changelog**](CHANGELOG.md) · [**🐛 Report an issue**](https://github.com/theprabir/ID-Stack-Web/issues)
@@ -24,18 +24,21 @@ No installation. No backend. No account. Your data never leaves your device.
 - 📥 **PSD import** — layered Photoshop files via ag-psd; layer tree flattened per side with rasters + composite preview
 - ✍️ **True text geometry** — placeholder text honours the PSD's real text box (box text wraps at the authored width, point text never width-wraps), engine transform origin, auto-leading (120 %), per-paragraph justification and the engine character stroke
 - 🔤 **Exact font identity** — embedded PostScript names coalesced from the deduplicated engine data, matched against uploaded/bundled fonts (binary name-table aliases), preloaded via `document.fonts.load`; unmatched names fall back through humanised candidates (`ArialNarrow` → "Arial Narrow" → "Arial") instead of generic sans-serif
+- 🕉️ **Legacy (Akruti/Odia) font support** — uploaded fonts register under their **real internal name** parsed from the font's name table (never the file name), a strict `FontFace` guard awaits loading before every `fillText` (no fallback flicker), and PDFs embed the raw uploaded buffer — legacy-encoded Odia/Devanagari prints correctly on any device
 - 🪞 **Full typographic mirror** — engine Horizontal/Vertical Scale, baseline shift, ALL CAPS/small caps, strikethrough, tracking, leading, gradient overlay fills, strokes, shadows and glows mapped verbatim onto substituted text
 - 📏 **Wrap-first text fitting** — multi-line fields wrap naturally within their authored line capacity (the box height is the line budget); overflow compression converges with wrapping (earlier lines absorb the words compression makes room for) and never drops below the 0.65 readability floor — no one-line barcodes, no orphaned words
 - 🖼️ **Faithful photo placeholders** — centre-cropped, with the layer's original shadow/stroke/overlay/mask styling
 
 ### 📊 Data & Batch
-- 📈 **Excel import** — .xlsx/.xls/.csv (SheetJS) with column mapping, auto-map and validation report (errors vs warnings per row)
+- 📈 **Excel import** — .xlsx/.xls/.csv (SheetJS) with column mapping, weighted fuzzy **Auto-map** (exact/substring/synonym/keyword scoring with a synonym dictionary) and a validation report (errors vs warnings per row)
 - 📷 **Photo pipeline** — multi-photo import with filename/column auto-matching and manual assignment
 - ⚡ **Batch generation** — hundreds of cards with progress bar, ETA, pause/resume/cancel and error list; CMYK JPEG encoding + DEFLATE run in a dedicated Web Worker
 - 📦 **ZIP export** — one file per card with `{Name}_{ID}` / `{{Column}}` naming patterns
 - 🎨 **CMYK export** — ICC-corrected CMYK JPEG (Adobe APP14 transform=0) and direct CMYK PDF (embedded ICC profile + GTS_PDFX OutputIntent)
 - 🖨️ **Imposition engine** — N cards per sheet on A4/A3/Letter/Legal/Tabloid or custom paper (mm/cm/in/pt) with bleed, gap, margin, crop marks, positioned numbering and live sheet preview
 - 👤 **One PDF per person** — double-sided cards export as a single 2-page PDF
+- 🔢 **Barcode/QR placeholders** — pick any image layer as a barcode (Code 128, EAN-13/8, UPC, Code 39, QR via bwip-js) with per-placeholder colours, background and an enable toggle; symbols are sized to the exact placeholder box
+- 🩹 **Missing-photo workflow** — records without a photo render a blank image area (never a demo photo), Step 4 can include or exclude them (default on), and a one-click CSV export lists exactly which records still need photos
 
 ### 🔐 Privacy & Platform
 - 🧠 **100 % client-side** — no server, no API, no database, no accounts; everything runs in your browser
@@ -71,7 +74,6 @@ No installation. No backend. No account. Your data never leaves your device.
 
 **Upcoming / incomplete:**
 - 🌍 **All 11 UI language translations** — i18n was removed in v0.3.1; UI strings are currently English-only (the architecture's 11-language goal is not yet met)
-- 🔢 **Barcode/QR rendering** — real QR/1D barcode drawing (qrcode + bwip-js) is not available in the output yet
 - 🖼️ **Per-placeholder photo columns** — one photo is matched per row; per-placeholder photo mapping is not available
 
 ## 📖 Documentation
@@ -81,7 +83,7 @@ the in-app **Documentation** page renders them right there:
 
 | Document | For | Contents |
 |---|---|---|
-| [User manual](docs/user_manual.md) | Users | Every page and workflow: PSD Studio's 3 steps, output options, printing, privacy |
+| [User manual](docs/user_manual.md) | Users | Every page and workflow: PSD Studio's 4 steps, output options, printing, privacy |
 | [Developer manual](docs/developer_manual.md) | Contributors | Stack, architecture, services, data flow, PSD/CMYK/imposition internals, testing, releases |
 | [Keyboard shortcuts](docs/keyboard_shortcuts.md) | Everyone | PSD Studio shortcut reference (implemented + planned) |
 | [Troubleshooting guide](docs/troubleshooting.md) | Users | Symptom-first fixes: parsing, fonts, data, generation, printing, storage |

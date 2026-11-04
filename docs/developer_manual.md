@@ -44,7 +44,7 @@ testing and release process.
 | Colour | **@kittl/little-cms** (WASM) | sRGB → CMYK ICC transform; bundled Ghostscript `default_cmyk.icc` |
 | JPEG | **jpeg-js** + custom APP14 patcher | True 4-component Adobe CMYK JPEG |
 | ZIP | **jszip** | Batch packaging |
-| Barcode/QR | — | Not yet available in the output (planned) |
+| Barcode/QR | **bwip-js** | Image-as-barcode placeholders (Code 128 / QR / EAN-13), LRU-cached symbol rendering sized to the layer box |
 | State | **Zustand 5** | `persist` middleware where needed |
 | Docs renderer | **react-markdown + remark-gfm** | Bundles `docs/*.md` via Vite `?raw` and renders them in the Documentation page |
 | Storage | **Dexie 4** (IndexedDB) | Database `id-stack` |
@@ -416,6 +416,21 @@ All geometry is in **PDF points** (`toPoints` per unit: mm/cm/in/pt).
   `MyriadPro-Bold` to the user's uploaded family even when file/registration
   names differ. Unmatched names fall back through a humanised candidate list
   (`ArialNarrow` → "Arial Narrow" → "Arial") before generic sans-serif.
+- **Internal names**: uploads register under the names in the font's own
+  `name` table (PostScript, family and full names) — the file name is
+  irrelevant — and OpenType/CFF (`OTTO`) files are accepted. Each internal
+  name is also kept as a PostScript alias so a PSD's embedded PostScript
+  name resolves to the upload.
+- **Legacy fonts (Akruti/Odia, Kruti Dev)**: cell strings are drawn exactly
+  as stored — no Unicode normalisation or shaping — so legacy-encoded
+  columns keep their character mapping. The font guard awaits
+  `FontFace.load()` + `document.fonts.check()` before every `fillText`, so
+  no fallback glyph is painted first (no flicker, no Arial flash).
+- **PDF output**: `buildSheetsPdf` rasterises the composited card (the same
+  canvas the preview shows) into CMYK images, so legacy glyphs are baked
+  into the PDF and print correctly on any device. Vector PDF text (card
+  numbers) embeds the raw uploaded font buffer via `embedFont` when the
+  family matches, falling back to Helvetica otherwise.
 - **Preload**: `preloadFontsForText` awaits `document.fonts.load` for every
   referenced family/size before measuring/painting — canvas uses the *last*
   font string, so skipping this mis-wraps the first layout.

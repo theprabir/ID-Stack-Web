@@ -181,8 +181,15 @@ This step holds four cards:
 - If your design uses fonts you have as files, **upload them here**
   (`.ttf .otf .woff .woff2`). Fonts persist in your browser and reload
   automatically — you only do this once per browser.
-- Uploaded fonts are matched to the fonts embedded in the PSD by name, so
-  substituted text renders in the exact typeface.
+- Uploaded fonts are matched to the fonts embedded in the PSD by their
+  **internal name** (read from the font file itself), so a PSD asking for
+  `AKBALAN` matches `AKBALAN.ttf` even if the file was renamed. The Fonts
+  panel lists each font under its internal name.
+- **Legacy fonts (Akruti, Kruti Dev, …):** these map characters by code
+  position, so the Excel column must already hold text encoded for that
+  font (as typed/exported in it). The app draws the string exactly as
+  stored — no Unicode conversion or shaping — so once the font is uploaded
+  and matched, Odia/Hindi glyphs appear exactly as in your source data.
 - If you skip this, text still renders using the closest available system
   font (an Arial-compatible font is bundled, so Arial designs look right
   out of the box).
@@ -197,7 +204,13 @@ side in Photoshop order, with a type icon (text / image / group):
 - **Text layers** get a **Text** button → marks them as a *text placeholder*
   (e.g. Name, ID, Designation).
 - **Image/shape layers with pixels** get a **Photo** button → marks them as a
-  *photo placeholder* (the portrait window).
+  *photo placeholder* (the portrait window), and a **Barcode** button →
+  marks them as a *barcode placeholder*: the demo image only defines the
+  box, and each card gets a live barcode for that row's mapped value.
+- **Barcode settings** appear below the layer list once a barcode is chosen:
+  an **enable toggle** per placeholder (off = keep the demo image untouched),
+  and — only while enabled — **symbology** (Code 128 / QR / EAN-13),
+  **bar colour** and **background**.
 - Use the **Filter layers…** box to search by name or group path, and the
   **Hidden** checkbox to show layers hidden in the PSD.
 - Chosen placeholders are highlighted and show an editable **mapping key**
@@ -224,11 +237,18 @@ the live card preview.
 A table with one row per placeholder:
 
 - **Placeholder** — shown as `{{Key}}`.
-- **Excel column** — a dropdown of your sheet's columns; choose one, or leave
-  "Not mapped" (the placeholder will show its original PSD content / dash).
+- **Excel column** — a dropdown of your sheet's columns; choose one, or
+  leave "Not mapped". With a row selected, an unmapped or empty field
+  renders **blank** (no sample text is ever substituted for missing data);
+  the pure design preview (no data row selected) keeps the PSD's original
+  content.
 - **Sample** — the first row's value, so you can eyeball the mapping.
-- **Auto-map** — one click matches placeholder keys to columns with the same
-  name (case-insensitive). Run it after import; fix the leftovers by hand.
+- **Auto-map** — one click scores every placeholder × column pair with
+  weighted fuzzy matching: **100** exact (case-insensitive), **80**
+  substring, **60** synonym (built-in dictionary: `empname` → `Name`,
+  `roll no` → `ID`, `profile` → `Photo`, …) and **40** for a shared keyword;
+  anything scoring ≤ 40 is left unmapped on purpose. Run it after import,
+  fix the leftovers by hand — validation re-runs immediately.
 
 **Data & Validation (left, below)**
 
@@ -249,7 +269,9 @@ A table with one row per placeholder:
 
 - **Front / Back** tabs above the preview switch faces.
 - The preview is a real render: placeholders filled from the selected row,
-  photos placed, fonts and effects applied — exactly what will be exported.
+  photos placed (completely blank when a record has no photo — never the
+  PSD's demo photo), fonts and effects applied — exactly what will be
+  exported.
 - "Showing row N" confirms which row you're looking at.
 
 **Continue** to Step 4 once every placeholder is mapped (unmapped ones are
@@ -271,6 +293,17 @@ scrolls internally if needed.
 | **Sides** | Front + Back / Front only / Back only | Which faces to render. |
 | **File naming** | text pattern | Tokens: `{Row}` = padded row number (001, 002…), `{ColumnName}` and `{{ColumnName}}` = the row's value from that column, e.g. `{Name}_{Row}` → `Alice_001`. Invalid filename characters are replaced with `_`. |
 | **Output layout** | Cards / Sheets | *Cards* = one file per card (PDF doubles: front page 1, back page 2 in one file per person). *Sheets* = imposed print sheets — PDF format only. |
+
+**Missing-photo controls (left, under the output options)**:
+
+- **Include records without photos** — ON by default: every record is
+  generated, and a missing photo leaves the image area completely blank
+  (the PSD's demo photo is never printed). Turn it OFF to process only
+  records that have a matched photo — the Generate button then shows the
+  reduced count. The toggle resets to ON each time you open Step 4.
+- **Download missing-photo list (N)** — exports those records (all of your
+  columns) as a UTF-8 CSV that opens directly in Excel, so you can collect
+  exactly the missing photos. Disabled while no photos are missing.
 
 - Press **Generate N card(s)** to start.
 
@@ -414,12 +447,11 @@ profile (GitHub / Instagram / copy email), featured projects and licence info.
 | Export | CMYK JPG, CMYK PDF (per card, per person double-sided, or imposed sheets) | Packaged as `id-cards.zip` |
 | Naming tokens | `{Row}`, `{Column}`, `{{Column}}` | e.g. `{Name}_{ID}` |
 | Sheets | A4/A3/Letter/Legal/Tabloid/custom; mm/cm/in/pt; bleed, gap, margin, crop marks, numbering | Imposition panel |
-| Barcodes | Not yet available | Real QR/1D rendering is planned |
+| Barcodes | Code 128, QR, EAN-13 (bwip-js) | Any image layer as placeholder; per-placeholder toggle, colours, exact box size |
 
 ### Known limitations
 
 - UI is English-only (multi-language support was removed in v0.3.1).
-- Barcode/QR rendering is not yet available (planned).
 - One photo is matched per row; per-placeholder photo mapping is not
   available.
 - PSD bytes are not persisted between sessions — re-upload per session.

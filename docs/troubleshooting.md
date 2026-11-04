@@ -224,10 +224,12 @@ fix, and check the linked section if you need the why.
 - Supported: `.ttf .otf .woff .woff2`. Files with other extensions (or
   invalid/corrupt fonts) are skipped and reported as
   "N file(s) skipped (unsupported or invalid)".
-- Fonts register under the **file name without extension** — that's the
-  family PSD matching looks for. If your file is `MyFont Bold.ttf`, the
-  family is "MyFont Bold"; a PSD asking for PostScript name `MyFont-Bold`
-  still matches via the embedded name table.
+- Fonts register under the font's **real internal name** (PostScript /
+  family name parsed from the font's own name-table entries) — the file
+  name does not matter. Uploading `AKBALAN.TTF` whose internal name is
+  "AKBALAN" registers the family "AKBALAN", and a PSD asking for
+  PostScript name `AKBALAN` matches directly (other name-table aliases are
+  matched too, including OpenType/CFF `.otf` files).
 
 **Font worked yesterday, missing today**
 
@@ -237,10 +239,28 @@ fix, and check the linked section if you need the why.
 
 **Text still renders with a fallback after uploading**
 
-- Confirm the family name matches what the PSD uses (the Fonts panel lists
-  registered families; compare with the layer's font in Photoshop).
-- Re-generate — fonts register before render, but a card generated in the
-  same second as the upload can race; run the batch again.
+- The Fonts panel lists each font's registered **internal name** — compare
+  it with the layer's font in Photoshop (the file name is irrelevant).
+- Rendering waits for the font to finish loading (a `FontFace` guard
+  awaits `load()` + `document.fonts.check()` before drawing), so a fallback
+  means the PSD's font isn't uploaded yet — upload the exact font the PSD
+  references and regenerate. There is no more Arial flicker.
+
+**Odia/Akruti text still appears as English letters (or gibberish)**
+
+- Legacy fonts (Akruti, Kruti Dev, …) map characters by code position, not
+  by Unicode. The column must contain text already encoded for that font —
+  as exported from the system that produced the sheet. The app passes the
+  string through unchanged (no conversion, no shaping), so it can only draw
+  what the cell holds.
+- Check both halves of the pair: the placeholder's font in Photoshop must be
+  the legacy font, and that font's file must be uploaded (the Fonts panel
+  shows its internal name, e.g. `AKBALAN`). If the cell holds Unicode Odia
+  but the layer uses a legacy font (or vice versa), the glyphs won't line
+  up — fix the data or the placeholder font, not the app.
+- The exported PDF bakes the rendered card into the page, so once the
+  preview shows Odia, the print file does too — no font install needed on
+  the printing machine.
 
 ---
 

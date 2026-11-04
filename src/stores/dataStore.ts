@@ -231,6 +231,9 @@ export const useDataStore = create<DataState>()((set, get) => ({
       }
     }
     set({ mappings });
+    // v0.7.2 fix: re-derive validation too — without this the status line
+    // and validRowIndexes stayed stale from the last manual mapping change.
+    get().revalidate();
   },
 
   revalidate: () => {

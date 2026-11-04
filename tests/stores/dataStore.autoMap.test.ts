@@ -125,4 +125,16 @@ describe('dataStore.autoMapColumns — weighted fuzzy matching (v0.7.1)', () => 
     useDataStore.getState().autoMapColumns();
     expect(useDataStore.getState().mappings).toEqual({ keep: 'me' });
   });
+
+  it('revalidates after auto-mapping (v0.7.2 — stale status regression)', () => {
+    // The bug: autoMapColumns wrote mappings but never re-derived
+    // validation, so the status line kept reporting import-time
+    // "not mapped" warnings after a successful auto-map.
+    seed(['Name', 'ID', 'Photo']);
+    useDataStore.getState().autoMapColumns();
+    const { validation } = useDataStore.getState();
+    expect(validation).not.toBeNull();
+    // Every placeholder mapped → no unmapped warnings may remain.
+    expect(validation?.issues.filter((issue) => issue.code === 'unmapped-column')).toEqual([]);
+  });
 });

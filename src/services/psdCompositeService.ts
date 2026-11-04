@@ -48,7 +48,8 @@ export function createRowResolver(
       const value = row.values[column];
       if (value !== undefined && value.length > 0) return value;
     }
-    // Show the original PSD content when unmapped (design preview).
+    // Empty = no data for this field: the caller draws the PSD's sample text
+    // only for a null row (design preview); with a record loaded it renders blank.
     return '';
   };
 }
@@ -2071,8 +2072,10 @@ export async function compositeDesign(
 
     if (isTextPlaceholder) {
       const substituted = resolver(placeholder!.key);
-      // Unmapped/empty → keep the original sample text (design as authored).
-      const content = substituted.length > 0 ? substituted : (layer.text?.content ?? '');
+      // v0.7.2 — missing data for the selected record means BLANK: the PSD's
+      // sample text is never substituted for an empty Excel cell. The sample
+      // survives only in the pure design preview (row === null, design as-is).
+      const content = options.row ? substituted : (layer.text?.content ?? '');
       drawTextLayer(context, layer, content, scale, canvas.width, canvas.height);
     } else if (placeholder?.role === 'barcode') {
       // IMAGE AS BARCODE: the chosen layer is a demo barcode image; when
@@ -2128,9 +2131,9 @@ export async function compositeDesign(
           }
           context.drawImage(rendered, 0, 0);
         }
-      } else {
-        await drawRasterLayer(context, layer, design.layerRasters[layer.id], scale);
       }
+      // v0.7.2 — no photo for this record → the area stays COMPLETELY blank:
+      // the PSD's demo photo is never printed (or shown in preview).
     } else {
       // Untouched layer: draw the original raster exactly as-is.
       await drawRasterLayer(context, layer, design.layerRasters[layer.id], scale);

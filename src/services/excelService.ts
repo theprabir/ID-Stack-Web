@@ -127,6 +127,29 @@ export function getPreview(data: ExcelData, rowCount: number): DataRow[] {
   return data.rows.slice(0, Math.max(0, rowCount));
 }
 
+/**
+ * Serialise rows to a UTF-8 CSV string.
+ *
+ * A BOM is prefixed so Excel opens non-Latin scripts (Odia, Hindi, …)
+ * correctly, and cells containing commas/quotes/newlines are RFC-4180
+ * quoted. Used by the missing-photo list download (v0.7.2).
+ *
+ * @param columns - Column headers in file order (header row)
+ * @param rows - Data rows to serialise
+ * @returns BOM-prefixed CRLF CSV string
+ */
+export function toCsv(columns: string[], rows: DataRow[]): string {
+  const escapeCell = (value: string | undefined): string => {
+    const text = value ?? '';
+    return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  };
+  const lines = [columns.map(escapeCell).join(',')];
+  for (const row of rows) {
+    lines.push(columns.map((column) => escapeCell(row.values[column])).join(','));
+  }
+  return `\uFEFF${lines.join('\r\n')}`;
+}
+
 /** Options for data validation */
 export interface ValidateOptions {
   /** Treat these placeholders as mandatory (e.g. mapped photo column) */

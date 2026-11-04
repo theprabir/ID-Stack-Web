@@ -461,6 +461,14 @@ const options = (row: Record<string, string>) => ({
   backgroundColor: '#ffffff',
 });
 
+/** Design-as-is options (NO data row): the PSD's sample text is drawn. */
+const previewOptions = () => ({
+  placeholders: [placeholder],
+  mappings: { Name: 'Name' },
+  row: null,
+  backgroundColor: '#ffffff',
+});
+
 interface InkBox {
   left: number;
   top: number;
@@ -494,9 +502,12 @@ function collectTextFills(canvas: HTMLCanvasElement): FillRecord[] {
 /** Bounding box of non-white pixels on the composited card */
 async function inkBoxOf(
   design: PsdDesign,
-  row: Record<string, string>
+  row: Record<string, string> | null
 ): Promise<InkBox> {
-  const canvas = await compositeDesign(design, options(row));
+  const canvas = await compositeDesign(
+    design,
+    row === null ? previewOptions() : options(row)
+  );
   const context = canvas.getContext('2d') as unknown as Mock2DContext;
   const { data, width, height } = context.getImageData(0, 0, canvas.width, canvas.height) as unknown as {
     data: Uint8ClampedArray;
@@ -677,7 +688,7 @@ describe('placeholder text is never clipped (v0.6.4)', () => {
 
   it('the ORIGINAL sample text still honours its positional runs', async () => {
     // Substitution semantics must not erase real per-run styling: drawing
-    // the design as authored (empty substitution → sample content) paints
+    // the design as authored (no data row → sample content) paints
     // each run segment in its own colour.
     const design = designWithTextLayer({
       content: 'AB',
@@ -686,7 +697,7 @@ describe('placeholder text is never clipped (v0.6.4)', () => {
         { from: 1, to: 2, color: '#0000ff' },
       ],
     });
-    const canvas = await compositeDesign(design, options({ Name: '' }));
+    const canvas = await compositeDesign(design, previewOptions());
     const textFills = collectTextFills(canvas);
     expect(textFills.length).toBeGreaterThanOrEqual(2);
     const colours = new Set(textFills.map((fill) => fill.color.toLowerCase()));
@@ -921,9 +932,9 @@ describe('hybrid text fitting + horizontal compression (v0.6.8)', () => {
       originY: 511.47,
       leading: 60,
     });
-    // Empty substitution → the SAMPLE is drawn as authored: full natural
+    // No data row → the SAMPLE is drawn as authored: full natural
     // 90 px width, overflowing the box (the design canvas is the only clip).
-    const previewBox = await inkBoxOf(design, { Name: '' });
+    const previewBox = await inkBoxOf(design, null);
     expect(previewBox.right - previewBox.left).toBeGreaterThanOrEqual(88);
     // A long SUBSTITUTED value compresses to the 60 px zone instead.
     const substitutedBox = await inkBoxOf(design, { Name: 'Internationalization' });
@@ -1002,6 +1013,32 @@ describe('hybrid text fitting + horizontal compression (v0.6.8)', () => {
     // Ink past the rect (314…) is untouched by the plane; only 270–314
     // itself is blacked out — the tail beyond must exist.
     expect(box.right).toBeGreaterThanOrEqual(340);
+  });
+});
+
+describe('missing data renders blank — no sample substitution (v0.7.2)', () => {
+  it("a record whose field is empty draws NO text", async () => {
+    const design = designWithTextLayer({
+      content: 'AB',
+      runs: [
+        { from: 0, to: 1, color: '#ff0000' },
+        { from: 1, to: 2, color: '#0000ff' },
+      ],
+    });
+    const canvas = await compositeDesign(design, options({ Name: '' }));
+    expect(collectTextFills(canvas).length).toBe(0);
+  });
+
+  it('a field with no matching column in the row draws NO text', async () => {
+    const design = designWithTextLayer({ content: 'AB' });
+    const canvas = await compositeDesign(design, options({ Roll: '7' }));
+    expect(collectTextFills(canvas).length).toBe(0);
+  });
+
+  it('the pure design preview (row = null) still draws the PSD sample', async () => {
+    const design = designWithTextLayer({ content: 'AB' });
+    const canvas = await compositeDesign(design, previewOptions());
+    expect(collectTextFills(canvas).length).toBeGreaterThan(0);
   });
 });
 

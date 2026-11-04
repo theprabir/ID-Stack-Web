@@ -6,6 +6,7 @@ import {
   getPreview,
   validateData,
   isSupportedSpreadsheet,
+  toCsv,
 } from '@/services/excelService';
 import type { ExcelData, ColumnMapping } from '@/types/data';
 
@@ -178,5 +179,33 @@ describe('excelService — validateData', () => {
     };
     const result = validateData(sparse, mappings);
     expect(result.issues.some((issue) => issue.code === 'empty-row')).toBe(true);
+  });
+});
+
+describe('toCsv (v0.7.2 — missing-photo list export)', () => {
+  const columns = ['Name', 'Roll', 'Photo'];
+  const rows = [
+    { rowIndex: 0, values: { Name: 'Asha', Roll: 'E001', Photo: 'a.png' } },
+    { rowIndex: 1, values: { Name: 'Ravi, Kumar', Roll: '', Photo: 'b.png' } },
+    { rowIndex: 2, values: { Name: 'say "hi"', Roll: 'line\nbreak', Photo: '' } },
+  ];
+
+  it('produces a BOM-prefixed header + one CRLF line per row', () => {
+    const csv = toCsv(columns, rows.slice(0, 1));
+    expect(csv.startsWith('\uFEFF')).toBe(true);
+    expect(csv).toBe('\uFEFFName,Roll,Photo\r\nAsha,E001,a.png');
+  });
+
+  it('quotes commas, quotes and embedded newlines (RFC 4180)', () => {
+    const csv = toCsv(columns, rows);
+    expect(csv).toContain('"Ravi, Kumar",,b.png');
+    expect(csv).toContain('"say ""hi"""');
+    expect(csv).toContain('"line\nbreak"');
+  });
+
+  it('missing values serialise as empty cells', () => {
+    const csv = toCsv(columns, rows.slice(2));
+    expect(csv.endsWith(',')).toBe(true);
+    expect(csv).not.toContain('undefined');
   });
 });
