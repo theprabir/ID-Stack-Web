@@ -30,7 +30,11 @@ globalThis.fetch = vi.fn(
 ) as unknown as typeof fetch;
 
 import { buildSheetsPdf } from '@/services/impositionService';
-import { DEFAULT_IMPOSITION_SETTINGS, type ImpositionSettings } from '@/services/impositionTypes';
+import {
+  cardNumbersForSlots,
+  DEFAULT_IMPOSITION_SETTINGS,
+  type ImpositionSettings,
+} from '@/services/impositionTypes';
 import { PDFDocument, PDFName } from 'pdf-lib';
 
 /** Create a mock canvas of the given pixel size filled with a solid colour */
@@ -61,11 +65,13 @@ function ptSettings(): ImpositionSettings {
     margin: 10,
     cropMarks: true,
     numbering: {
-      mode: 'per-sheet',
+      mode: 'none',
       position: 'bottom-right',
       fontSize: 8,
       color: '#333333',
+      margin: 2,
       prefix: 'S',
+      start: 1,
     },
     duplex: false,
   };
@@ -77,7 +83,7 @@ describe('impositionService — sheet PDF assembly', () => {
     // rows: floor((300-20+10)/60)=4 → 12 per sheet.
     const settings = ptSettings();
     const cards = Array.from({ length: 14 }, (_, i) => mockCanvas(90, 50, (i * 17) % 255));
-    const bytes = await buildSheetsPdf([cards.slice(0, 12), cards.slice(12)], settings, 3);
+    const bytes = await buildSheetsPdf([cards.slice(0, 12), cards.slice(12)], settings);
 
     const text = Buffer.from(bytes).toString('latin1');
     expect(text.startsWith('%PDF-')).toBe(true);
@@ -92,9 +98,9 @@ describe('impositionService — sheet PDF assembly', () => {
     expect(text).toContain('GTS_PDFX');
   });
 
-  it('draws the sheet number with prefix and position in the content stream', async () => {
+  it('never prints a page or sheet number (numbering is for cards only)', async () => {
     const settings = ptSettings();
-    const bytes = await buildSheetsPdf([[]], settings, 7);
+    const bytes = await buildSheetsPdf([[]], settings);
     const text = Buffer.from(bytes).toString('latin1');
     // Content streams are Flate-compressed; inflate every stream and search.
     const streams = [...text.matchAll(/stream\n([\s\S]*?)\nendstream/g)].map((m) => m[1] ?? '');
@@ -107,7 +113,8 @@ describe('impositionService — sheet PDF assembly', () => {
         }
       })
       .join('\n');
-    expect(inflated).toContain('(S7) Tj');
+    // No text operators at all: the old build wrote a "S7" sheet number here.
+    expect(inflated).not.toContain('Tj');
   });
 
   it('includes crop mark path operators when enabled', async () => {
@@ -126,6 +133,82 @@ describe('impositionService — sheet PDF assembly', () => {
       .join('\n');
     // Crop marks are stroked line segments ("m ... l S").
     expect(inflated).toMatch(/m [\d.]+ [\d.]+ l S/);
+  });
+
+  it('prints the caller\u2019s record-based card numbers and continues across sheets', async () => {
+    const settings: ImpositionSettings = {
+      ...ptSettings(),
+      numbering: {
+        mode: 'continuous',
+        position: 'bottom-right',
+        fontSize: 6,
+        color: '#333333',
+        margin: 2,
+        prefix: '#',
+        start: 100,
+      },
+    };
+    // Record 0 on sheet 1, record 1 on sheet 2 → labels #100 and #101.
+    const numbersPerSheet = [0, 1].map((recordIndex) =>
+      cardNumbersForSlots([recordIndex], settings.numbering, 1)
+    );
+    const bytes = await buildSheetsPdf(
+      [[mockCanvas(90, 50, 128)], [mockCanvas(90, 50, 200)]],
+      settings,
+      {},
+      numbersPerSheet
+    );
+    const text = Buffer.from(bytes).toString('latin1');
+    const streams = [...text.matchAll(/stream\n([\s\S]*?)\nendstream/g)].map((m) => m[1] ?? '');
+    const inflated = streams
+      .map((stream) => {
+        try {
+          return Buffer.from(inflate(Buffer.from(stream, 'latin1'))).toString('latin1');
+        } catch {
+          return stream;
+        }
+      })
+      .join('\n');
+    expect(inflated).toContain('(#100) Tj');
+    expect(inflated).toContain('(#101) Tj');
+    // Each label is printed once — no duplicate / re-started sequence.
+    expect((inflated.match(/\(#100\) Tj/g) ?? []).length).toBe(1);
+    expect((inflated.match(/\(#101\) Tj/g) ?? []).length).toBe(1);
+  });
+
+  it('never draws preview guides (blue trim box) into the exported PDF', async () => {
+    // Preview-only decorations must not ship to print: with crop marks,
+    // numbering and card numbers all off, the content stream is pure image
+    // placement — no colour operators and no stroked rectangles.
+    const settings: ImpositionSettings = {
+      ...ptSettings(),
+      cropMarks: false,
+      numbering: {
+        mode: 'none',
+        position: 'bottom-right',
+        fontSize: 8,
+        color: '#333333',
+        margin: 2,
+        prefix: '',
+        start: 1,
+      },
+    };
+    const bytes = await buildSheetsPdf([[mockCanvas(90, 50, 128)]], settings);
+    const text = Buffer.from(bytes).toString('latin1');
+    const streams = [...text.matchAll(/stream\n([\s\S]*?)\nendstream/g)].map((m) => m[1] ?? '');
+    const inflated = streams
+      .map((stream) => {
+        try {
+          return Buffer.from(inflate(Buffer.from(stream, 'latin1'))).toString('latin1');
+        } catch {
+          return stream;
+        }
+      })
+      .join('\n');
+    expect(inflated).toContain(' Do');
+    expect(inflated).not.toMatch(/\brg\b|\bRG\b/);
+    expect(inflated).not.toMatch(/\bS\b/);
+    expect(inflated).not.toMatch(/\bW n\b/);
   });
 
   it('registers the numbering font ONLY in /Font (never in /XObject)', async () => {

@@ -6,13 +6,16 @@ import { usePsdStore } from '@/stores/psdStore';
 import { useDataStore } from '@/stores/dataStore';
 import { runBatch, type BatchOptions, type BatchState } from '@/services/batchService';
 import {
+  artworkSizePt,
   computeSheetLayout,
+  countJobSheets,
   deriveCardSizeFromDesign,
   isCardSizeSyncedWithDesign,
+  recordsPerSheetFor,
 } from '@/services/impositionTypes';
-import { renderJobPreview } from '@/services/impositionService';
 import { compositeDesign } from '@/services/psdCompositeService';
 import { ImpositionPanel } from './ImpositionPanel';
+import { SheetPreview } from './SheetPreview';
 import { Button, Input, Select, Label, Checkbox } from '@/components/ui';
 import { getColumnNames, toCsv } from '@/services/excelService';
 
@@ -89,10 +92,10 @@ export function BatchRunner({
     void restoreImpositionSettings();
   }, [restoreImpositionSettings]);
 
-  const [zipUrl, setZipUrl] = useState<string | null>(null);
+  /** Finished downloads: one PDF, a ZIP, or the numbered parts of a big job */
+  const [output, setOutput] = useState<{ url: string; fileName: string }[] | null>(null);
   const [isZipping, setIsZipping] = useState(false);
   const controlRef = useRef<'running' | 'paused' | 'cancelled' | 'done'>('done');
-  const previewCanvasRef = useRef<HTMLDivElement | null>(null);
 
   // Card size is ALWAYS locked to the uploaded front PSD: pixels ÷ DPI × 72
   // = points (a 300-DPI 1056×663 px card derives to a true 86×54 mm card,
@@ -112,6 +115,23 @@ export function BatchRunner({
         : null,
     [project.front]
   );
+  // EXACT print geometry: the design's own pixels at its own resolution, i.e.
+  // px ÷ DPI × 72 pt. Preview and PDF share this single value, so a card is
+  // never scaled (no up-, no down-scaling) and bleed only reserves space
+  // around the trim box.
+  const exactCardSizePt = useMemo(
+    () =>
+      project.front
+        ? artworkSizePt(
+            project.front.width,
+            project.front.height,
+            project.front.horizontalResolution,
+            imposition.cardOrientation
+          )
+        : undefined,
+    [project.front, imposition.cardOrientation]
+  );
+
   const impositionUnit = imposition.unit;
   const cardDirection = imposition.cardOrientation;
   const cardWidth = imposition.cardWidth;
@@ -143,7 +163,6 @@ export function BatchRunner({
   ]);
 
   // --- Live imposed-sheet preview with REAL card images -------------------
-  const previewContainer = previewCanvasRef.current;
   const isPreviewActive = options.outputMode === 'sheets' && options.format === 'pdf';
 
   // Render a handful of sample cards (first rows) for the preview.
@@ -209,33 +228,42 @@ export function BatchRunner({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPreviewActive, project.front, project.back, previewRowKey, mappingsKey, photoMatches]);
 
-  // Paint the preview canvas whenever any setting or sample card changes.
-  useEffect(() => {
-    if (!isPreviewActive) return;
-    if (!previewContainer) return;
-    const canvas = renderJobPreview(sampleCanvases.front, sampleCanvases.back, imposition, 620);
-    if (!canvas) return;
-    canvas.style.maxWidth = '100%';
-    canvas.style.height = 'auto';
-    previewContainer.replaceChildren(canvas);
-    return () => previewContainer.replaceChildren();
-  }, [isPreviewActive, imposition, sampleCanvases, previewContainer]);
-
-  // Summary of how many sheets the job will produce.
-  const sheetSummary = useMemo(() => {
+  // Sheet counts for the job (shared with generation so they cannot drift).
+  const sheetPlan = useMemo(() => {
     if (!isPreviewActive) return null;
-    const layout = computeSheetLayout(imposition);
+    const layout = computeSheetLayout(imposition, undefined, exactCardSizePt);
     if (!layout) return null;
+    const hasFront = Boolean(project.front) && options.sides !== 'back';
+    const hasBack = Boolean(project.back) && options.sides !== 'front';
+    const counts = countJobSheets(
+      layout,
+      hasFront ? rowsToProcess.length : 0,
+      hasBack ? rowsToProcess.length : 0,
+      imposition.arrangement
+    );
+    return { layout, counts, hasFront, hasBack };
+  }, [
+    isPreviewActive,
+    imposition,
+    exactCardSizePt,
+    rowsToProcess.length,
+    project.front,
+    project.back,
+    options.sides,
+  ]);
+
+  const sheetSummary = useMemo(() => {
+    if (!sheetPlan) return null;
+    const { layout, counts, hasBack } = sheetPlan;
     if (imposition.arrangement === 'interleaved') {
-      const frontRowsPerSheet = Math.max(1, Math.floor(layout.rows / 2));
-      const perSheet = frontRowsPerSheet * layout.columns;
-      const sheets = Math.ceil(rowsToProcess.length / perSheet) || 0;
-      return `${layout.columns} × ${frontRowsPerSheet} pairs per sheet · ${sheets} sheet(s) (one PDF: sheet_Print.pdf)`;
+      const records = recordsPerSheetFor(layout, 'interleaved', hasBack);
+      const frontRowsPerSheet = Math.max(1, Math.round(records / layout.columns));
+      return hasBack
+        ? `${layout.columns} × ${frontRowsPerSheet} pairs per sheet · ${counts.total} sheet(s)`
+        : `${layout.columns} × ${frontRowsPerSheet} cards per sheet · ${counts.total} sheet(s)`;
     }
-    const frontSheets = Math.ceil(rowsToProcess.length / layout.perSheet) || 0;
-    const backSheets = project.back ? frontSheets : 0;
-    return `${layout.perSheet} cards per sheet · ${frontSheets} front + ${backSheets} back sheet(s)`;
-  }, [isPreviewActive, imposition, rowsToProcess.length, project.back]);
+    return `${layout.perSheet} cards per sheet · ${counts.frontSheets} front + ${counts.backSheets} back sheet(s)`;
+  }, [sheetPlan, imposition.arrangement]);
 
   const setControl = useCallback(
     (value: 'running' | 'paused' | 'cancelled' | 'done') => {
@@ -246,7 +274,8 @@ export function BatchRunner({
   );
 
   const start = useCallback(async () => {
-    setZipUrl(null);
+    if (output) output.forEach((file) => URL.revokeObjectURL(file.url));
+    setOutput(null);
     setControl('running');
     setBatchState({
       control: 'running',
@@ -269,11 +298,20 @@ export function BatchRunner({
           setBatchState(state);
           if (state.control !== 'running') setControl(state.control);
         },
-        onComplete: (zip) => {
+        onComplete: (result) => {
           setIsZipping(false);
-          if (zip) {
-            const url = URL.createObjectURL(zip);
-            setZipUrl(url);
+          if (result) {
+            // A very large sheet job arrives as several numbered PDFs; a
+            // normal job arrives as the single file (or ZIP) in `blob`.
+            const files = result.parts ?? [
+              { blob: result.blob, fileName: result.fileName },
+            ];
+            setOutput(
+              files.map((file) => ({
+                url: URL.createObjectURL(file.blob),
+                fileName: file.fileName,
+              }))
+            );
           }
           setControl('done');
         },
@@ -287,6 +325,7 @@ export function BatchRunner({
     photoMatches,
     options,
     imposition,
+    output,
     setBatchState,
     setControl,
   ]);
@@ -543,21 +582,26 @@ export function BatchRunner({
             </div>
           )}
 
-          {/* Download */}
-          {zipUrl && (
-            <Button
-              variant="default"
-              className="mt-3 w-full"
-              onClick={() => {
-                const link = document.createElement('a');
-                link.href = zipUrl;
-                link.download = 'id-cards.zip';
-                link.click();
-              }}
-            >
-              <Download className="h-4 w-4" aria-hidden="true" />
-              Download ZIP
-            </Button>
+          {/* Download: one file, or the numbered parts of a split job */}
+          {output && output.length > 0 && (
+            <div className="mt-3 space-y-1.5">
+              {output.map((file) => (
+                <Button
+                  key={file.fileName}
+                  variant="default"
+                  className="w-full"
+                  onClick={() => {
+                    const link = document.createElement('a');
+                    link.href = file.url;
+                    link.download = file.fileName;
+                    link.click();
+                  }}
+                >
+                  <Download className="h-4 w-4" aria-hidden="true" />
+                  Download {file.fileName}
+                </Button>
+              ))}
+            </div>
           )}
         </div>
 
@@ -570,26 +614,21 @@ export function BatchRunner({
                 <h3 className="text-xs font-semibold">Live sheet preview</h3>
               </div>
               <p className="mb-2 shrink-0 text-xs text-muted-foreground">
-                Real cards — updates instantly as you change any setting. Empty slots are dashed;
-                blue = trim line.
+                Real cards at their true print size — updates as you change any setting. Empty
+                slots are dashed; blue = trim line. Turn on the proof overlay to see the bleed
+                and safe area. Very large jobs are written as numbered PDFs so memory stays flat.
               </p>
               {sheetSummary && (
-                <p className="mb-2 shrink-0 text-xs font-medium text-foreground">{sheetSummary}</p>
+                <p className="mb-1 shrink-0 text-xs font-medium text-foreground">{sheetSummary}</p>
               )}
-              <div
-                ref={previewCanvasRef}
-                className="themed-scrollbar min-h-48 flex-1 overflow-auto rounded border bg-surface-card p-1"
-              >
-                {isRenderingPreview && (
-                  <p
-                    className="flex items-center gap-1.5 p-2 text-xs text-muted-foreground"
-                    role="status"
-                  >
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-                    Rendering preview cards…
-                  </p>
-                )}
-              </div>
+              <SheetPreview
+                fronts={sampleCanvases.front}
+                backs={sampleCanvases.back}
+                settings={imposition}
+                totalSheets={sheetPlan?.counts.total ?? 0}
+                cardSizePt={exactCardSizePt}
+                isRendering={isRenderingPreview}
+              />
             </>
           ) : (
             <div className="flex h-full min-h-48 items-center justify-center rounded border border-dashed bg-surface-canvas p-4 text-center text-xs text-muted-foreground">

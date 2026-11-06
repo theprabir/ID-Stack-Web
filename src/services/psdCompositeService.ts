@@ -31,7 +31,13 @@ import type {
 import { sideKeyOf } from '@/types/psd';
 import type { DataRow, PhotoRecord } from '@/types/data';
 import { loadImageElement } from './psdService';
-import { resolveFontFamily, preloadFontsForText, exactFontCss, fontGuard } from './fontService';
+import {
+  resolveFontFamily,
+  preloadFontsForText,
+  exactFontCss,
+  fontGuard,
+  listLoadedFontFamilies,
+} from './fontService';
 import { renderBarcode } from './barcodeService';
 
 /** A value lookup: placeholder key → string for the current row */
@@ -710,7 +716,8 @@ function computeTextLayout(
   content: string,
   scale: number,
   substituted: boolean,
-  maxAllowedWidth: number
+  maxAllowedWidth: number,
+  fontFamilyOverride?: string
 ): TextLayout {
   const text = layer.text!;
   const oracle = text.oracle;
@@ -720,7 +727,11 @@ function computeTextLayout(
   // FONT RESOLUTION (the "Charmaine Patel" bug): use the EXACT PostScript
   // name embedded in the PSD layer — never a sanitised or guessed name —
   // so the registered FontFace (user upload or bundled alias) is hit.
-  const fontCssFamily = resolveFontFamily(text.postScriptName ?? text.fontFamily);
+  // v0.7.4: a per-placeholder font override wins when set, so a legacy
+  // font can be assigned to one field without editing the PSD.
+  const fontCssFamily = fontFamilyOverride
+    ? `"${fontFamilyOverride.replace(/"/g, '')}"`
+    : resolveFontFamily(text.postScriptName ?? text.fontFamily);
   const fontWeight = text.fontWeight ?? (text.bold ? 700 : 400);
 
   const bounds = layer.bounds;
@@ -1422,7 +1433,8 @@ function drawTextLayer(
   content: string,
   scale: number,
   cardWidth: number,
-  cardHeight: number
+  cardHeight: number,
+  fontFamilyOverride?: string
 ): void {
   const text = layer.text;
   if (!text) return;
@@ -1444,14 +1456,24 @@ function drawTextLayer(
       text.bold ?? false,
       text.italic ?? false,
       (text.oracle?.fontSize ?? text.fontSize ?? 18) * scale,
-      resolveFontFamily(text.postScriptName ?? text.fontFamily),
+      fontFamilyOverride
+        ? `"${fontFamilyOverride.replace(/"/g, '')}"`
+        : resolveFontFamily(text.postScriptName ?? text.fontFamily),
       text.fontWeight ?? (text.bold ? 700 : 400)
     );
     // v0.6.5: the auto-fit boundary (text box for box text; origin → card
     // edge for point text) is decided ONCE here and shared by layout and
     // painting.
     const maxAllowed = autoFitMaxAllowedWidth(layer, scale, cardWidth);
-    layout = computeTextLayout(measure, layer, content, scale, substituted, maxAllowed);
+    layout = computeTextLayout(
+      measure,
+      layer,
+      content,
+      scale,
+      substituted,
+      maxAllowed,
+      fontFamilyOverride
+    );
   } catch {
     // Canvas 2D unavailable — nothing sensible can be drawn.
     return;
@@ -2050,14 +2072,29 @@ export async function compositeDesign(
   // FIRST layout pass already measures/paints with the exact family; canvas
   // text would otherwise silently use the last-set (fallback) font.
   const textLayers = design.layers.filter((layer) => layer.kind === 'text' && layer.text);
-  const referencedFonts = textLayers.flatMap((layer) => {
-    const text = layer.text!;
-    return [
-      text.postScriptName,
-      text.fontFamily,
-      ...(text.runs ?? []).map((run) => run.fontFamily),
-    ];
-  });
+  // v0.7.4 — per-placeholder font overrides must be loaded too, otherwise
+  // the first paint measures/paints with the PSD font and the substitution
+  // only "jumps" to the chosen font on a later render (font flicker).
+  const availableFamilies = listLoadedFontFamilies();
+  const overrideFamilies = options.placeholders
+    .filter(
+      (placeholder) =>
+        placeholder.role === 'text' &&
+        placeholder.fontFamily &&
+        availableFamilies.includes(placeholder.fontFamily)
+    )
+    .map((placeholder) => placeholder.fontFamily);
+  const referencedFonts = [
+    ...textLayers.flatMap((layer) => {
+      const text = layer.text!;
+      return [
+        text.postScriptName,
+        text.fontFamily,
+        ...(text.runs ?? []).map((run) => run.fontFamily),
+      ];
+    }),
+    ...overrideFamilies,
+  ];
   const referencedSizes = [...new Set(textLayers.map((layer) => layer.text!.fontSize ?? 18))];
   try {
     await preloadFontsForText(referencedFonts, referencedSizes.length > 0 ? referencedSizes : [16]);
@@ -2124,7 +2161,12 @@ export async function compositeDesign(
       // sample text is never substituted for an empty Excel cell. The sample
       // survives only in the pure design preview (row === null, design as-is).
       const content = options.row ? substituted : (layer.text?.content ?? '');
-      drawTextLayer(context, layer, content, scale, canvas.width, canvas.height);
+      // The override only applies while the chosen family is actually
+      // registered — removing the font silently restores the PSD font.
+      const requested = placeholder!.fontFamily;
+      const fontOverride =
+        requested && listLoadedFontFamilies().includes(requested) ? requested : undefined;
+      drawTextLayer(context, layer, content, scale, canvas.width, canvas.height, fontOverride);
     } else if (placeholder?.role === 'barcode') {
       // IMAGE AS BARCODE: the chosen layer is a demo barcode image; when
       // the toggle is on and the row has a value, its pixels are replaced

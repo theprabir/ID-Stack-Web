@@ -111,7 +111,9 @@ Node **≥ 18** required (`engines` in package.json).
 ├── index.html                  # PWA entry
 ├── vite.config.ts              # build + test + PWA + aliases
 ├── tailwind.config.ts / postcss.config.js
-├── sample-data/                # demo PSDs, employees.csv, photos/, fonts
+├── sample-data/                # demo source assets: front/back PSDs, employees.xlsx, photos, fonts
+├── public/sample/              # the demo project served by "Open demo project"
+├── screenshots/                # images used by the docs/README
 ├── scripts/                    # e.g. generate-icons.mjs (PWA icons)
 ├── tests/                      # Vitest suites (mirror src structure)
 │   ├── services/  stores/  utils/  components/
@@ -127,14 +129,15 @@ Node **≥ 18** required (`engines` in package.json).
     │   ├── common/   # Header, Sidebar, Footer, ErrorBoundary, LoadingSpinner
     │   ├── ui/       # shadcn-style primitives (Button, Input, Select, …)
 │   ├── data/     # ExcelImport, PhotoImport, ColumnMapping, DataPreview
-    │   └── psd/      # PsdUploader, LayerPicker, PsdCardPreview, BatchRunner,
-    │                 # ImpositionPanel, FontManager, StudioStepper
+    │   └── psd/      # PsdUploader, LayerPicker, PlaceholderControls, PsdCardPreview,
+    │                 # BatchRunner, SheetPreview, ImpositionPanel, FontManager,
+    │                 # SampleProjectLoader, StudioStepper
     ├── pages/        # IdStudioPage (/), DocumentationPage,
     │                 # SettingsPage, AboutPage
     ├── stores/       # Zustand: psdStore, dataStore, uiStore
     ├── services/     # business logic (see §6) — no React here
     ├── workers/      # exportWorker.ts (CMYK JPEG encoding)
-    ├── hooks/        # useTheme
+    ├── hooks/        # useTheme, useFontFamilies (font-registry subscription)
     ├── constants/    # app.ts
     ├── types/        # psd.ts, data.ts (all data models)
     ├── utils/        # id.ts
@@ -188,7 +191,7 @@ layers.
 
 | Store | Owns | Notable behaviour |
 |---|---|---|
-| `usePsdStore` | `project {front, back, placeholders}`, parse state, batch state/control, imposition settings | `loadPsd(file, side)` parses and drops that side's old placeholders; imposition settings persist to IndexedDB (`psd-imposition-settings` key) with a raw-pixel sanity guard (>500 discarded); `saveProject` intentionally stores placeholders only — **PSD bytes are not persisted** |
+| `usePsdStore` | `project {front, back, placeholders}`, parse state, batch state/control, imposition settings (`setPlaceholderFont` stores/clears the optional `fontFamily` override per placeholder) | `loadPsd(file, side)` parses and drops that side's old placeholders; imposition settings persist to IndexedDB (`psd-imposition-settings` key) with a raw-pixel sanity guard (>500 discarded); `saveProject` intentionally stores placeholders only — **PSD bytes are not persisted** |
 | `useDataStore` | Excel data, photos, `mappings: Record<key, column>`, `photoMatchConfig/Result`, `validation` | `loadExcel` → parse → auto-map → validate; single `revalidate()` pipeline recomputes photo matching + validation; `autoMapColumns` matches keys to columns case-insensitively; photos are session-only (blob URLs) |
 | `useUIStore` | theme, sidebarCollapsed, loading overlay | localStorage `id-stack-ui-preferences`; theme mirrored to IndexedDB by `ThemeProvider` |
 
@@ -210,10 +213,12 @@ modules.
 | `textStyleOracle.ts` + `inkScan.ts` | Parse-time calibration: measure the PSD's own raster of each text layer (size/weight/slant/colour/ink box/baseline) so substituted text lands exactly where the sample was |
 | `excelService.ts` | `parseExcelFile` (SheetJS, header detection, column dedupe, blank-row skip), `getPreview`, `validateData` (duplicate IDs, missing required, missing photos, unmapped placeholders) |
 | `photoService.ts` | Photo records with blob URLs, lenient matching (exact base name → fuzzy: spaces/underscores/case-insensitive), `processPhoto` centre-crop |
-| `batchService.ts` | `runBatch()` orchestrator: per-row render → CMYK encode → ZIP; pause/resume/cancel via control ref; per-row error isolation; ETA; sheet-mode accumulation |
+| `batchService.ts` | `runBatch()` orchestrator: per-row render → CMYK encode → ZIP; pause/resume/cancel via control ref; per-row error isolation; ETA; sheet mode streams through `SheetJobWriter` (one sheet of canvases alive at a time) |
+| `sheetJobWriter.ts` | Streaming imposed-PDF writer: appends a page per finished sheet, encodes each card to CMYK JPEG and releases its canvas, buffers back faces as compressed bytes, rotates the document at a byte budget into numbered parts (card numbering), and returns no file when nothing was placed |
+| `sampleProjectService.ts` | `loadDemoProject()` — one-click demo: fetch `public/sample/` assets, parse both PSDs, choose + rename placeholders, import/map the sheet, match photos, derive the card size |
 | `batchNaming.ts` | `buildName(pattern, row)` — `{Row}` (3-digit padded), `{Column}`, `{{Column}}`, filename sanitisation |
 | `cmykExportService.ts` | LittleCMS WASM init, sRGB→CMYK transform, 4-component JPEG encode (APP14 transform=0), direct CMYK PDF (ICCBased colour space + GTS_PDFX OutputIntent), double-sided PDF |
-| `impositionService.ts` | `buildSheetsPdf()` — draws arranged card canvases, bleed, crop marks, sheet/slot numbering onto pdf-lib pages |
+| `impositionService.ts` | `createImposedPdfBuilder()` (streaming pages, ICCBased CMYK XObjects, trim-aligned crop marks, bleed edge-strip fill, caller-supplied card numbers) + `buildSheetsPdf()` wrapper + `renderSheetPreview()` / `renderJobPreview()` (same geometry as the PDF; optional trim/safe-area guides and per-slot card numbers) + `cardPlacementPt()` (1:1 placement when the exact card size is known) |
 | `impositionTypes.ts` | Pure geometry: `computeSheetLayout`, `arrangeSheets` (interleaved vs separate + duplex mirroring via `pairBacksForDuplex`), `deriveCardSizeFromDesign` (px ÷ DPI × 72 → unit), paper presets, `DEFAULT_IMPOSITION_SETTINGS` |
 | `workerPool.ts` + `workers/exportWorker.ts` | JPEG compression off the main thread (main-thread fallback when workers unavailable) |
 | `fontService.ts` | FontFace registry, IndexedDB persistence, bundled Arimo aliases (Arial/ArialMT/…), PostScript name matching (`matchPsdFont`, `resolveFontFamily`, `exactFontCss`), `preloadFontsForText` (awaited `document.fonts.load` before any measurement), name-table PostScript aliasing |
@@ -243,7 +248,7 @@ Excel file ──parseExcelFile──▶ ExcelData        │      photos ──
                                                 │
               runBatch (all rows) ──▶ encodeCmykJpeg / encodeCmykPdf
                                     / encodeCmykPdfDoubleSided
-                                    / buildSheetsPdf (imposed)
+                                    / SheetJobWriter (imposed, streamed)
                                                 │
                                         JSZip ──▶ id-cards.zip
 ```
@@ -376,13 +381,23 @@ Flate.
 
 All geometry is in **PDF points** (`toPoints` per unit: mm/cm/in/pt).
 
-- `computeSheetLayout(settings)`: cell = card + 2×bleed; grid = margin +
-  gaps; centred on the page; returns columns/rows/perSheet + every slot's
-  trim box. `null` when cards don't fit (UI shows ⚠).
-- **Card size is PSD-locked**: `deriveCardSizeFromDesign` computes the true
-  trim size from pixel dimensions ÷ declared DPI (a 300-DPI 1056×663 px PSD
-  → 86×54 mm). The panel fields are disabled; only **direction**
-  (portrait/landscape) swaps width/height.
+- `computeSheetLayout(settings, aspect?, exactCardPt?)`: cell = card +
+  2×bleed; grid = margin + gaps; centred on the page; returns
+  columns/rows/perSheet + every slot's trim box. `null` when cards don't fit
+  (UI shows ⚠).
+- **Exact card size (v0.7.4)**: callers pass `artworkSizePt(widthPx, heightPx,
+  dpi, direction)` → the trim size in **points, unrounded**. The layout and
+  every image placement then use that one value, so the image lands on its
+  slot at exactly **1.000×** — never scaled up or down. The
+  `cardWidth`/`cardHeight` settings are only a fallback for callers that do
+  not know the artwork size; the panel derives and displays them from the
+  PSD (`deriveCardSizeFromDesign`, px ÷ DPI × 72) and disables the fields.
+- **Bleed extends, never scales**: the cell is card + 2×bleed, the trim box
+  stays the artwork size, and the PDF fills the band by repeating the image's
+  own edge strips at 1:1 (`bleedFillOps`: 4 edge strips + 4 corner copies,
+  each clipped to its band). The preview draws the card 1:1 on the trim box and
+  shows the band in proof mode. Crop marks are drawn on the trim edges,
+  offset outwards.
 - `arrangeSheets(fronts, backs, layout, arrangement, duplex)`:
   - `interleaved` — front row r, backs row r+1, whole job one PDF
     (`sheet_Print.pdf`); only whole front rows are placed.
@@ -392,9 +407,31 @@ All geometry is in **PDF points** (`toPoints` per unit: mm/cm/in/pt).
     `sheet_Back.pdf`).
   - **Never compact/filter the returned lists** — `null` entries keep true
     grid positions.
-- `buildSheetsPdf` paints canvases (bleed extends under trim), crop marks at
-  corners, sheet numbering and optional per-slot card numbers (prefix, start
-  value, position, colour, size).
+- `createImposedPdfBuilder(settings, options)` — one page per sheet: card
+  images as ICCBased CMYK `DCTDecode` XObjects, trim-aligned crop marks, and
+  optional **card** numbers supplied per slot by the caller (`addSheet(cards,
+  cardNumbers)`, prefix/position/colour/size/margin from
+  `settings.numbering`). There is no page/sheet numbering. Nothing from
+  earlier pages is retained; `buildSheetsPdf` is the in-memory convenience
+  wrapper (it accepts one `cardNumbers` array per sheet).
+- **Streaming for large jobs**: `SheetJobWriter` (`services/sheetJobWriter.ts`)
+  drives the builder — `putNext`/`put(card, number)`, `flushPage()` (encode +
+  release the page's canvases), `putBack(encoded, number)` and `finish()`. The
+  number travels with its record to the back page, so both faces print the
+  same value. It splits the document once it holds
+  `DEFAULT_PART_BUDGET_BYTES` (96 MB of embedded JPEGs; halved when the part
+  also carries back faces), continuing card numbering across parts, and names
+  them `…_partNofM.pdf`. `finish()` on an empty job returns `[]` so the UI
+  reports an error instead of offering a blank PDF.
+- **Preview**: `renderSheetPreview(cards, settings, widthPx, {cardSizePt,
+  proof, cardNumbers})` mirrors the PDF geometry; the proof option overlays the
+  trim line and the 3 mm safe area only, and `cardNumbers` carries the printed
+  number per slot (derived with `cardNumbersForSlots` from arranged record
+  indices, exactly like `batchService`). **Nothing drawn by the preview is ever
+  emitted into the PDF** — the builder writes images, crop marks and card
+  numbers only (asserted by the "never draws preview guides" test).
+  `SheetPreview` renders the current page, a debounced thumbnail strip (max
+  120), zoom 50–300 % and page navigation.
 - Settings persist per project in IndexedDB and are restored/merged over
   defaults on startup (`restoreImpositionSettings`), discarding the
   pre-v0.6.1 raw-pixel sizes via a >500 sanity limit.
@@ -421,6 +458,12 @@ All geometry is in **PDF points** (`toPoints` per unit: mm/cm/in/pt).
   irrelevant — and OpenType/CFF (`OTTO`) files are accepted. Each internal
   name is also kept as a PostScript alias so a PSD's embedded PostScript
   name resolves to the upload.
+- **Per-placeholder override (v0.7.4)**: `PsdPlaceholder.fontFamily` (set from
+  the Font dropdown in `PlaceholderControls`, optional) renders that one text
+  placeholder with the chosen uploaded family, bypassing the PSD's embedded
+  name. It is only honoured while the family is registered, so deleting the
+  font restores the automatic PSD matching; override families are added to
+  the `preloadFontsForText` set so the first paint is already correct.
 - **Legacy fonts (Akruti/Odia, Kruti Dev)**: cell strings are drawn exactly
   as stored — no Unicode normalisation or shaping — so legacy-encoded
   columns keep their character mapping. The font guard awaits
@@ -451,7 +494,11 @@ npm run test:coverage # v8 coverage report
   shims, 2D-context mock, Image load simulation, fake-indexeddb).
 - **Suites worth studying**:
   - `tests/services/imposition*.test.ts`, `dpiCardSize.test.ts` — sheet
-    geometry, duplex pairing, PSD-derived card sizes.
+    geometry, duplex pairing, PSD-derived card sizes and the v0.7.4
+    **exact 1:1 placement** contract (`cardPlacementPt`, bleed only extends).
+  - `tests/services/sheetJobWriter.test.ts` — streaming output: a single PDF
+    for a normal job, rotation into numbered parts without losing a sheet,
+    back faces closing with their part, and no file when nothing was placed.
   - `tests/services/textMirror.test.ts`, `textCalibration.test.ts`,
     `textClipping.test.ts` — the PSD text contract regressions.
   - `tests/services/cmyk*.test.ts` — APP14 patching, PDF orientation.
@@ -468,6 +515,12 @@ npm run test:coverage # v8 coverage report
 
 - **Batch loop** yields with `requestAnimationFrame` between cards; pause
   polls every 150 ms. JPEG encode runs in the worker pool.
+- **Sheet mode never accumulates canvases**: `SheetJobWriter.flushPage()`
+  encodes the page and `releaseCanvas()`s each card immediately; back faces
+  are buffered as compressed bytes; the PDF is serialised into a `Blob` and
+  dropped at the part budget. Peak memory is therefore independent of the
+  record count (500, 600 or 2000 records behave the same), and a huge job is
+  delivered as numbered PDFs instead of one oversized document.
 - **Blob URLs are leased memory**: photo blob URLs are revoked on
   remove/clear (`disposePhotos`); PSD layer rasters are per-session blob
   URLs; the preview image cache is bounded (`clearPreviewImageCache` on photo

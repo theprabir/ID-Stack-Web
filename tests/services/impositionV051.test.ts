@@ -30,9 +30,16 @@ vi.mock('@/assets/fonts/arimo-italic.ttf?url', () => ({ default: 'mock://i.ttf' 
 vi.mock('@/assets/fonts/arimo-bolditalic.ttf?url', () => ({ default: 'mock://bi.ttf' }));
 globalThis.fetch = vi.fn(async () => new Response(new ArrayBuffer(8), { status: 200 })) as unknown as typeof fetch;
 
-import { pairBacksForDuplex, DEFAULT_IMPOSITION_SETTINGS } from '@/services/impositionTypes';
+import {
+  arrangeSheets,
+  cardNumberFor,
+  cardNumbersForSlots,
+  pairBacksForDuplex,
+  recordsPerSheetFor,
+  DEFAULT_IMPOSITION_SETTINGS,
+} from '@/services/impositionTypes';
 import { buildSheetsPdf } from '@/services/impositionService';
-import type { ImpositionSettings } from '@/services/impositionTypes';
+import type { ImpositionSettings, NumberingSettings } from '@/services/impositionTypes';
 
 /** Tiny canvas stand-in (geometry only; contents are irrelevant here) */
 function mockCanvas(width = 90, height = 50): HTMLCanvasElement {
@@ -69,7 +76,16 @@ describe('imposition — duplex back pairing', () => {
   });
 });
 
-describe('imposition — per-slot card numbering', () => {
+describe('imposition — card numbering (record based)', () => {
+  const numbering: NumberingSettings = {
+    mode: 'per-sheet',
+    position: 'bottom-right',
+    fontSize: 6,
+    color: '#000000',
+    margin: 2,
+    prefix: '#',
+    start: 1,
+  };
   const base: ImpositionSettings = {
     ...DEFAULT_IMPOSITION_SETTINGS,
     unit: 'pt',
@@ -80,16 +96,7 @@ describe('imposition — per-slot card numbering', () => {
     gap: 10,
     margin: 10,
     cropMarks: false,
-    numbering: { ...DEFAULT_IMPOSITION_SETTINGS.numbering, mode: 'none' },
-    cardNumbers: {
-      enabled: true,
-      position: 'bottom-right',
-      fontSize: 6,
-      color: '#000000',
-      margin: 2,
-      prefix: '#',
-      start: 5,
-    },
+    numbering,
     duplex: false,
   };
 
@@ -107,20 +114,106 @@ describe('imposition — per-slot card numbering', () => {
       .join('\n');
   }
 
+  it('per-sheet restarts 1…N on every sheet', () => {
+    const perSheet = 5;
+    expect(cardNumbersForSlots([0, 1, 2, 3, 4], numbering, perSheet)).toEqual([1, 2, 3, 4, 5]);
+    // Records 5–9 are on the NEXT sheet and start over at 1.
+    expect(cardNumbersForSlots([5, 6, 7, 8, 9], numbering, perSheet)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it('continuous carries the sequence into the next sheet', () => {
+    const continuous: NumberingSettings = { ...numbering, mode: 'continuous' };
+    expect(cardNumbersForSlots([0, 1, 2, 3, 4], continuous, 5)).toEqual([1, 2, 3, 4, 5]);
+    expect(cardNumbersForSlots([5, 6, 7, 8, 9], continuous, 5)).toEqual([6, 7, 8, 9, 10]);
+  });
+
+  it('honours start and none', () => {
+    expect(cardNumberFor({ ...numbering, start: 21 }, 0, 5)).toBe(21);
+    expect(cardNumberFor({ ...numbering, mode: 'none', start: 21 }, 3, 5)).toBeNull();
+  });
+
+  it('gives a record\u2019s front and back the same number on one sheet', () => {
+    const fronts = Array.from({ length: 4 }, () => mockCanvas());
+    const backs = Array.from({ length: 4 }, () => mockCanvas());
+    const layout = { columns: 2, rows: 4, perSheet: 8 };
+    const perSheetRecords = recordsPerSheetFor(layout, 'interleaved', true);
+    expect(perSheetRecords).toBe(4);
+
+    const recordIndices = fronts.map((_, index) => index);
+    const indexSheets = arrangeSheets(
+      recordIndices,
+      recordIndices,
+      layout,
+      'interleaved',
+      false
+    );
+    const numbers = cardNumbersForSlots(
+      indexSheets[0] ?? [],
+      numbering,
+      perSheetRecords
+    );
+    // Slot 0 = front of record 0, slot 2 = its back directly below.
+    expect(numbers[0]).toBe(1);
+    expect(numbers[2]).toBe(1);
+    // Slot 1 = front of record 1, slot 3 = its back.
+    expect(numbers[1]).toBe(2);
+    expect(numbers[3]).toBe(2);
+    // The arranged cards themselves occupy those same slots.
+    const sheets = arrangeSheets(fronts, backs, layout, 'interleaved', false);
+    expect(sheets[0]?.[0]).toBe(fronts[0]);
+    expect(sheets[0]?.[2]).toBe(backs[0]);
+  });
+
+  it('gives a record\u2019s front and back the same number on separate sheets', () => {
+    const fronts = Array.from({ length: 4 }, () => mockCanvas());
+    const backs = Array.from({ length: 4 }, () => mockCanvas());
+    const layout = { columns: 2, rows: 2, perSheet: 4 };
+    const recordIndices = fronts.map((_, index) => index);
+    const indexSheets = arrangeSheets(
+      recordIndices,
+      recordIndices,
+      layout,
+      'separate',
+      false
+    );
+    // Sheet 0 = fronts, sheet 1 = backs of the SAME records.
+    expect(indexSheets).toHaveLength(2);
+    const frontNumbers = cardNumbersForSlots(indexSheets[0] ?? [], numbering, 4);
+    const backNumbers = cardNumbersForSlots(indexSheets[1] ?? [], numbering, 4);
+    expect(backNumbers).toEqual(frontNumbers);
+    expect(frontNumbers).toEqual([1, 2, 3, 4]);
+
+    // The back sheet holds the backs of the same records in the same order.
+    const sheets = arrangeSheets(fronts, backs, layout, 'separate', false);
+    expect(sheets[0]?.[0]).toBe(fronts[0]);
+    expect(sheets[1]?.[0]).toBe(backs[0]);
+  });
+
   it('prints one number per occupied slot, honouring start and prefix', async () => {
     const cards = [mockCanvas(), mockCanvas(), mockCanvas()];
-    const content = inflateContent(await buildSheetsPdf([cards], base));
+    const settings: ImpositionSettings = {
+      ...base,
+      numbering: { ...numbering, mode: 'continuous', start: 5 },
+    };
+    const numbers = cardNumbersForSlots([0, 1, 2], settings.numbering, 12);
+    const content = inflateContent(
+      await buildSheetsPdf([cards], settings, {}, [numbers])
+    );
     expect(content).toContain('(#5) Tj');
     expect(content).toContain('(#6) Tj');
     expect(content).toContain('(#7) Tj');
     expect(content).not.toContain('(#8) Tj'); // only 3 cards
   });
 
-  it('numbers all slots when the sheet is full', async () => {
-    // 400×300 pt, 90×50 cards, 10 gap → 3 cols × 4 rows = 12 slots.
-    const cards = Array.from({ length: 12 }, () => mockCanvas());
-    const content = inflateContent(await buildSheetsPdf([cards], base));
-    expect(content).toContain('(#16) Tj'); // 5 + 12 - 1 = 16
-    expect(content).not.toContain('(#17) Tj');
+  it('prints no numbers when the mode is none', async () => {
+    const settings: ImpositionSettings = {
+      ...base,
+      numbering: { ...numbering, mode: 'none' },
+    };
+    const numbers = cardNumbersForSlots([0, 1], settings.numbering, 12);
+    const content = inflateContent(
+      await buildSheetsPdf([[mockCanvas(), mockCanvas()]], settings, {}, [numbers])
+    );
+    expect(content).not.toContain('Tj');
   });
 });

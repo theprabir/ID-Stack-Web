@@ -248,6 +248,16 @@ fix, and check the linked section if you need the why.
   means the PSD's font isn't uploaded yet — upload the exact font the PSD
   references and regenerate. There is no more Arial flicker.
 
+**Text uses the wrong font even though the right one is uploaded**
+
+- Open **Step 2**, find the text placeholder and use its **Font** dropdown:
+  pick the family explicitly. This overrides whatever font name the PSD
+  embeds, which is the fastest fix when the PSD's name can never match your
+  file (renamed fonts, design-tool placeholders, one odd field).
+- Keep the default **"PSD font (…)"** for every other field so the automatic
+  matching still applies. If the chosen family is removed from the Fonts
+  panel, the placeholder silently returns to the PSD font.
+
 **Odia/Akruti text still appears as English letters (or gibberish)**
 
 - Legacy fonts (Akruti, Kruti Dev, …) map characters by code position, not
@@ -285,11 +295,16 @@ fix, and check the linked section if you need the why.
 
 **The browser tab crashed or froze during a big batch**
 
-- Very large batches × very large designs can exhaust memory (target is
-  < 800 MB). Mitigations:
-  - Split the Excel into chunks of a few hundred rows,
-  - use JPG instead of PDF for per-card output,
-  - keep only one side if the back isn't needed.
+- **Sheets mode** is memory-bounded: each sheet is encoded as its page closes
+  and its canvases are released, and the PDF is rotated at a byte budget, so a
+  600-record job no longer grows without limit. When that happens the job is
+  delivered as **numbered parts** (`sheet_Print_part1of3.pdf`, …) — download
+  them all; they continue the same card numbering.
+- **Cards mode** still collects one file per card (or per person) in a ZIP and
+  should be split across a few hundred rows at a time.
+- Other mitigations: use JPG instead of PDF for per-card output, keep only one
+  side if the back isn't needed, and close other heavy tabs (target is
+  < 800 MB against a 2-core browser tab).
 - The batch runs entirely in the tab — don't close it. Pause/Resume is safe;
   a crash means re-running.
 
@@ -322,6 +337,37 @@ fix, and check the linked section if you need the why.
 - Print at **100% / Actual size**, never "Fit to page" — scaling breaks both
   card size and crop marks.
 - Confirm the imposition paper preset matches the paper in the tray.
+- The PDF itself places every card at its **exact** physical size (PSD pixels
+  ÷ declared DPI), so the only scaling left is the printer dialog. If the PSD
+  was authored at 72 DPI while it really represents 300 DPI output, the
+  design's own metadata is wrong — fix it in the PSD, not with a scale factor.
+
+**Card numbers repeat on every sheet / are missing**
+
+- **Per sheet** mode deliberately restarts at **start** on every sheet — a
+  sheet holding five cards prints 1–5, and so does the next. Choose
+  **Continuous** to carry the sequence through the job (1–5, then 6–10, …).
+- Numbers belong to a **record**: a person's front and back always print the
+  same number, including on separate front/back sheets.
+- If no numbers appear, set **Card numbering → Mode** to Per sheet or
+  Continuous, and check the colour is visible against the card corner (the
+  number is drawn at the chosen position with the chosen size/margin).
+
+**Cards print too large/small but the preview looks right**
+
+- The preview and the PDF share one geometry value now, so a mismatch means the
+  print dialog scaled the page (see above) or the paper preset differs from the
+  tray. Check the fit summary's page size (e.g. `page 8.3×11.7 in`).
+- **Bleed** no longer changes the card's printed size — it only extends the
+  edge pixels into the bleed band. Turning it up cannot shrink the artwork.
+
+**Border/edge shows a white hairline after trimming**
+
+- Set a bleed of 2–3 mm. The band is filled by repeating the card's own edge
+  strips at 1:1, so a straight cut through it leaves no white line. Use the
+  **Trim & safe-area proof** toggle to confirm the artwork reaches past the
+  trim line everywhere (the preview prints the card at trim size; the bleed
+  band exists only in the PDF, which is what the cutter trims into).
 
 **Fronts and backs don't line up when duplex printing**
 

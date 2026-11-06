@@ -299,6 +299,13 @@ export interface PsdPlaceholder {
   side: SideType;
   /** Placeholder key used for Excel mapping (defaults to layer name) */
   key: string;
+  /**
+   * Optional per-placeholder font override (v0.7.4): the family name of an
+   * uploaded font to use instead of the font authored in the PSD. Undefined
+   * means "use the PSD font" — the historical behaviour, including the
+   * automatic PostScript-name matching and fallback chain.
+   */
+  fontFamily?: string;
   /** Barcode configuration (present when the layer was chosen as barcode) */
   barcodeConfig?: BarcodeConfig;
   /** Toggle: render a live barcode (true) or keep the demo image (false) */

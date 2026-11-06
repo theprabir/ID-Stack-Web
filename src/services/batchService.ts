@@ -4,22 +4,42 @@
  * CMYK PDF blobs and packages them into a ZIP. Supports pause/resume/cancel
  * and reports progress with an ETA. Runs on the main thread in chunks
  * (requestAnimationFrame/idle yields) so the UI stays responsive.
+ *
+ * MEMORY (v0.7.4): imposed-sheet jobs are streamed through `SheetJobWriter`.
+ * Cards are composited one sheet at a time, encoded into the running PDF page
+ * and their canvases are released immediately instead of being collected for
+ * the whole job. A 600-record job previously held every rendered card
+ * (~2.7 MB each, both faces) until the final PDF step — multiple gigabytes,
+ * i.e. a tab crash. The PDF document itself is bounded too: once a part holds
+ * its budget of card images it is serialised to a Blob and a fresh document
+ * continues the job with continuous numbering, so memory stays flat as the
+ * record count grows (the output is then several numbered PDFs).
+ * Separate-sheets jobs buffer only the *encoded* back faces of the current
+ * part (a few hundred KB each), because back pages follow front pages in the
+ * same document.
  */
 import JSZip from 'jszip';
 import type { PsdProject, PsdDesign, SideType } from '@/types/psd';
 import type { ExcelData, PhotoMatchResult, PhotoRecord } from '@/types/data';
 import { compositeDesign } from './psdCompositeService';
 import { encodeCmykJpeg, encodeCmykPdf, encodeCmykPdfDoubleSided } from './cmykExportService';
-import { buildSheetsPdf } from './impositionService';
+import { encodeCardForSheet, releaseCanvas } from './impositionService';
 import type { ImpositionSettings } from './impositionTypes';
-import { computeSheetLayout, arrangeSheets } from './impositionTypes';
+import {
+  artworkSizePt,
+  cardNumberFor,
+  computeSheetLayout,
+  countJobSheets,
+  recordsPerSheetFor,
+} from './impositionTypes';
+import { SheetJobWriter } from './sheetJobWriter';
 import { buildName } from './batchNaming';
 
 /** Output settings for a batch run */
 export interface BatchOptions {
   /** Output image format (v0.4.2: PNG removed, all outputs are CMYK) */
   format: 'jpg' | 'pdf';
-  /** JPEG quality 0-1 (jpg only) */
+  /** JPEG quality 0-1 (jpg output and imposed-sheet card images) */
   quality: number;
   /** File name template: {Name}, {ID} and {Row} are supported */
   naming: string;
@@ -45,10 +65,33 @@ export interface BatchState {
   errors: { rowIndex: number; message: string }[];
 }
 
+/** One downloadable file produced by a batch run */
+export interface BatchFile {
+  blob: Blob;
+  fileName: string;
+}
+
+/**
+ * A finished download: one ZIP (cards mode) or the imposed PDF (sheets mode).
+ *
+ * Large sheet jobs are written in bounded parts so a 600+ record run cannot
+ * exhaust the tab's memory; `parts` then holds one PDF per part (the first is
+ * also exposed as the primary download for older callers).
+ */
+export interface BatchOutput extends BatchFile {
+  /** Split PDFs of an oversized sheet job (absent for a single file) */
+  parts?: BatchFile[];
+}
+
 export interface BatchCallbacks {
   onProgress: (state: BatchState) => void;
-  /** Called once with the finished ZIP (or null when cancelled) */
-  onComplete: (zip: Blob | null) => void;
+  /** Called once with the finished download (or null when cancelled) */
+  onComplete: (output: BatchOutput | null) => void;
+  /**
+   * Called whenever an imposed sheet page has been written so the UI can
+   * show sheet-level progress (sheets mode only).
+   */
+  onSheetWritten?: (sheetNumber: number, totalSheets: number) => void;
 }
 
 /** Human-readable description for any thrown value (string, object, …) */
@@ -87,6 +130,18 @@ function nextFrame(): Promise<void> {
       setTimeout(resolve, 0);
     }
   });
+}
+
+/** Output base name (no extension) for a sheet-mode job */
+function sheetBaseName(
+  arrangement: ImpositionSettings['arrangement'],
+  hasFront: boolean,
+  hasBack: boolean
+): string {
+  if (arrangement === 'interleaved') return 'sheet_Print';
+  if (hasFront && hasBack) return 'sheet_Front_Back';
+  if (hasFront) return 'sheet_Front';
+  return 'sheet_Back';
 }
 
 /**
@@ -130,7 +185,30 @@ export async function runBatch(
 
   const extension = options.format === 'pdf' ? 'pdf' : 'jpg';
   const isSheetMode = options.outputMode === 'sheets' && options.format === 'pdf';
-  const sheetLayout = isSheetMode ? computeSheetLayout(options.imposition) : null;
+
+  const hasFront = designs.some((entry) => entry.side === 'front');
+  const hasBack = designs.some((entry) => entry.side === 'back');
+  const arrangement = options.imposition.arrangement;
+  /** Separate sheets: this part also carries the back pages of its records */
+  const backFacesSeparate = arrangement === 'separate' && hasFront && hasBack;
+
+  // EXACT card geometry (v0.7.4): a card prints at its own pixel size at the
+  // design's resolution — never at the rounded unit setting and never at the
+  // bleed box. Layout and image placement share this one value, so the scale
+  // factor is exactly 1.000 (no up- or down-scaling by any amount).
+  const designForSize = project.front ?? project.back ?? null;
+  const cardSizePt = designForSize
+    ? artworkSizePt(
+        designForSize.width,
+        designForSize.height,
+        designForSize.horizontalResolution,
+        options.imposition.cardOrientation
+      )
+    : null;
+
+  const sheetLayout = isSheetMode
+    ? computeSheetLayout(options.imposition, undefined, cardSizePt ?? undefined)
+    : null;
   if (isSheetMode && !sheetLayout) {
     errors.push({
       rowIndex: -1,
@@ -141,8 +219,44 @@ export async function runBatch(
     return;
   }
 
-  // Rendered cards accumulate here in sheet mode (front and back kept apart).
-  const sheetCanvases: Record<SideType, HTMLCanvasElement[]> = { front: [], back: [] };
+  // Paired interleaving needs BOTH faces: row 1 = fronts, row 2 = the
+  // matching backs. With a single face the job just fills slots row-major.
+  const pairedInterleaved = Boolean(
+    isSheetMode && arrangement === 'interleaved' && hasFront && hasBack && sheetLayout
+  );
+
+  let writer: SheetJobWriter | null = null;
+  if (isSheetMode && sheetLayout && cardSizePt) {
+    const counts = countJobSheets(
+      sheetLayout,
+      hasFront ? total : 0,
+      hasBack ? total : 0,
+      arrangement
+    );
+    writer = await SheetJobWriter.create({
+      settings: options.imposition,
+      layout: sheetLayout,
+      cardSizePt,
+      dpi: designForSize?.horizontalResolution,
+      quality: options.quality,
+      totalSheets: counts.total,
+      hasBackFaces: backFacesSeparate,
+      baseName: sheetBaseName(arrangement, hasFront, hasBack),
+      onSheetWritten: callbacks.onSheetWritten,
+    });
+  }
+
+  // Row cursor inside the current interleaved page (paired mode).
+  let pairRowsOnSheet = 0;
+  const columns = sheetLayout?.columns ?? 1;
+  const rowsPerSheet = sheetLayout?.rows ?? 1;
+  const frontRowsPerSheet = Math.max(1, Math.floor(rowsPerSheet / 2));
+  /** Records one sheet holds — card numbers restart every sheet in per-sheet mode */
+  const recordsPerSheet = sheetLayout
+    ? recordsPerSheetFor(sheetLayout, arrangement, hasBack)
+    : 1;
+  /** Records actually placed so far (a failed row must not consume a number) */
+  let placedRecords = 0;
 
   let current = 0;
   for (const row of data.rows) {
@@ -169,10 +283,59 @@ export async function runBatch(
       }
 
       if (isSheetMode) {
-        // Accumulate for imposition at the end.
-        for (const { side } of designs) {
-          const canvas = rendered[side];
-          if (canvas) sheetCanvases[side].push(canvas);
+        if (!writer) {
+          // No writer (should not happen) — release to avoid holding memory.
+          releaseCanvas(rendered.front);
+          releaseCanvas(rendered.back);
+        } else if (pairedInterleaved) {
+          // Interleaved pairs: front on the upper row, its back directly below.
+          // BOTH faces get the record's number, so they print the same value.
+          const cardNumber = cardNumberFor(
+            options.imposition.numbering,
+            placedRecords,
+            recordsPerSheet
+          );
+          const frontRow = Math.floor(pairRowsOnSheet / columns);
+          const column = pairRowsOnSheet % columns;
+          writer.put(frontRow * 2 * columns + column, rendered.front ?? null, cardNumber);
+          writer.put(
+            (frontRow * 2 + 1) * columns + column,
+            rendered.back ?? null,
+            cardNumber
+          );
+          placedRecords += 1;
+          pairRowsOnSheet += 1;
+          if (pairRowsOnSheet === frontRowsPerSheet) {
+            await writer.flushPage();
+            pairRowsOnSheet = 0;
+          }
+        } else {
+          const cardNumber = cardNumberFor(
+            options.imposition.numbering,
+            placedRecords,
+            recordsPerSheet
+          );
+          // Fronts stream directly into their page, row-major.
+          if (rendered.front) {
+            writer.putNext(rendered.front, cardNumber);
+            if (writer.isFull) await writer.flushPage();
+          }
+          if (rendered.back) {
+            if (backFacesSeparate) {
+              // Back pages follow front pages in the same part: hold the
+              // COMPRESSED bytes (a few hundred KB) rather than the canvas.
+              // The same number rides along to the back page.
+              writer.putBack(
+                await encodeCardForSheet(rendered.back, options.quality),
+                cardNumber
+              );
+              releaseCanvas(rendered.back);
+            } else {
+              writer.putNext(rendered.back, cardNumber);
+              if (writer.isFull) await writer.flushPage();
+            }
+          }
+          placedRecords += 1;
         }
       } else if (options.format === 'pdf' && designs.length === 2) {
         // Double-sided PDF: one file per person, front = page 1, back = page 2.
@@ -194,6 +357,7 @@ export async function runBatch(
             const bytes = await encodeCmykJpeg(canvas, options.quality);
             zip.file(`${base}${sideSuffix}.${extension}`, bytes);
           }
+          releaseCanvas(canvas);
         }
       }
     } catch (error) {
@@ -224,40 +388,37 @@ export async function runBatch(
     return;
   }
 
-  // Sheet mode: arrange cards on sheets and export as PDF(s).
-  // - interleaved (default): fronts row 1, matching backs directly below in
-  //   row 2, … — one combined PDF (sheet_Print.pdf) for cutting.
-  // - separate: all fronts on front sheets, all backs on back sheets
-  //   (mirrored per row when duplex pairing is on) — sheet_Front.pdf /
-  //   sheet_Back.pdf for long-edge duplex printing.
-  if (isSheetMode && sheetLayout) {
-    const fronts = sheetCanvases.front;
-    const backs = sheetCanvases.back;
-    const sheets = arrangeSheets(
-      fronts,
-      backs,
-      sheetLayout,
-      options.imposition.arrangement,
-      options.imposition.duplex
-    );
-    if (sheets.length > 0) {
-      try {
-        const bytes = await buildSheetsPdf(sheets, options.imposition, 1);
-        const fileName =
-          options.imposition.arrangement === 'interleaved'
-            ? 'sheet_Print.pdf'
-            : fronts.length > 0 && backs.length > 0
-              ? 'sheet_Front_Back.pdf'
-              : fronts.length > 0
-                ? 'sheet_Front.pdf'
-                : 'sheet_Back.pdf';
-        zip.file(fileName, bytes);
-      } catch (error) {
-        errors.push({
-          rowIndex: -1,
-          message: `Sheet assembly failed: ${error instanceof Error ? error.message : 'unknown error'}`,
-        });
+  // --- Sheet mode: close the streamed PDF (or its parts) ------------------
+  if (isSheetMode && writer) {
+    try {
+      const streams = await writer.finish();
+      const first = streams[0];
+      if (!first) {
+        errors.push({ rowIndex: -1, message: 'Nothing was placed on any sheet.' });
+        callbacks.onProgress({ control: 'done', current, total, etaSeconds: 0, errors });
+        callbacks.onComplete(null);
+        return;
       }
+      callbacks.onProgress({ control: 'done', current, total, etaSeconds: 0, errors });
+      callbacks.onComplete({
+        blob: first.blob,
+        fileName: first.fileName,
+        parts:
+          streams.length > 1
+            ? streams.map(({ blob, fileName }) => ({ blob, fileName }))
+            : undefined,
+      });
+      return;
+    } catch (error) {
+      errors.push({
+        rowIndex: -1,
+        message: `Sheet assembly failed: ${
+          error instanceof Error ? error.message : 'unknown error'
+        }`,
+      });
+      callbacks.onProgress({ control: 'done', current, total, etaSeconds: 0, errors });
+      callbacks.onComplete(null);
+      return;
     }
   }
 
@@ -282,7 +443,7 @@ export async function runBatch(
     etaSeconds: 0,
     errors,
   });
-  callbacks.onComplete(zipBlob);
+  callbacks.onComplete({ blob: zipBlob, fileName: 'id-cards.zip' });
 }
 
 /**

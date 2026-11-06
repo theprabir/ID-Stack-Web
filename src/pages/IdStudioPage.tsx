@@ -11,6 +11,7 @@ import {
   BatchRunner,
   FontManager,
 } from '@/components/psd';
+import { SampleProjectLoader } from '@/components/psd/SampleProjectLoader';
 import { StudioStepper, StudioNavButtons, type StudioStep } from '@/components/psd/StudioStepper';
 import { ExcelImport, PhotoImport, DataPreview } from '@/components/data';
 import { ColumnMapping } from '@/components/data/ColumnMapping';
@@ -155,7 +156,8 @@ export function IdStudioPage(): JSX.Element {
         aria-hidden={step !== 1}
         className={step !== 1 ? 'hidden' : 'shrink-0'}
       >
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <SampleProjectLoader onLoaded={() => setStep(2)} />
+        <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
           <div className="flex flex-col gap-4">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <PsdUploader side="front" />

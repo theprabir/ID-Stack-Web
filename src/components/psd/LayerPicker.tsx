@@ -4,7 +4,6 @@ import {
   Type,
   Image as ImageIcon,
   Barcode as BarcodeIcon,
-  X,
   FolderClosed,
   EyeOff,
 } from 'lucide-react';
@@ -12,6 +11,7 @@ import type { SideType, PsdLayerKind } from '@/types/psd';
 import { usePsdStore } from '@/stores/psdStore';
 import { Button, Input } from '@/components/ui';
 import { BarcodeSettings } from './BarcodeSettings';
+import { PlaceholderControls } from './PlaceholderControls';
 import { cn } from '@/lib/utils';
 
 interface LayerPickerProps {
@@ -37,8 +37,6 @@ export function LayerPicker({ side }: LayerPickerProps): JSX.Element {
   const design = usePsdStore((state) => state.project[side]);
   const placeholders = usePsdStore((state) => state.project.placeholders);
   const addPlaceholder = usePsdStore((state) => state.addPlaceholder);
-  const removePlaceholder = usePsdStore((state) => state.removePlaceholder);
-  const renamePlaceholderKey = usePsdStore((state) => state.renamePlaceholderKey);
 
   const [filter, setFilter] = useState('');
   const [showHidden, setShowHidden] = useState(false);
@@ -109,15 +107,19 @@ export function LayerPicker({ side }: LayerPickerProps): JSX.Element {
         className="themed-scrollbar max-h-80 divide-y overflow-auto rounded-md border"
         role="list"
       >
-        {layers.map((layer) => {
+        {layers.map((layer, layerIndex) => {
           const placeholder = placeholderByLayer.get(layer.id);
           const isText = layer.kind === 'text';
           const Icon = KIND_ICON[layer.kind];
           return (
             <li
-              key={layer.id}
+              // PSD ids are not guaranteed unique (duplicated layer names can
+              // repeat them), so the row index keeps the list key stable.
+              key={`${side}-${layerIndex}-${layer.id}`}
               className={cn(
-                'flex items-center gap-2 px-2 py-1.5 text-sm transition-colors',
+                // Wraps instead of overflowing: a chosen text layer needs room
+                // for its key field, font dropdown and remove button (v0.7.4).
+                'flex flex-wrap items-center gap-x-2 gap-y-1 px-2 py-1.5 text-sm transition-colors',
                 placeholder ? 'bg-primary/10' : 'hover:bg-accent/5',
                 layer.hidden && 'opacity-60'
               )}
@@ -134,33 +136,24 @@ export function LayerPicker({ side }: LayerPickerProps): JSX.Element {
                   )}
                 </p>
                 {isText && layer.text && (
-                  <p className="truncate text-xs text-muted-foreground" title={layer.text.content}>
-                    “{layer.text.content.slice(0, 40)}”
+                  <p
+                    className="text-xs text-muted-foreground"
+                    title={`${layer.text.content}\nFont: ${
+                      layer.text.postScriptName ?? layer.text.fontFamily ?? 'default'
+                    }`}
+                  >
+                    “{layer.text.content}”
                     {layer.text.fontSize ? ` · ${Math.round(layer.text.fontSize)}px` : ''}
+                    {' · '}
+                    <span className="text-muted-foreground/80">
+                      {layer.text.postScriptName ?? layer.text.fontFamily ?? 'default'}
+                    </span>
                   </p>
                 )}
               </div>
 
               {placeholder ? (
-                <div className="flex shrink-0 items-center gap-1">
-                  <Input
-                    value={placeholder.key}
-                    onChange={(event) => renamePlaceholderKey(layer.id, event.target.value)}
-                    aria-label={`Mapping key for ${layer.name}`}
-                    title="Mapping key used in column mapping"
-                    className="h-7 w-28 text-xs"
-                  />
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 text-destructive"
-                    aria-label={`Unchoose ${layer.name}`}
-                    title="Remove placeholder"
-                    onClick={() => removePlaceholder(layer.id)}
-                  >
-                    <X className="h-3.5 w-3.5" aria-hidden="true" />
-                  </Button>
-                </div>
+                <PlaceholderControls layer={layer} placeholder={placeholder} />
               ) : (
                 <div className="flex shrink-0 items-center gap-1">
                   {isText && (

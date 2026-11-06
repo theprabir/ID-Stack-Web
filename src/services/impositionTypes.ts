@@ -43,28 +43,38 @@ export interface PaperSettings {
   landscape: boolean;
 }
 
-/** Where sheet numbers are printed */
-export type NumberPosition =
-  | 'none'
-  | 'top-left'
-  | 'top-center'
-  | 'top-right'
-  | 'bottom-left'
-  | 'bottom-center'
-  | 'bottom-right';
+/** Corner of a card where its number is printed */
+export type NumberPosition = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
 
-/** Numbering options — position, size and colour fully user-controlled */
+/**
+ * CARD numbering options.
+ *
+ * These controls print a sequence number on each card — they never print a
+ * page/sheet number. Both faces of one record always carry the SAME number,
+ * whether they sit above/below each other on one sheet or on separate front
+ * and back sheets.
+ *
+ * - `per-sheet`: every sheet restarts the sequence, so a sheet holding five
+ *   cards prints 1–5 (plus `start` − 1). The next sheet prints 1–5 again.
+ * - `continuous`: the sequence runs through the whole job, so 1–5 continues at
+ *   6 on the next sheet (and across split PDF parts).
+ * - `none`: no card numbers are printed.
+ */
 export interface NumberingSettings {
-  /** Numbering mode */
+  /** Card numbering mode */
   mode: 'per-sheet' | 'continuous' | 'none';
-  /** Position on the sheet (ignored when mode === 'none') */
+  /** Corner of the card the number is printed in */
   position: NumberPosition;
   /** Font size in points */
   fontSize: number;
   /** Text colour as hex (e.g. #333333) */
   color: string;
-  /** Optional prefix shown before the number (e.g. "Sheet ") */
+  /** Margin from the card edges (unit units) */
+  margin: number;
+  /** Optional prefix shown before the number (e.g. "#") */
   prefix: string;
+  /** First number of the sequence (default 1) */
+  start: number;
 }
 
 /** Card orientation: how the card's width/height map onto the page */
@@ -116,32 +126,12 @@ export interface ImpositionSettings {
   /** Crop mark stroke colour */
   cropMarkColor: string;
   numbering: NumberingSettings;
-  /** Per-slot card numbering: each card shows its sequence number */
-  cardNumbers: CardNumberSettings;
   /**
    * Double-sided duplex pairing: when true, back-side sheets are laid out
    * mirrored per row (row order reversed) so long-edge duplex printing puts
    * each back behind its front.
    */
   duplex: boolean;
-}
-
-/** Per-card numbering options (printed on every card slot) */
-export interface CardNumberSettings {
-  /** Show a sequence number on each card slot */
-  enabled: boolean;
-  /** Corner of the card the number is printed in */
-  position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
-  /** Font size in points */
-  fontSize: number;
-  /** Text colour as hex */
-  color: string;
-  /** Margin from the card edges (unit units) */
-  margin: number;
-  /** Optional prefix (e.g. "#") */
-  prefix: string;
-  /** Start value (default 1; continuous across sheets) */
-  start: number;
 }
 
 /** One card slot on a sheet (all values in PDF points) */
@@ -259,6 +249,37 @@ export function deriveCardSizeFromDesign(
 }
 
 /**
+ * EXACT physical size of a rendered card, in PDF points — never rounded.
+ *
+ * This is the value the imposition engine lays sheets out with (v0.7.4):
+ * pixel width ÷ DPI × 72 pt. Because the slot geometry and the drawn image are
+ * both derived from the same numbers, a card is placed 1:1 — no scaling up, no
+ * scaling down, not even the sub-0.1 % drift that the 2-decimal unit-rounded
+ * `cardWidth`/`cardHeight` settings introduced.
+ *
+ * @param widthPx - Rendered card width in pixels
+ * @param heightPx - Rendered card height in pixels
+ * @param dpi - Resolution of those pixels (default 72)
+ * @param direction - Requested card direction (portrait keeps the authored
+ *                    orientation, landscape swaps a tall design)
+ * @returns Trim size in points (width/height), orientation applied
+ */
+export function artworkSizePt(
+  widthPx: number,
+  heightPx: number,
+  dpi = 72,
+  direction: CardOrientation = 'portrait'
+): { width: number; height: number } {
+  const safeDpi = dpi > 0 ? dpi : 72;
+  let width = (widthPx * 72) / safeDpi;
+  let height = (heightPx * 72) / safeDpi;
+  if (direction === 'landscape' && width < height) {
+    [width, height] = [height, width];
+  }
+  return { width, height };
+}
+
+/**
  * True when the stored card size matches the PSD-derived size for the
  * current direction (within rounding). Used to decide whether persisted
  * settings are stale and should be re-derived from the design.
@@ -302,25 +323,84 @@ export const DEFAULT_IMPOSITION_SETTINGS: ImpositionSettings = {
   cropMarkOffset: 1.5,
   cropMarkColor: '#000000',
   numbering: {
-    mode: 'per-sheet',
+    mode: 'none',
     position: 'bottom-right',
     fontSize: 8,
     color: '#333333',
-    prefix: '',
-  },
-  cardNumbers: {
-    enabled: false,
-    position: 'bottom-right',
-    fontSize: 6,
-    color: '#333333',
     margin: 2,
-    prefix: '#',
+    prefix: '',
     start: 1,
   },
   cardOrientation: 'portrait',
   arrangement: 'interleaved',
   duplex: true,
 };
+
+/**
+ * How many RECORDS (front + back pairs) one physical sheet holds.
+ *
+ * Interleaved jobs with both faces place each record's front on one row and
+ * its back on the next, so only half the grid rows hold records. Every other
+ * case fills all grid slots with records.
+ *
+ * @param layout - Computed sheet layout
+ * @param arrangement - Front/back arrangement mode
+ * @param hasBackFaces - True when back designs are part of this job
+ * @returns Records per sheet (never less than 1)
+ */
+export function recordsPerSheetFor(
+  layout: Pick<SheetLayout, 'columns' | 'rows' | 'perSheet'>,
+  arrangement: SheetArrangement,
+  hasBackFaces: boolean
+): number {
+  if (arrangement === 'interleaved' && hasBackFaces) {
+    return Math.max(1, Math.floor(layout.rows / 2)) * layout.columns;
+  }
+  return Math.max(1, layout.perSheet);
+}
+
+/**
+ * Printed card number for one record.
+ *
+ * Both faces of a record share its index, so they always print the same
+ * number — regardless of whether they sit on the same sheet or on separate
+ * front/back sheets. `recordIndex` is 0-based over the job.
+ *
+ * @param settings - Card numbering settings
+ * @param recordIndex - 0-based record (front+back pair) index in the job
+ * @param recordsPerSheet - Records one sheet holds (see {@link recordsPerSheetFor})
+ * @returns Number to print, or null when numbering is off
+ */
+export function cardNumberFor(
+  settings: NumberingSettings,
+  recordIndex: number,
+  recordsPerSheet: number
+): number | null {
+  if (settings.mode === 'none') return null;
+  const start = Math.max(0, Math.round(settings.start));
+  if (settings.mode === 'per-sheet') {
+    return start + (recordIndex % Math.max(1, recordsPerSheet));
+  }
+  return start + recordIndex;
+}
+
+/**
+ * Map a sheet's slot record indices to the numbers printed in those slots.
+ *
+ * @param recordIndices - Record index per slot (`null` = empty slot)
+ * @param settings - Card numbering settings
+ * @param recordsPerSheet - Records one sheet holds
+ * @returns Printed number per slot (`null` = no number)
+ */
+export function cardNumbersForSlots(
+  recordIndices: Array<number | null>,
+  settings: NumberingSettings,
+  recordsPerSheet: number
+): Array<number | null> {
+  return recordIndices.map((recordIndex) =>
+    recordIndex === null ? null : cardNumberFor(settings, recordIndex, recordsPerSheet)
+  );
+}
 
 /**
  * Order card canvases for a back sheet so long-edge duplex printing places
@@ -330,18 +410,14 @@ export const DEFAULT_IMPOSITION_SETTINGS: ImpositionSettings = {
  * (row r, col c) with its back we must place the back at the MIRRORED column
  * (cols+1−c) of the same row.
  *
- * @param fronts - Front canvases in row-major slot order
+ * @param fronts - Front cards (canvases or encoded images) in row-major slot order
  * @param perSheet - Cards per sheet
  * @param columns - Grid columns
- * @returns Back canvases in row-major slot order (mirrored per row; entries
+ * @returns Back cards in row-major slot order (mirrored per row; entries
  *          may be `null` where no back exists)
  */
-export function pairBacksForDuplex(
-  fronts: HTMLCanvasElement[],
-  perSheet: number,
-  columns: number
-): Array<HTMLCanvasElement | null> {
-  const backs: Array<HTMLCanvasElement | null> = new Array(fronts.length).fill(null);
+export function pairBacksForDuplex<T>(fronts: T[], perSheet: number, columns: number): Array<T | null> {
+  const backs: Array<T | null> = new Array(fronts.length).fill(null);
   // Work sheet by sheet: fronts come as one long row-major list across all
   // sheets; mirror the column inside each sheet-sized block. The back list is
   // consumed in the same order the fronts were produced (row-major), so back
@@ -367,26 +443,44 @@ export function pairBacksForDuplex(
  * with `gap` between cells and `margin` around the sheet. The grid is centred
  * on the page when the cells do not fill it exactly.
  *
+ * v0.7.4 — when `exactCardPt` is supplied (the artwork's true physical size
+ * from {@link artworkSizePt}) the trim boxes use those EXACT point values and
+ * the user-facing `cardWidth`/`cardHeight` numbers are ignored. The rendered
+ * image therefore lands on its slot 1:1, with no scaling whatsoever. Bleed
+ * enlarges only the reserved cell around the trim box — it never resizes the
+ * artwork.
+ *
  * @param settings - Imposition settings (any unit)
  * @param designAspect - Fallback card aspect from the PSD (width/height) used
  *                       when the card trim size was left at 0
+ * @param exactCardPt - Exact artwork size in points (overrides the settings)
  * @returns Geometry in points, or null when nothing fits
  */
 export function computeSheetLayout(
   settings: ImpositionSettings,
-  designAspect?: { width: number; height: number }
+  designAspect?: { width: number; height: number },
+  exactCardPt?: { width: number; height: number }
 ): SheetLayout | null {
   const { width: pageWidth, height: pageHeight } = resolvePageSizePt(settings.paper, settings.unit);
   const unitPt = toPoints(1, settings.unit);
 
-  let cardWidthPt =
-    settings.cardWidth > 0
+  const hasExactSize =
+    exactCardPt !== undefined &&
+    Number.isFinite(exactCardPt.width) &&
+    Number.isFinite(exactCardPt.height) &&
+    exactCardPt.width > 0 &&
+    exactCardPt.height > 0;
+
+  let cardWidthPt = hasExactSize
+    ? exactCardPt.width
+    : settings.cardWidth > 0
       ? toPoints(settings.cardWidth, settings.unit)
       : designAspect
         ? designAspect.width
         : 0;
-  let cardHeightPt =
-    settings.cardHeight > 0
+  let cardHeightPt = hasExactSize
+    ? exactCardPt.height
+    : settings.cardHeight > 0
       ? toPoints(settings.cardHeight, settings.unit)
       : designAspect
         ? designAspect.height
@@ -448,6 +542,61 @@ export function computeSheetLayout(
   };
 }
 
+/** How many physical sheets a job produces, by arrangement */
+export interface SheetCounts {
+  /** Cards that fit on one sheet (interleaved: front rows × columns) */
+  perSheet: number;
+  /** Cards (front rows) placed per sheet of an interleaved job */
+  frontsPerSheet: number;
+  /** Physical sheets in the job */
+  total: number;
+  /** Sheets holding fronts (separate arrangement) */
+  frontSheets: number;
+  /** Sheets holding backs (separate arrangement) */
+  backSheets: number;
+}
+
+/**
+ * Count the sheets a job will produce.
+ *
+ * Shared by generation and the preview so the thumbnail strip can never
+ * disagree with the PDF that is actually written.
+ *
+ * @param layout - Computed sheet layout
+ * @param frontCount - Cards (records with a front design)
+ * @param backCount - Back cards (records with a back design)
+ * @param arrangement - Front/back arrangement mode
+ * @returns Sheet counts for the job
+ */
+export function countJobSheets(
+  layout: Pick<SheetLayout, 'columns' | 'rows' | 'perSheet'>,
+  frontCount: number,
+  backCount: number,
+  arrangement: SheetArrangement
+): SheetCounts {
+  if (arrangement === 'interleaved') {
+    // With both faces each record needs a front and a back row; with one face
+    // every grid slot holds a record.
+    const frontsPerSheet = recordsPerSheetFor(layout, arrangement, backCount > 0);
+    return {
+      perSheet: frontsPerSheet,
+      frontsPerSheet,
+      total: Math.ceil(Math.max(frontCount, backCount) / frontsPerSheet),
+      frontSheets: Math.ceil(frontCount / frontsPerSheet),
+      backSheets: 0,
+    };
+  }
+  const frontSheets = Math.ceil(frontCount / layout.perSheet);
+  const backSheets = Math.ceil(backCount / layout.perSheet);
+  return {
+    perSheet: layout.perSheet,
+    frontsPerSheet: layout.perSheet,
+    total: frontSheets + backSheets,
+    frontSheets,
+    backSheets,
+  };
+}
+
 /**
  * Build the per-sheet card lists for a job.
  *
@@ -475,19 +624,19 @@ export function computeSheetLayout(
  *          `null` (= empty slot); the list length always equals the slot
  *          count so indices stay true grid positions.
  */
-export function arrangeSheets(
-  fronts: HTMLCanvasElement[],
-  backs: HTMLCanvasElement[],
+export function arrangeSheets<T>(
+  fronts: T[],
+  backs: T[],
   layout: { columns: number; rows: number; perSheet: number },
   arrangement: SheetArrangement,
   duplex: boolean
-): Array<Array<HTMLCanvasElement | null>> {
+): Array<Array<T | null>> {
   if (arrangement === 'separate') {
-    const sheets: Array<Array<HTMLCanvasElement | null>> = [];
+    const sheets: Array<Array<T | null>> = [];
     for (let i = 0; i < fronts.length; i += layout.perSheet) {
       sheets.push(fronts.slice(i, i + layout.perSheet));
     }
-    const backList: Array<HTMLCanvasElement | null> = duplex
+    const backList: Array<T | null> = duplex
       ? pairBacksForDuplex(backs, layout.perSheet, layout.columns)
       : backs;
     for (let i = 0; i < backList.length; i += layout.perSheet) {
@@ -498,23 +647,30 @@ export function arrangeSheets(
 
   // Interleaved: fill row-major slots but pair rows — front row r is placed
   // on grid rows 2r and 2r+1 of the sheet. Only whole front rows are placed
-  // (a sheet always has its backs directly below the fronts).
+  // (a sheet always has its backs directly below the fronts). With no back
+  // faces there is nothing to pair, so records fill every grid slot (matching
+  // the streamed PDF writer, which does the same).
   const { columns, rows, perSheet } = layout;
-  const frontRowsPerSheet = Math.max(1, Math.floor(rows / 2));
+  const paired = backs.length > 0;
+  const frontRowsPerSheet = paired ? Math.max(1, Math.floor(rows / 2)) : rows;
   const frontsPerSheet = frontRowsPerSheet * columns;
-  const sheets: Array<Array<HTMLCanvasElement | null>> = [];
+  const sheets: Array<Array<T | null>> = [];
   for (let start = 0; start < fronts.length; start += frontsPerSheet) {
     const sheetFronts = fronts.slice(start, start + frontsPerSheet);
     const sheetBacks = backs.slice(start, start + frontsPerSheet);
     // Keep nulls: each entry must stay at its true row-major grid position
     // (filtering would slide later cards into the wrong slots).
-    const placed: (HTMLCanvasElement | null)[] = new Array(perSheet).fill(null);
+    const placed: (T | null)[] = new Array(perSheet).fill(null);
+    const rowStride = paired ? 2 : 1;
     for (let index = 0; index < sheetFronts.length; index += 1) {
       const frontRow = Math.floor(index / columns);
       const col = index % columns;
-      placed[frontRow * 2 * columns + col] = sheetFronts[index] ?? null;
-      if (sheetBacks[index]) {
-        placed[(frontRow * 2 + 1) * columns + col] = sheetBacks[index]!;
+      placed[frontRow * rowStride * columns + col] = sheetFronts[index] ?? null;
+      // `!= null` (not truthiness): consumers also arrange record indices,
+      // and record 0 is a valid background card, not an empty slot.
+      const back = sheetBacks[index];
+      if (paired && back !== null && back !== undefined) {
+        placed[(frontRow * 2 + 1) * columns + col] = back;
       }
     }
     sheets.push(placed);

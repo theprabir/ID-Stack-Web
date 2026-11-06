@@ -35,6 +35,7 @@ globalThis.fetch = vi.fn(
 import {
   arrangeSheets,
   computeSheetLayout,
+  countJobSheets,
   DEFAULT_IMPOSITION_SETTINGS,
   deriveCardSizeFromDesign,
   type ImpositionSettings,
@@ -193,7 +194,7 @@ describe('deriveCardSizeFromDesign — PSD-based auto card size', () => {
   });
 });
 
-describe('buildSheetsPdf — aspect-preserving placement', () => {
+describe('buildSheetsPdf — exact-size placement (v0.7.4, never scaled)', () => {
   function inflateContent(bytes: Uint8Array): string {
     const text = Buffer.from(bytes).toString('latin1');
     const streams = [...text.matchAll(/stream\n([\s\S]*?)\nendstream/g)].map((m) => m[1] ?? '');
@@ -208,27 +209,64 @@ describe('buildSheetsPdf — aspect-preserving placement', () => {
       .join('\n');
   }
 
-  it('letterboxes a portrait image inside a landscape slot without distortion', async () => {
-    // Card box 80×50 (landscape); image 60×100 (portrait, aspect 0.6).
-    // Contain-fit into the bleed box (80×50): scale = min(80/60, 50/100)
-    // = 0.5 → drawn 30×50, centred horizontally.
-    const settings = baseSettings({ cardOrientation: 'landscape' });
-    const content = inflateContent(await buildSheetsPdf([[mockCanvas(60, 100)]], settings));
+  function firstDraw(content: string): { width: number; height: number; x: number; y: number } {
     const draw = /q ([\d.]+) 0 0 ([\d.]+) ([\d.]+) ([\d.]+) cm \/Im0_0 Do Q/.exec(content);
     expect(draw).not.toBeNull();
-    const [, width, height] = draw as unknown as string[];
-    expect(Number(width)).toBeCloseTo(30, 0);
-    expect(Number(height)).toBeCloseTo(50, 0);
+    const [, width, height, x, y] = draw as unknown as string[];
+    return { width: Number(width), height: Number(height), x: Number(x), y: Number(y) };
+  }
+
+  it('draws the card at its own physical size, not the bleed box', async () => {
+    // Trim 90×50 pt with a 5 pt bleed → the cell is 100×60. A 900×500 px
+    // image at 720 dpi is exactly 90×50 pt, so it must stay that size: the
+    // old contain-fit code stretched it to the 100×60 bleed box.
+    const settings = baseSettings({ cardWidth: 90, cardHeight: 50, bleed: 5, gap: 10 });
+    const content = inflateContent(
+      await buildSheetsPdf([[mockCanvas(900, 500)]], settings, { dpi: 720 })
+    );
+    const draw = firstDraw(content);
+    expect(draw.width).toBeCloseTo(90, 2);
+    expect(draw.height).toBeCloseTo(50, 2);
   });
 
-  it('fills the slot exactly when the aspect matches (no scaling surprises)', async () => {
-    // Card box 80×50; image authored with the same 8:5 aspect (800×500 px).
-    const settings = baseSettings({ cardOrientation: 'landscape' });
-    const content = inflateContent(await buildSheetsPdf([[mockCanvas(800, 500)]], settings));
-    const draw = /q ([\d.]+) 0 0 ([\d.]+) ([\d.]+) ([\d.]+) cm \/Im0_0 Do Q/.exec(content);
-    expect(draw).not.toBeNull();
-    const [, width, height] = draw as unknown as string[];
-    expect(Number(width)).toBeCloseTo(80, 0);
-    expect(Number(height)).toBeCloseTo(50, 0);
+  it('places a card smaller than its trim slot centred, without enlarging it', async () => {
+    // 450×250 px at 720 dpi = 45×25 pt inside a 90×50 pt trim → centred.
+    const settings = baseSettings({ cardWidth: 90, cardHeight: 50, bleed: 0, gap: 10 });
+    const content = inflateContent(
+      await buildSheetsPdf([[mockCanvas(450, 250)]], settings, { dpi: 720 })
+    );
+    const draw = firstDraw(content);
+    expect(draw.width).toBeCloseTo(45, 2);
+    expect(draw.height).toBeCloseTo(25, 2);
+    // 400 pt page, 3 × 90 pt columns + 10 pt gaps = 290 pt grid centred at
+    // originX 55 → the first trim slot starts at 55 and the 45 pt card is
+    // centred inside it.
+    expect(draw.x).toBeCloseTo(55 + (90 - 45) / 2, 2);
+  });
+
+  it('fills the trim slot exactly when the design DPI is unknown', async () => {
+    // Without DPI, 1 px = 1 pt and the trim box is the card: 900×500 px in a
+    // 90×50 pt slot → 90×50 pt (no letterboxing, no bleed enlargement).
+    const settings = baseSettings({ cardWidth: 90, cardHeight: 50, bleed: 0, gap: 10 });
+    const content = inflateContent(await buildSheetsPdf([[mockCanvas(900, 500)]], settings));
+    const draw = firstDraw(content);
+    expect(draw.width).toBeCloseTo(90, 2);
+    expect(draw.height).toBeCloseTo(50, 2);
+  });
+});
+
+describe('countJobSheets — preview and generation agree', () => {
+  it('counts interleaved pairs per sheet', () => {
+    const counts = countJobSheets({ columns: 4, rows: 4, perSheet: 16 }, 40, 40, 'interleaved');
+    // 2 front rows per sheet × 4 columns = 8 cards per sheet → 5 sheets.
+    expect(counts.frontsPerSheet).toBe(8);
+    expect(counts.total).toBe(5);
+  });
+
+  it('counts separate front and back sheets', () => {
+    const counts = countJobSheets({ columns: 3, rows: 4, perSheet: 12 }, 13, 13, 'separate');
+    expect(counts.frontSheets).toBe(2);
+    expect(counts.backSheets).toBe(2);
+    expect(counts.total).toBe(4);
   });
 });

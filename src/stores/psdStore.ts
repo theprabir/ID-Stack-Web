@@ -14,7 +14,7 @@ import {
   type PsdProjectRecord,
 } from '@/services/storageService';
 import type { BatchState } from '@/services/batchService';
-import type { ImpositionSettings } from '@/services/impositionTypes';
+import type { ImpositionSettings, NumberingSettings } from '@/services/impositionTypes';
 import { DEFAULT_IMPOSITION_SETTINGS } from '@/services/impositionTypes';
 
 /** IndexedDB key for the current project's imposition settings */
@@ -23,6 +23,21 @@ const IMPOSITION_SETTINGS_KEY = 'psd-imposition-settings';
 /** Sanity limit (in any unit) above which a card size is clearly a raw
  * pixel count mistakenly stored as a physical size (pre-v0.6.1 bug). */
 const CARD_SIZE_SANITY_LIMIT = 500;
+
+/**
+ * Settings written by earlier builds kept a page-numbering `numbering` block next
+ * to a separate `cardNumbers` block. Only card numbers exist now, so old
+ * settings are migrated once on restore.
+ */
+interface LegacyCardNumbers {
+  enabled?: boolean;
+  position?: NumberingSettings['position'];
+  fontSize?: number;
+  color?: string;
+  margin?: number;
+  prefix?: string;
+  start?: number;
+}
 
 /** Batch state/control slice embedded in the PSD store */
 export interface PsdStoreBatchSlice {
@@ -54,6 +69,11 @@ interface PsdState extends PsdStoreBatchSlice {
   setBarcodeEnabled: (layerId: string, enabled: boolean) => void;
   /** Merge partial barcode settings (symbology, colours) into a placeholder */
   updateBarcodeConfig: (layerId: string, config: Partial<BarcodeConfig>) => void;
+  /**
+   * Override the font of a text placeholder with an uploaded family, or
+   * clear the override (undefined / "") to fall back to the PSD's font.
+   */
+  setPlaceholderFont: (layerId: string, family?: string) => void;
   /** Persist the project (PSD bytes + placeholders) to IndexedDB. */
   saveProject: () => Promise<void>;
   /** Imposition settings (persisted per project, survive reloads) */
@@ -98,10 +118,48 @@ export const usePsdStore = create<PsdState>()((set, get) => ({
 
   restoreImpositionSettings: async () => {
     try {
-      const stored = await loadFromIndexedDB<ImpositionSettings>(IMPOSITION_SETTINGS_KEY);
+      const stored = await loadFromIndexedDB<
+        Omit<ImpositionSettings, 'numbering'> & {
+          numbering?: Partial<NumberingSettings>;
+          cardNumbers?: LegacyCardNumbers;
+        }
+      >(IMPOSITION_SETTINGS_KEY);
       if (stored && typeof stored === 'object' && stored.paper && stored.numbering) {
+        const {
+          cardNumbers: legacyCardNumbers,
+          numbering: storedNumbering,
+          ...rest
+        } = stored;
         // Merge over defaults so newly added fields always have values.
-        const merged = { ...DEFAULT_IMPOSITION_SETTINGS, ...stored };
+        const merged: ImpositionSettings = { ...DEFAULT_IMPOSITION_SETTINGS, ...rest };
+
+        // `numbering` now controls CARD numbers (mode + look in one
+        // block). Old page-numbering settings must never start printing card
+        // numbers by surprise: migrate a previously enabled cardNumbers block
+        // (which was continuous across sheets) and otherwise stay off.
+        const isCardNumberShape =
+          'margin' in (storedNumbering ?? {}) && 'start' in (storedNumbering ?? {});
+        if (isCardNumberShape) {
+          merged.numbering = {
+            ...DEFAULT_IMPOSITION_SETTINGS.numbering,
+            ...storedNumbering,
+          };
+        } else {
+          merged.numbering = legacyCardNumbers?.enabled
+            ? {
+                mode: 'continuous',
+                position:
+                  legacyCardNumbers.position ?? DEFAULT_IMPOSITION_SETTINGS.numbering.position,
+                fontSize:
+                  legacyCardNumbers.fontSize ?? DEFAULT_IMPOSITION_SETTINGS.numbering.fontSize,
+                color: legacyCardNumbers.color ?? DEFAULT_IMPOSITION_SETTINGS.numbering.color,
+                margin: legacyCardNumbers.margin ?? DEFAULT_IMPOSITION_SETTINGS.numbering.margin,
+                prefix: legacyCardNumbers.prefix ?? '',
+                start: legacyCardNumbers.start ?? 1,
+              }
+            : { ...DEFAULT_IMPOSITION_SETTINGS.numbering };
+        }
+
         // v0.6.1 fix: sizes written before DPI-aware derivation are raw
         // pixel counts (e.g. "622 cm") and can never fit any paper — discard
         // them so the PSD-locked derivation starts from the true default.
@@ -195,6 +253,24 @@ export const usePsdStore = create<PsdState>()((set, get) => ({
             ? { ...placeholder, barcodeConfig: { ...placeholder.barcodeConfig, ...config } }
             : placeholder
         ),
+      },
+    });
+  },
+
+  setPlaceholderFont: (layerId, family) => {
+    const project = get().project;
+    set({
+      project: {
+        ...project,
+        placeholders: project.placeholders.map((placeholder) => {
+          if (placeholder.layerId !== layerId) return placeholder;
+          if (!family) {
+            const next = { ...placeholder };
+            delete next.fontFamily;
+            return next;
+          }
+          return { ...placeholder, fontFamily: family };
+        }),
       },
     });
   },

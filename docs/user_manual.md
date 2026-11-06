@@ -85,18 +85,25 @@ install ID Stack as a standalone app with its own window and taskbar icon.
 3. *(Optional)* **Photos** named after the people, e.g. `Priya Sharma.jpg`.
 
 > Tip: the repository's [`sample-data/`](https://github.com/theprabir/id-stack-web/tree/main/sample-data)
-> folder contains a working example (two sample PSDs, `employees.csv` and a
-> photos folder) you can use to try the whole flow end-to-end.
+> folder contains a working example (front and back PSDs, `employees.xlsx` and
+> a photos folder) you can use to try the whole flow end-to-end.
 
 ### Sample data bundled with the project
 
-`sample-data/employees.csv` follows this shape:
+`sample-data/employees.xlsx` follows this shape:
 
-| Name | ID | Department | … |
-|---|---|---|---|
+| Name | Job Role | Employee ID | Email | Phone Number | photo |
+|---|---|---|---|---|---|
 
 …with one row per employee. Design your spreadsheet similarly; column names
 are free-form — you map them in Step 3.
+
+The **ABC Company employee card** (`sample-data/front.psd` and
+`sample-data/back.psd`) is a complete real-world example: a layered front with
+*Name*, *Job Role*, *ID No.*, *Email address* and *Phone number* text layers
+plus a photo window, a separate back design, `employees.xlsx` and seven photos.
+A copy of it ships with the app in `public/sample/`, so you can open it **in one
+click** — see [Open the demo project](#step-1--upload-designs--data).
 
 ---
 
@@ -146,7 +153,17 @@ viewport — their panels scroll internally instead of the page.
 
 ### Step 1 — Upload designs & data
 
-This step holds four cards:
+At the top of the step sits **Open the demo ID card** (a highlighted card).
+Click **Open demo project** and the bundled employee card is loaded and wired in
+one go: both PSDs are parsed, the employee sheet is imported, the placeholders
+(name, job role, employee ID, email, phone, photo and an employee-ID barcode)
+are chosen and mapped, photos are matched and the card size is derived from the
+design. The demo stops on **Choose Placeholders** with everything already
+picked, so you can see how the step works and click **Next** through the
+mapping and preview yourself. If a design or data is already loaded it asks for
+confirmation first (the demo replaces them).
+
+Below it, four cards:
 
 **Front Design / Back Design (left)**
 - Click the dashed area or **drag a `.psd` file** onto it.
@@ -217,6 +234,14 @@ side in Photoshop order, with a type icon (text / image / group):
   (a short field next to them). The key defaults to the layer name — rename it
   to match your Excel column heading if you like (e.g. `Employee Name` →
   `Name`); matching with columns is case-insensitive later.
+- **Text placeholders also show a Font dropdown.** The default entry is
+  **"PSD font (…)"**, which keeps the automatic behaviour: the font name
+  embedded in the PSD is matched against the uploaded fonts and awaited before
+  the first paint. Choosing any family from the list renders **that one field**
+  with the chosen font instead — the fastest fix when a PSD references a font
+  whose name can never match, or when one field needs a legacy (Akruti/Kruti
+  Dev) font while the rest of the card does not. If the chosen font is removed
+  from the Fonts panel the placeholder silently returns to the PSD font.
 - Click **✕** to remove a placeholder again.
 
 > **Practical tips**
@@ -317,10 +342,14 @@ scrolls internally if needed.
 - **Errors** (if any) appear in a red list with the row number and reason —
   one bad row never stops the others.
 
-**When finished:** a **Download ZIP** button appears. Inside you'll find one
-file per card (or per person) named by your pattern — or, in Sheets mode, the
-imposed sheet PDFs (`sheet_Print.pdf` for the combined layout, or
-`sheet_Front_Back.pdf` / `sheet_Front.pdf` / `sheet_Back.pdf`).
+**When finished:** a download button appears. Inside you'll find one file per
+card (or per person) named by your pattern — or, in Sheets mode, the imposed
+sheet PDFs (`sheet_Print.pdf` for the combined layout, or
+`sheet_Front_Back.pdf` / `sheet_Front.pdf` / `sheet_Back.pdf`). Very large
+sheet jobs are written as **numbered parts** (`sheet_Print_part1of3.pdf`,
+`sheet_Print_part2of3.pdf`, …) that continue the card numbering —
+each part is listed with its own download button. Keep them together: they
+form one job.
 
 **Sheet layout (left, Sheets mode only)**
 
@@ -332,7 +361,11 @@ column) with real sample cards:
   (width + height fields appear), plus a **Landscape** checkbox.
 - **Unit** — mm, cm, inch or pt (applies to every dimension below).
 - **Card width/height** — locked, shown "(from PSD)": the card's true physical
-  size is derived from the PSD's pixel dimensions and its declared DPI.
+  size is derived from the PSD's pixel dimensions and its declared DPI
+  (pixels ÷ DPI × 72 pt). This exact value drives both the layout and the
+  image placement, so a card prints at **1:1 — never scaled up or down**, and
+  the bleed below extends the edge pixels outwards instead of shrinking or
+  growing the artwork. Crop marks sit on the real cut line.
 - **Card direction** — Portrait (tall) / Landscape (wide); swaps width/height
   at the true scale.
 - **Arrangement** —
@@ -345,18 +378,54 @@ column) with real sample cards:
   and space around the sheet.
 - **Crop marks** — toggle, then **mark length** and **mark offset**; the
   blue lines in the preview are the trim lines.
-- **Numbering (per sheet)** — mode (Per sheet / Continuous / None), position
-  on the sheet (9 positions), font size (pt) and colour.
-- **Card numbers (per slot)** — a sequence number printed on every card
-  (e.g. seat numbers): enable, then position, size, colour, margin, a
-  **prefix** (e.g. `#`) and the **start** value.
+- **Card numbering** — mode (**Per sheet** / **Continuous** / **None**),
+  position on the card (four corners), size, colour, margin, a **prefix**
+  (e.g. `#`) and the **start** value. These options number *cards* — there is
+  no page/sheet number.
 - **Duplex pairing** — mirrors back columns so long-edge duplex printing
   lands each back exactly behind its front (separate-sheets layout).
-- A live **fit summary** reads e.g. `2 × 5 = 10 cards per sheet (page
-  8.3×11.7 in)`, or warns "⚠ Cards do not fit on this paper — reduce card
-  size, bleed, gap or margin."
-- The **preview canvas** re-renders instantly with your real cards as any
-  setting changes; empty slots are dashed.
+- A live **fit summary** reads e.g. `2 × 5 = 10 cards per sheet · 4 sheet(s)`,
+  or warns "⚠ Cards do not fit on this paper — reduce card size, bleed, gap or
+  margin."
+
+**Sheet preview (right column)**
+
+- The preview re-renders instantly with your real cards as any setting
+  changes; empty slots are dashed, and the solid blue outline is the trim
+  (cut) line.
+- **Page navigation** — a thumbnail strip under the preview shows *every*
+  sheet of the job; click a thumbnail to jump to it. `‹` / `›` step one page,
+  and the number field jumps directly ("Sheet 7 of 24"). Pages beyond the
+  sample cards show the same layout with empty slots.
+- **Zoom** — `−` / `+` run from 50 % to 300 %; **Fit** returns to 100 %. When
+  zoomed in, the page area scrolls.
+- **Trim & safe-area proof** — toggling it overlays the trim line (where the
+  guillotine cuts, also always drawn in blue) and the **3 mm safe area**
+  (dashed magenta — keep text and logos inside it). A small legend below the
+  toggle names them and reminds you that the guides are **preview-only**: the
+  exported PDF contains the cards, crop marks and numbering, never the blue
+  box or the safe-area line.
+- The preview shows each card at its **trim size** — no bleed band is drawn
+  around it, so the canvas is exactly what the cutter keeps. The PDF does
+  carry the bleed (the card's own edge pixels repeated outwards) so trimming
+  never leaves a white hairline.
+
+**Card numbering**
+
+Numbering is per **record**: the front and back of one person always carry the
+same number, whether they sit one below the other on the same sheet or on
+separate front/back sheets. The **start** value is the first number.
+
+- **Per sheet** — every sheet restarts the sequence from **start**. A sheet
+  holding five cards prints 1–5; the next sheet prints 1–5 again (a partial
+  last sheet simply stops earlier).
+- **Continuous** — the sequence runs through the whole job: sheet 1 prints
+  1–5, sheet 2 prints 6–10, and split PDF parts keep counting. With `start`
+  set to 100 the first card is `#100`.
+- **None** — no numbers are printed.
+
+The preview, the PDF and split parts all use the same rule, so paging through
+the sheets shows exactly what will print.
 
 ### Working across steps
 
@@ -410,8 +479,8 @@ profile (GitHub / Instagram / copy email), featured projects and licence info.
    - Cutting by hand → *Back below its front (one PDF)*, crop marks ON.
    - Duplex printer → *Fronts & backs on separate sheets* with **Duplex
      pairing** ON, print long-edge duplex at 100% scale ("Actual size").
-5. **Numbering**: use *Card numbers (per slot)* for sequential card IDs
-   printed on the sheet, and *Numbering* for sheet-level numbers only.
+5. **Numbering**: use *Card numbering* for sequential card IDs printed on the
+   cards — Per sheet restarts on every sheet, Continuous runs through the job.
 
 ### Printer dialog checklist
 

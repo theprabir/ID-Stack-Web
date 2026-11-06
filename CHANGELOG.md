@@ -2,6 +2,174 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+
+- **Card numbering now numbers cards, not pages (Step 4).** The
+  **Per sheet / Continuous / None** selector controls the sequence printed on
+  the cards; page/sheet numbering is gone. **Per sheet** restarts at
+  **Start at** on every sheet (five cards → 1–5, then 1–5 on the next sheet);
+  **Continuous** carries the sequence through the whole job and across split
+  PDF parts (1–5, then 6–10). Numbers are assigned per **record**, so a
+  person's front and back always print the same number — whether they are
+  stacked on one sheet (back below its front) or on separate front/back
+  sheets, including duplex-mirrored backs. Preview and PDF share the same
+  helpers, so paging the preview shows exactly what prints.
+- **Font dropdown no longer clips its text.** The base `<select>` carried
+  `py-2`, leaving a 28 px compact control only 12 px of content box, which cut
+  12 px labels in half vertically. Vertical padding is gone (native selects
+  centre their own text), and a placeholder row now lays the mapping key and
+  the font dropdown on separate rows — the “Font” label can no longer be
+  pushed over the layer name, and long family names fit the wider dropdown.
+- **Front-only interleaved previews fill every grid slot row-major**, matching
+  the streaming PDF writer, and record 0 is treated as a real back card when
+  arranging record indices (a truthiness check used to drop it).
+
+### Changed
+
+- `settings.cardNumbers` was folded into `settings.numbering` (mode + position,
+  size, colour, margin, prefix, start). Saved settings migrate automatically:
+  a previously enabled per-slot card-number block becomes **Continuous**; old
+  page-numbering settings stay off, so an upgrade never starts printing
+  numbers by surprise.
+- **Bundled demo refreshed.** `public/sample/` now ships the ABC Company
+  employee card: a revised front, a new back PSD, `employees.xlsx` (Name, Job
+  Role, Employee ID, Email, Phone Number, photo) and the seven matching photos.
+  **Open demo project** parses both faces, picks and names every front
+  placeholder (including the barcode, now a live Code 128 symbol of the
+  employee ID), maps each column, matches photos by the `photo` column and
+  derives the card size, so Step 4 is ready for `Front + Back` output. It now
+  stops on **Choose Placeholders** with everything pre-selected instead of
+  skipping to the preview, so the workflow stays visible. The old
+  Akruti/student sample assets were removed from the demo folder.
+
+## [0.7.4] - 2026-11-05
+
+### Added
+
+- **Sheet thumbnails, page navigation and zoom (Step 4).** The sheet-mode
+  preview is no longer a single canvas: a thumbnail strip shows every sheet in
+  the job (click to jump), a page field + prev/next buttons navigate, and zoom
+  runs 50 % → 300 % with a **Fit** reset. Thumbnails are debounced so editing
+  the imposition settings stays smooth, and long jobs cap the strip at 120
+  thumbnails ("+N more") with a numeric page jump for the rest.
+- **Trim / safe-area proof overlay.** A **Trim & safe-area proof** toggle
+  draws the real cut geometry on the preview: the trim line (solid blue, the
+  actual cut line) and the 3 mm safe area (dashed magenta), with an inline
+  legend that states the guides are preview-only. This answers "what gets
+  cut?" before a single sheet is printed.
+- **Per-placeholder font override (Step 2).** Every text placeholder now has a
+  **Font** dropdown listing the uploaded/bundled families. Choosing one renders
+  that single field with the chosen font — independent of the PostScript name
+  embedded in the PSD — which makes legacy (Akruti/Odia, Kruti Dev) fixes a
+  two-second action instead of a PSD edit, and covers designs whose font names
+  can never match. The default entry **"PSD font (…)"** keeps the existing
+  behaviour: match the PSD's font name against the uploaded fonts, load it via
+  `FontFace` and await it before measuring/painting. An override that points at
+  a font which is later removed silently falls back to the PSD font, and
+  override families are preloaded together with the design's fonts so the first
+  paint is already correct (no flicker).
+- **One-click demo project ("Open the demo ID card", Step 1).** Loads the
+  bundled JNV sample (`public/sample/`: front PSD, `AKBALAN.TTF`, a seven-row
+  student sheet and photos), **chooses the placeholders, maps every column,
+  imports the legacy font, matches the photos and derives the card size** — a
+  first-time user sees a finished, Odia-rendered card without preparing any
+  files.
+- **`sheetJobWriter.ts` (new service)** — a streaming imposed-PDF writer used by
+  sheet-mode generation: pages are appended as they are filled, each card is
+  encoded to CMYK JPEG and its canvas released immediately, and the document is
+  rotated once it holds its byte budget, continuing page/card numbering across
+  numbered parts. Small and medium jobs still produce one PDF.
+- **`SheetPreview`, `PlaceholderControls`, `SampleProjectLoader`,
+  `sampleProjectService` and `useFontFamilies`** — the UI/services behind the
+  three features above (`useFontFamilies` subscribes to the font registry with
+  `useSyncExternalStore`, so the dropdown updates the instant a font is
+  uploaded or removed).
+
+### Changed
+
+- **Cards print at their exact physical size — no scaling by any amount.** The
+  sheet layout is now built from the artwork's true trim size (`artworkSizePt`:
+  pixels ÷ DPI × 72 pt) instead of the two-decimal `cardWidth`/`cardHeight`
+  settings, and the image is placed at exactly 1.000× on that trim slot. The
+  bleed setting no longer inflates the cell into which the artwork was
+  contain-fitted (a 3 mm bleed used to shrink-to-fit the *bleed box*, printing
+  an 86 mm card at ~7 % smaller than intended); it now only reserves space
+  around the trim box, and the PDF fills that band by repeating the card's own
+  edge strips at 1:1. Crop marks moved onto the trim edges (offset outwards by
+  the mark offset), so they mark the real cut line.
+- **Sheet-mode generation is memory-bounded.** Previously every rendered card
+  was held for the whole job, the PDF document kept every embedded JPEG and
+  `save()` made a second full copy — a 600-record double-sided job could reach
+  gigabytes and crash the tab. Generation now streams through
+  `SheetJobWriter`: one sheet of canvases at a time, back faces buffered as
+  compressed bytes only, and an oversized document split into numbered PDFs
+  (`sheet_Print_part1of3.pdf`). The download area lists each part.
+- **Preview geometry is shared with the PDF** (`cardSizePt` flows into the
+  layout, the preview renderer and the writer), so the preview can no longer
+  disagree with the export.
+- **Step 1 layout** — the demo loader sits above the upload cards; Step 4's fit
+  summary reports sheets only and explains the split behaviour in the preview
+  caption.
+
+### Fixed
+
+- **Empty sheet PDF was still produced** when a job placed nothing on any
+  sheet (every record failed / all rows skipped): the writer returned a
+  zero-page PDF named `sheet_Print.pdf` instead of reporting "Nothing was
+  placed on any sheet."
+- **No bleed band in the preview** — the sheet preview now shows each card at
+  its trim size instead of repeating the artwork's edge pixels into a band
+  around it. The bleed itself is unchanged in the PDF (that is what keeps a
+  trimmed stack free of white hairlines); it is simply not previewed, so the
+  canvas is exactly what the cutter keeps.
+- **Preview guides never reach the PDF** — the blue trim outline and the
+  magenta safe-area line are preview-only. The imposed PDF contains cards,
+  crop marks and numbering, and nothing else (verified by a test that builds a
+  sheet with all decorations off and asserts the content stream has no colour
+  or stroke operators at all).
+- **Per-slot card numbering verified end to end** — labels continue across
+  sheets and across split PDF parts (`#100` on sheet 1, `#101` on sheet 2 with
+  `start = 100`), printed exactly once each; the preview now receives a
+  `cardNumberStart` offset so paging through sheets shows the same continuing
+  sequence instead of restarting at the start value on every page.
+- **Font dropdown cut off in Step 2** — the layer row is narrower than the
+  controls it held, so the font `<select>` was clipped mid-name. The controls
+  now shrink and wrap inside the layer row, the select keeps a readable
+  minimum width, and the default entry is the short **"PSD font (auto)"** while
+  the placeholder's full PSD font name is shown (and in the tooltip) on the
+  layer's own detail line.
+- **Duplicate React keys in the layer list** — PSD layers can repeat their ids
+  (duplicate names), which produced a duplicate-key warning and unstable row
+  identity; list keys now include the side and row index.
+- **Version display** — `package.json`, the README badge, the in-app footer /
+  About chip and this changelog are back in sync (0.7.4).
+
+### Performance
+
+- Sheet-mode peak memory no longer grows with the record count: canvases live
+  for one page, encoded cards for one part (96 MB budget), and finished parts
+  are handed to the browser as `Blob`s. Numbered parts replace the previous
+  single multi-gigabyte document for 500–600+ record jobs.
+
+### Tests
+
+- `impositionV074.test.ts` (new) — 8 tests: `artworkSizePt` exactness and axis
+  swap, layout built from the exact trim size (slot = artwork, pitch = card +
+  2×bleed + gap), the exact value overriding the rounded setting, "does not
+  fit" handling, and `cardPlacementPt` placing the image on the slot at
+  1.000× regardless of the rendered pixel size (with the centred-legacy path as
+  the control).
+- `impositionPdf.test.ts` — two additions: per-slot card numbers continue
+  across sheets and honour `start` (each label emitted once), and a sheet with
+  every decoration disabled contains **no** colour/stroke/clip operators, i.e.
+  none of the preview guides can leak into a print file.
+- `sheetJobWriter.test.ts` (new) — 4 tests: one PDF for a normal job, rotation
+  into numbered parts at the byte budget with no sheet lost or duplicated,
+  back faces closing with the part that owns their records, and no file when
+  nothing was placed.
+
 ## [0.7.3] - 2026-11-04
 
 ### Changed

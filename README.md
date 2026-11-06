@@ -7,7 +7,7 @@
 **Professional ID card design & batch printing — entirely in your browser.**
 
 [![Live](https://img.shields.io/badge/live-id--stack.vercel.app-0078D4?logo=vercel&logoColor=white)](https://id-stack.vercel.app)
-[![Version](https://img.shields.io/badge/version-0.7.3-6366f1)](https://github.com/theprabir/id-stack-web/blob/main/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.7.4-6366f1)](https://github.com/theprabir/id-stack-web/blob/main/CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-22c55e)](LICENSE)
 
 [**🌐 Launch the app**](https://id-stack.vercel.app) · [**📖 Changelog**](CHANGELOG.md) · [**🐛 Report an issue**](https://github.com/theprabir/id-stack-web/issues)
@@ -35,7 +35,13 @@ No installation. No backend. No account. Your data never leaves your device.
 - ⚡ **Batch generation** — hundreds of cards with progress bar, ETA, pause/resume/cancel and error list; CMYK JPEG encoding + DEFLATE run in a dedicated Web Worker
 - 📦 **ZIP export** — one file per card with `{Name}_{ID}` / `{{Column}}` naming patterns
 - 🎨 **CMYK export** — ICC-corrected CMYK JPEG (Adobe APP14 transform=0) and direct CMYK PDF (embedded ICC profile + GTS_PDFX OutputIntent)
-- 🖨️ **Imposition engine** — N cards per sheet on A4/A3/Letter/Legal/Tabloid or custom paper (mm/cm/in/pt) with bleed, gap, margin, crop marks, positioned numbering and live sheet preview
+- 🖨️ **Imposition engine** — N cards per sheet on A4/A3/Letter/Legal/Tabloid or custom paper (mm/cm/in/pt) with bleed, gap, margin, crop marks and positioned card numbering
+- 📐 **Exact print size — no scaling, ever** — each card prints at its own physical size (pixels ÷ DPI), placed 1:1 on its trim slot; the bleed setting only extends the edge pixels outwards (repeated at 1:1), so a 3 mm bleed no longer enlarges an 86 mm card. Crop marks sit on the real cut line
+- 🗂️ **Sheet thumbnails, page navigation & zoom** — every imposed sheet is a clickable thumbnail; jump to a page, zoom 50–300 %, or fit to the panel
+- 🔍 **Trim / safe-area proof overlay** — one toggle draws the trim (cut) line and the 3 mm safe area on the preview, so you see exactly what gets cut and what must stay inside. Guides are preview-only: the exported PDF contains cards, crop marks and numbering — never the blue box
+- 🔢 **Card numbering — per sheet or continuous** — number each card (never the page): *Per sheet* restarts 1–N on every sheet, *Continuous* carries the sequence through the job and split PDF parts, and a record's front and back always print the same number. The preview shows the exact sequence that prints
+- 🧠 **Memory-safe sheet output for huge jobs** — sheet pages are streamed: each card is encoded to CMYK JPEG the moment its page closes and its canvas is released, the PDF is rotated at a fixed byte budget, and very large jobs are written as numbered PDFs (`sheet_Print_part1of3.pdf`, …) instead of exhausting the tab
+- 🔤 **Per-field font override** — assign any uploaded font to any text placeholder from the layer list (independent of the PSD's embedded font name); "PSD font" keeps the automatic matching behaviour
 - 👤 **One PDF per person** — double-sided cards export as a single 2-page PDF
 - 🔢 **Barcode/QR placeholders** — pick any image layer as a barcode (Code 128, EAN-13/8, UPC, Code 39, QR via bwip-js) with per-placeholder colours, background and an enable toggle; symbols are sized to the exact placeholder box
 - 🩹 **Missing-photo workflow** — records without a photo render a fully transparent image area (never a demo photo; the frame layer beneath it is hidden too), Step 4 can include or exclude them (default on), and a one-click CSV export lists exactly which records still need photos
@@ -52,11 +58,12 @@ No installation. No backend. No account. Your data never leaves your device.
 
 ## 🚀 Quick Start
 1. Open **[id-stack.vercel.app](https://id-stack.vercel.app)**
-2. Upload your front/back PSD designs
-3. Mark the text/photo layers as placeholders
-4. Import your Excel data and photos, map the columns
-5. Preview a live card, then generate the batch
-6. Export as ZIP, print-ready imposed sheets, or per-person PDFs
+2. *(fastest)* Click **Open demo project** in Step 1 — a sample employee card (front + back PSDs + Excel + photos) loads fully wired and lands on the pre-filled placeholder step, so you can walk the workflow yourself
+3. Upload your front/back PSD designs
+4. Mark the text/photo layers as placeholders
+5. Import your Excel data and photos, map the columns
+6. Preview a live card, then generate the batch
+7. Export as ZIP, print-ready imposed sheets, or per-person PDFs
 
 ## 📊 Project Status
 
