@@ -94,6 +94,9 @@ describe('impositionService — sheet PDF assembly', () => {
     expect(text).toContain('/MediaBox [ 0 0 400 300 ]');
     // 12 + 2 = 14 image XObjects.
     expect((text.match(/\/Subtype \/Image/g) ?? []).length).toBe(14);
+    // Adobe CMYK JPEGs store inverted samples; /Decode flips them back so the
+    // page is not rendered as a negative.
+    expect(text).toContain('/Decode [ 1 0 1 0 1 0 1 0 ]');
     // GTS_PDFX output intent present.
     expect(text).toContain('GTS_PDFX');
   });
@@ -133,6 +136,35 @@ describe('impositionService — sheet PDF assembly', () => {
       .join('\n');
     // Crop marks are stroked line segments ("m ... l S").
     expect(inflated).toMatch(/m [\d.]+ [\d.]+ l S/);
+  });
+
+  it('never repeats card edges into a bleed band and keeps every crop mark short', async () => {
+    // Bleed only reserves spacing now: the card is painted once at trim size,
+    // never re-drawn as edge strips, and every crop mark is a 3 pt segment
+    // (a wrong x-coordinate used to draw one page-wide line per card).
+    const settings: ImpositionSettings = { ...ptSettings(), bleed: 5 };
+    const bytes = await buildSheetsPdf([[mockCanvas(90, 50, 128)]], settings);
+    const text = Buffer.from(bytes).toString('latin1');
+    const streams = [...text.matchAll(/stream\n([\s\S]*?)\nendstream/g)].map((m) => m[1] ?? '');
+    const inflated = streams
+      .map((s) => {
+        try {
+          return Buffer.from(inflate(Buffer.from(s, 'latin1'))).toString('latin1');
+        } catch {
+          return s;
+        }
+      })
+      .join('\n');
+
+    // Exactly one paint of the card image (bleed copies would add eight more).
+    expect((inflated.match(/\/Im0_0 Do/g) ?? []).length).toBe(1);
+
+    const segments = [...inflated.matchAll(/([-\d.]+) ([-\d.]+) m ([-\d.]+) ([-\d.]+) l S/g)];
+    expect(segments.length).toBeGreaterThan(0);
+    for (const segment of segments) {
+      const [, x1, y1, x2, y2] = segment.map(Number);
+      expect(Math.hypot(x2! - x1!, y2! - y1!)).toBeLessThanOrEqual(3.01);
+    }
   });
 
   it('prints the caller\u2019s record-based card numbers and continues across sheets', async () => {

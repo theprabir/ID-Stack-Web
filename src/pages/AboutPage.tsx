@@ -192,22 +192,24 @@ export function AboutPage(): JSX.Element {
                   <Instagram className="h-3.5 w-3.5 text-muted-foreground" />
                   <span>Instagram</span>
                   <ArrowUpRight className="h-3 w-3 opacity-60" />
-                </a>                <button
+                </a>
+                <button
                   onClick={handleCopyEmail}
                   type="button"
                   title={AUTHOR_EMAIL}
+                  aria-label={copiedEmail ? 'Email copied' : `Copy email ${AUTHOR_EMAIL}`}
                   className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 hover:bg-primary/20 active:scale-[0.98] px-3 py-2 sm:py-1.5 text-xs font-medium text-primary transition-all"
                 >
                   {copiedEmail ? (
-                    <>
-                      <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                      <span>Email Copied!</span>
-                    </>
+                    <Check className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
                   ) : (
-                    <>
-                      <Mail className="h-3.5 w-3.5 text-primary" />
-                      <span>Copy Email</span>
-                    </>
+                    <Mail className="h-3.5 w-3.5 shrink-0 text-primary" />
+                  )}
+                  <span>{AUTHOR_EMAIL}</span>
+                  {copiedEmail && (
+                    <span className="text-[10px] font-semibold uppercase tracking-wide">
+                      Copied
+                    </span>
                   )}
                 </button>
               </div>

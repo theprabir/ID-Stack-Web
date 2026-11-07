@@ -43,7 +43,7 @@ No installation. No backend. No account. Your data never leaves your device.
 - 🧠 **Memory-safe sheet output for huge jobs** — sheet pages are streamed: each card is encoded to CMYK JPEG the moment its page closes and its canvas is released, the PDF is rotated at a fixed byte budget, and very large jobs are written as numbered PDFs (`sheet_Print_part1of3.pdf`, …) instead of exhausting the tab
 - 🔤 **Per-field font override** — assign any uploaded font to any text placeholder from the layer list (independent of the PSD's embedded font name); "PSD font" keeps the automatic matching behaviour
 - 👤 **One PDF per person** — double-sided cards export as a single 2-page PDF
-- 🔢 **Barcode/QR placeholders** — pick any image layer as a barcode (Code 128, EAN-13/8, UPC, Code 39, QR via bwip-js) with per-placeholder colours, background and an enable toggle; symbols are sized to the exact placeholder box
+- 🔢 **Barcode/QR placeholders** — pick any image layer as a barcode (EAN-13 default, Code 128, QR via bwip-js) with per-placeholder colours, background and an enable toggle; symbols are sized to the exact placeholder box
 - 🩹 **Missing-photo workflow** — records without a photo render a fully transparent image area (never a demo photo; the frame layer beneath it is hidden too), Step 4 can include or exclude them (default on), and a one-click CSV export lists exactly which records still need photos
 
 ### 🔐 Privacy & Platform

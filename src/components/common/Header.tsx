@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { IdCard, Sun, Moon } from 'lucide-react';
+import { Sun, Moon } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import { useUIStore } from '@/stores/uiStore';
 import { Button } from '@/components/ui';
@@ -16,7 +16,14 @@ export function Header(): JSX.Element {
     <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b bg-surface-panel px-4 transition-colors duration-300">
       <div className="flex items-center gap-6">
         <Link to="/" className="flex items-center gap-2 font-semibold">
-          <IdCard className="h-6 w-6 text-primary" aria-hidden="true" />
+          <img
+            src={`${import.meta.env.BASE_URL}pwa-192x192.png`}
+            alt=""
+            aria-hidden="true"
+            width={28}
+            height={28}
+            className="h-7 w-7 rounded"
+          />
           <span>ID Stack</span>
         </Link>
       </div>

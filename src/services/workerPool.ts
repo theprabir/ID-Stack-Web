@@ -97,7 +97,10 @@ async function requestBytes(
   const transfer: ArrayBuffer[] = [];
   if (request.type === 'encode-jpeg') transfer.push(request.cmyk);
   else transfer.push(request.raw);
-  active.postMessage(request as ExportWorkerRequest, { transfer });
+  // The reply is matched by id — without it the worker's response carries
+  // `id: undefined`, the pending entry is never found, and every request
+  // stalls until the 60 s timeout before falling back to the main thread.
+  active.postMessage({ ...request, id } as ExportWorkerRequest, { transfer });
 
   try {
     return new Uint8Array(await promise);

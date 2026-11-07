@@ -121,13 +121,26 @@ function waitWhilePaused(getControl: () => BatchControl): Promise<'continue' | '
   });
 }
 
-/** Yield to the browser between cards (keeps UI responsive) */
+/**
+ * Yield to the browser between cards (keeps UI responsive).
+ *
+ * rAF alone is not enough: browsers suspend it in hidden/background tabs, so a
+ * job that outlives a tab switch used to freeze after one card. The timer is a
+ * safety net — whichever fires first resumes the loop.
+ */
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => {
+    let settled = false;
+    const resume = (): void => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
     if (typeof requestAnimationFrame === 'function') {
-      requestAnimationFrame(() => resolve());
+      requestAnimationFrame(resume);
+      setTimeout(resume, 50);
     } else {
-      setTimeout(resolve, 0);
+      setTimeout(resume, 0);
     }
   });
 }
@@ -249,9 +262,13 @@ export async function runBatch(
   // Row cursor inside the current interleaved page (paired mode).
   let pairRowsOnSheet = 0;
   const columns = sheetLayout?.columns ?? 1;
-  const rowsPerSheet = sheetLayout?.rows ?? 1;
-  const frontRowsPerSheet = Math.max(1, Math.floor(rowsPerSheet / 2));
-  /** Records one sheet holds — card numbers restart every sheet in per-sheet mode */
+  /**
+   * Records one interleaved page holds — every column of every front row.
+   * Card numbers restart every sheet in per-sheet mode, and the page flush
+   * uses the same value (it counts RECORDS, so comparing it with the number
+   * of pair-rows flushed after a single record: one card per page, with the
+   * rest of the sheet left empty).
+   */
   const recordsPerSheet = sheetLayout
     ? recordsPerSheetFor(sheetLayout, arrangement, hasBack)
     : 1;
@@ -305,7 +322,7 @@ export async function runBatch(
           );
           placedRecords += 1;
           pairRowsOnSheet += 1;
-          if (pairRowsOnSheet === frontRowsPerSheet) {
+          if (pairRowsOnSheet === recordsPerSheet) {
             await writer.flushPage();
             pairRowsOnSheet = 0;
           }
