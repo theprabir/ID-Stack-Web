@@ -92,11 +92,13 @@ install ID Stack as a standalone app with its own window and taskbar icon.
 
 `sample-data/employees.xlsx` follows this shape:
 
-| Name | Job Role | Employee ID | Email | Phone Number | photo |
-|---|---|---|---|---|---|
+| Name | Job Role | Employee ID | Email | Phone Number | photo | Barcode |
+|---|---|---|---|---|---|---|
 
-…with one row per employee. Design your spreadsheet similarly; column names
-are free-form — you map them in Step 3.
+…with one row per employee. `Barcode` holds a 12-digit numeric code so the
+demo's default EAN-13 symbol has something it can encode (`Employee ID` stays
+alphanumeric, which EAN-13 cannot represent). Design your spreadsheet
+similarly; column names are free-form — you map them in Step 3.
 
 The **ABC Company employee card** (`sample-data/front.psd` and
 `sample-data/back.psd`) is a complete real-world example: a layered front with
@@ -156,7 +158,7 @@ viewport — their panels scroll internally instead of the page.
 At the top of the step sits **Open the demo ID card** (a highlighted card).
 Click **Open demo project** and the bundled employee card is loaded and wired in
 one go: both PSDs are parsed, the employee sheet is imported, the placeholders
-(name, job role, employee ID, email, phone, photo and an employee-ID barcode)
+(name, job role, employee ID, email, phone, photo and an EAN-13 barcode)
 are chosen and mapped, photos are matched and the card size is derived from the
 design. The demo stops on **Choose Placeholders** with everything already
 picked, so you can see how the step works and click **Next** through the
@@ -195,9 +197,9 @@ Below it, four cards:
   before generating.
 
 **Fonts (right, below)**
-- If your design uses fonts you have as files, **upload them here**
-  (`.ttf .otf .woff .woff2`). Fonts persist in your browser and reload
-  automatically — you only do this once per browser.
+- If your design uses fonts you have as files, **drop them on the panel or click
+  to browse** (`.ttf .otf .woff .woff2`). Fonts persist in your browser and
+  reload automatically — you only do this once per browser.
 - Uploaded fonts are matched to the fonts embedded in the PSD by their
   **internal name** (read from the font file itself), so a PSD asking for
   `AKBALAN` matches `AKBALAN.ttf` even if the file was renamed. The Fonts
@@ -226,7 +228,8 @@ side in Photoshop order, with a type icon (text / image / group):
   box, and each card gets a live barcode for that row's mapped value.
 - **Barcode settings** appear below the layer list once a barcode is chosen:
   an **enable toggle** per placeholder (off = keep the demo image untouched),
-  and — only while enabled — **symbology** (Code 128 / QR / EAN-13),
+  and — only while enabled — **symbology** (EAN-13, the default; Code 128
+  or QR). EAN-13 needs 12–13 digits — use Code 128 for alphanumeric IDs,
   **bar colour** and **background**.
 - Use the **Filter layers…** box to search by name or group path, and the
   **Hidden** checkbox to show layers hidden in the PSD.
@@ -405,10 +408,10 @@ column) with real sample cards:
   toggle names them and reminds you that the guides are **preview-only**: the
   exported PDF contains the cards, crop marks and numbering, never the blue
   box or the safe-area line.
-- The preview shows each card at its **trim size** — no bleed band is drawn
-  around it, so the canvas is exactly what the cutter keeps. The PDF does
-  carry the bleed (the card's own edge pixels repeated outwards) so trimming
-  never leaves a white hairline.
+- The preview and the PDF both show each card at its **trim size** — no bleed
+  band is drawn or printed around it. The bleed setting only reserves spacing
+  around the trim box, so the canvas is exactly what the cutter keeps, at
+  100 % of the card's physical size.
 
 **Card numbering**
 
@@ -517,7 +520,7 @@ profile (GitHub / Instagram / copy email), featured projects and licence info.
 | Export | CMYK JPG, CMYK PDF (per card, per person double-sided, or imposed sheets) | Packaged as `id-cards.zip` |
 | Naming tokens | `{Row}`, `{Column}`, `{{Column}}` | e.g. `{Name}_{ID}` |
 | Sheets | A4/A3/Letter/Legal/Tabloid/custom; mm/cm/in/pt; bleed, gap, margin, crop marks, numbering | Imposition panel |
-| Barcodes | Code 128, QR, EAN-13 (bwip-js) | Any image layer as placeholder; per-placeholder toggle, colours, exact box size |
+| Barcodes | EAN-13 (default), Code 128, QR (bwip-js) | Any image layer as placeholder; per-placeholder toggle, colours, exact box size |
 
 ### Known limitations
 

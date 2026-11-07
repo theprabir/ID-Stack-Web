@@ -358,16 +358,16 @@ fix, and check the linked section if you need the why.
 - The preview and the PDF share one geometry value now, so a mismatch means the
   print dialog scaled the page (see above) or the paper preset differs from the
   tray. Check the fit summary's page size (e.g. `page 8.3×11.7 in`).
-- **Bleed** no longer changes the card's printed size — it only extends the
-  edge pixels into the bleed band. Turning it up cannot shrink the artwork.
+- **Bleed** no longer changes the card's printed size — it only reserves
+  spacing around the trim box. Turning it up cannot shrink or rescale the
+  artwork, and nothing is painted into the reserved band.
 
 **Border/edge shows a white hairline after trimming**
 
-- Set a bleed of 2–3 mm. The band is filled by repeating the card's own edge
-  strips at 1:1, so a straight cut through it leaves no white line. Use the
-  **Trim & safe-area proof** toggle to confirm the artwork reaches past the
-  trim line everywhere (the preview prints the card at trim size; the bleed
-  band exists only in the PDF, which is what the cutter trims into).
+- The sheet prints the artwork at trim size with no bleed band, so cut exactly
+  on the crop marks (or reduce bleed/gap while designing for a wider margin).
+  Use the **Trim & safe-area proof** toggle to confirm content stays inside
+  the trim line; the PDF contains the same card pixels as the preview.
 
 **Fronts and backs don't line up when duplex printing**
 

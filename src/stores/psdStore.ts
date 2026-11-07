@@ -219,7 +219,7 @@ export const usePsdStore = create<PsdState>()((set, get) => ({
         ? {
             barcodeEnabled: true,
             barcodeConfig: {
-              symbology: 'code128',
+              symbology: 'ean13',
               color: '#000000',
               background: '#ffffff',
               width: Math.max(1, Math.round(layer.bounds.right - layer.bounds.left)),

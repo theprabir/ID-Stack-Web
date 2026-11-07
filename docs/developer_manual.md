@@ -392,12 +392,11 @@ All geometry is in **PDF points** (`toPoints` per unit: mm/cm/in/pt).
   `cardWidth`/`cardHeight` settings are only a fallback for callers that do
   not know the artwork size; the panel derives and displays them from the
   PSD (`deriveCardSizeFromDesign`, px ÷ DPI × 72) and disables the fields.
-- **Bleed extends, never scales**: the cell is card + 2×bleed, the trim box
-  stays the artwork size, and the PDF fills the band by repeating the image's
-  own edge strips at 1:1 (`bleedFillOps`: 4 edge strips + 4 corner copies,
-  each clipped to its band). The preview draws the card 1:1 on the trim box and
-  shows the band in proof mode. Crop marks are drawn on the trim edges,
-  offset outwards.
+- **Bleed only reserves spacing, never scales and never paints**: the cell is
+  card + 2×bleed, the trim box stays the artwork size, and the card image is
+  painted exactly once at 1:1. Nothing is repeated into the band (the old
+  `bleedFillOps` edge-strip copies are gone), so the PDF and the preview show
+  identical pixels. Crop marks are drawn on the trim edges, offset outwards.
 - `arrangeSheets(fronts, backs, layout, arrangement, duplex)`:
   - `interleaved` — front row r, backs row r+1, whole job one PDF
     (`sheet_Print.pdf`); only whole front rows are placed.

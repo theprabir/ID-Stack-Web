@@ -37,8 +37,9 @@ const SAMPLE_PLACEHOLDERS: Array<{
   { layerName: 'email address', key: 'Email', role: 'text', column: 'Email' },
   { layerName: 'phone number', key: 'Phone Number', role: 'text', column: 'Phone Number' },
   { layerName: 'photo', key: 'photo', role: 'photo', column: 'photo' },
-  // The barcode art is replaced by a live Code 128 symbol of the employee ID.
-  { layerName: 'barcode', key: 'Barcode', role: 'barcode', column: 'Employee ID' },
+  // The barcode art is replaced by a live EAN-13 symbol of the numeric Barcode
+  // column — EAN-13 cannot encode the alphanumeric employee IDs.
+  { layerName: 'barcode', key: 'Barcode', role: 'barcode', column: 'Barcode' },
 ];
 
 /** Progress messages reported while the demo is being prepared */

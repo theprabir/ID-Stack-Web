@@ -95,7 +95,19 @@ export function BatchRunner({
   /** Finished downloads: one PDF, a ZIP, or the numbered parts of a big job */
   const [output, setOutput] = useState<{ url: string; fileName: string }[] | null>(null);
   const [isZipping, setIsZipping] = useState(false);
+  /** Download block: scrolled into view automatically when a run finishes */
+  const downloadRef = useRef<HTMLDivElement>(null);
   const controlRef = useRef<'running' | 'paused' | 'cancelled' | 'done'>('done');
+
+  // A finished job should not leave the download button off-screen: after the
+  // output renders, bring it into view inside the panel's scroll area.
+  useEffect(() => {
+    if (!output || output.length === 0) return;
+    // Called straight from the effect (no rAF) and instantly (no smooth scroll):
+    // effects run after the block is in the DOM, and a background tab throttles
+    // both rAF and smooth scrolling, which would leave the button off-screen.
+    downloadRef.current?.scrollIntoView?.({ block: 'nearest' });
+  }, [output]);
 
   // Card size is ALWAYS locked to the uploaded front PSD: pixels ÷ DPI × 72
   // = points (a 300-DPI 1056×663 px card derives to a true 86×54 mm card,
@@ -446,46 +458,6 @@ export function BatchRunner({
                 </option>
               </Select>
             </div>
-            <div className="flex items-end">
-              {isRunning ? (
-                <div className="flex w-full gap-1">
-                  {control === 'running' ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex-1"
-                      onClick={() => setControl('paused')}
-                    >
-                      <Pause className="h-4 w-4" aria-hidden="true" />
-                      Pause
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex-1"
-                      onClick={() => setControl('running')}
-                    >
-                      <Play className="h-4 w-4" aria-hidden="true" />
-                      Resume
-                    </Button>
-                  )}
-                  <Button variant="destructive" size="sm" onClick={() => setControl('cancelled')}>
-                    <Square className="h-4 w-4" aria-hidden="true" />
-                  </Button>
-                </div>
-              ) : (
-                <Button
-                  variant="default"
-                  className="w-full"
-                  onClick={() => void start()}
-                  disabled={rowsToProcess.length === 0}
-                >
-                  <Play className="h-4 w-4" aria-hidden="true" />
-                  Generate {rowsToProcess.length} card(s)
-                </Button>
-              )}
-            </div>
           </div>
 
           {/* Missing-photo controls (v0.7.2): include toggle + CSV download */}
@@ -539,52 +511,9 @@ export function BatchRunner({
             </div>
           )}
 
-          {/* Progress */}
-          {batchState && (
-            <div className="mt-3">
-              <div
-                className="h-2 w-full overflow-hidden rounded-full bg-surface-card"
-                role="progressbar"
-                aria-valuenow={Math.round(progress)}
-                aria-valuemin={0}
-                aria-valuemax={100}
-              >
-                <div
-                  className="h-full bg-primary transition-[width] duration-200"
-                  style={{ width: `${progress}%` }}
-                />
-              </div>
-              <p className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                {control === 'paused' && <Pause className="h-3 w-3" aria-hidden="true" />}
-                {isZipping && <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />}
-                {batchState.current} / {batchState.total} cards
-                {batchState.etaSeconds > 1 && control === 'running' && (
-                  <>
-                    {' · '}
-                    {batchState.etaSeconds > 60
-                      ? `${Math.ceil(batchState.etaSeconds / 60)} min left`
-                      : `${Math.round(batchState.etaSeconds)}s left`}
-                  </>
-                )}
-              </p>
-              {batchState.errors.length > 0 && (
-                <ul className="themed-scrollbar mt-1 max-h-20 overflow-auto rounded border bg-surface-card p-1.5 text-xs text-destructive">
-                  {batchState.errors.slice(0, 10).map((error, index) => (
-                    <li key={`${error.rowIndex}-${index}`}>
-                      Row {error.rowIndex + 1}: {error.message}
-                    </li>
-                  ))}
-                  {batchState.errors.length > 10 && (
-                    <li>…and {batchState.errors.length - 10} more</li>
-                  )}
-                </ul>
-              )}
-            </div>
-          )}
-
           {/* Download: one file, or the numbered parts of a split job */}
           {output && output.length > 0 && (
-            <div className="mt-3 space-y-1.5">
+            <div ref={downloadRef} className="mt-3 space-y-1.5">
               {output.map((file) => (
                 <Button
                   key={file.fileName}
@@ -637,6 +566,91 @@ export function BatchRunner({
             </div>
           )}
         </div>
+      </div>
+
+      {/* Footer: progress and the run control stay pinned below the scroll area,
+          so Generate is next to the progress it starts and the download it
+          eventually produces. */}
+      <div className="mt-3 shrink-0 border-t pt-3">
+        {batchState && (
+          <div className="mb-2">
+            <div
+              className="h-2 w-full overflow-hidden rounded-full bg-surface-card"
+              role="progressbar"
+              aria-valuenow={Math.round(progress)}
+              aria-valuemin={0}
+              aria-valuemax={100}
+            >
+              <div
+                className="h-full bg-primary transition-[width] duration-200"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <p className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+              {control === 'paused' && <Pause className="h-3 w-3" aria-hidden="true" />}
+              {isZipping && <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />}
+              {batchState.current} / {batchState.total} cards
+              {batchState.etaSeconds > 1 && control === 'running' && (
+                <>
+                  {' · '}
+                  {batchState.etaSeconds > 60
+                    ? `${Math.ceil(batchState.etaSeconds / 60)} min left`
+                    : `${Math.round(batchState.etaSeconds)}s left`}
+                </>
+              )}
+            </p>
+            {batchState.errors.length > 0 && (
+              <ul className="themed-scrollbar mt-1 max-h-20 overflow-auto rounded border bg-surface-card p-1.5 text-xs text-destructive">
+                {batchState.errors.slice(0, 10).map((error, index) => (
+                  <li key={`${error.rowIndex}-${index}`}>
+                    Row {error.rowIndex + 1}: {error.message}
+                  </li>
+                ))}
+                {batchState.errors.length > 10 && (
+                  <li>…and {batchState.errors.length - 10} more</li>
+                )}
+              </ul>
+            )}
+          </div>
+        )}
+
+        {isRunning ? (
+          <div className="flex gap-1">
+            {control === 'running' ? (
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setControl('paused')}
+              >
+                <Pause className="h-4 w-4" aria-hidden="true" />
+                Pause
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setControl('running')}
+              >
+                <Play className="h-4 w-4" aria-hidden="true" />
+                Resume
+              </Button>
+            )}
+            <Button variant="destructive" onClick={() => setControl('cancelled')}>
+              <Square className="h-4 w-4" aria-hidden="true" />
+              Stop
+            </Button>
+          </div>
+        ) : (
+          <Button
+            variant="default"
+            className="w-full"
+            onClick={() => void start()}
+            disabled={rowsToProcess.length === 0}
+          >
+            <Play className="h-4 w-4" aria-hidden="true" />
+            Generate {rowsToProcess.length} card(s)
+          </Button>
+        )}
       </div>
     </section>
   );

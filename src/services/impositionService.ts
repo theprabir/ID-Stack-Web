@@ -171,8 +171,7 @@ export interface SheetPdfOptions {
    * `cardWidth`/`cardHeight` settings, so every card is placed at exactly
    * 1:1 — the artwork is never scaled up or down, not even by a fraction of a
    * percent. Bleed only expands the reserved cell around the trim box; it
-   * never resizes the image (both the PDF and the preview repeat the
-   * artwork's own edge strips into that band).
+   * never resizes the image and nothing is painted into that band.
    */
   cardSizePt?: { width: number; height: number };
   /** JPEG quality 0–1 for embedded card images (default 0.92) */
@@ -250,45 +249,6 @@ export function cardPlacementPt(
 function pdfNum(value: number): string {
   const rounded = Math.round(value * 1e4) / 1e4;
   return String(rounded);
-}
-
-/**
- * Bleed-band fill operators (v0.7.4).
- *
- * The artwork is exactly trim-sized, so extending the print past the cut line
- * must not scale it. Instead each edge strip of the SAME image is repeated
- * into the bleed band at 1:1 (clipped to the band), which gives a clean
- * finish with no white hairline after cutting and no size change. Corners are
- * filled the same way with a doubly-offset copy.
- *
- * @param imageName - XObject resource name on the page
- * @param rect - Placement rectangle of the card (PDF points, y-up)
- * @param bleed - Bleed width in points (0 → no operators)
- * @returns Content-stream operators for the bleed band
- */
-function bleedFillOps(
-  imageName: string,
-  rect: { x: number; y: number; width: number; height: number },
-  bleed: number
-): string[] {
-  if (bleed <= 0) return [];
-  const { x, y, width, height } = rect;
-  /** Clip to a rectangle, then draw the image at an offset — same size */
-  const strip = (cx: number, cy: number, cw: number, ch: number, dx: number, dy: number): string =>
-    `q ${pdfNum(cx)} ${pdfNum(cy)} ${pdfNum(cw)} ${pdfNum(ch)} re W n ` +
-    `${pdfNum(width)} 0 0 ${pdfNum(height)} ${pdfNum(dx)} ${pdfNum(dy)} cm /${imageName} Do Q`;
-  return [
-    // Edges: the strip nearest each side is repeated into that side's band.
-    strip(x - bleed, y, bleed, height, x - bleed, y),
-    strip(x + width, y, bleed, height, x + bleed, y),
-    strip(x, y + height, width, bleed, x, y + bleed),
-    strip(x, y - bleed, width, bleed, x, y - bleed),
-    // Corners: a doubly-offset copy fills each bleed corner.
-    strip(x - bleed, y - bleed, bleed, bleed, x - bleed, y - bleed),
-    strip(x + width, y - bleed, bleed, bleed, x + bleed, y - bleed),
-    strip(x - bleed, y + height, bleed, bleed, x - bleed, y + bleed),
-    strip(x + width, y + height, bleed, bleed, x + bleed, y + bleed),
-  ];
 }
 
 /** True when a source is an already-encoded card */
@@ -432,6 +392,10 @@ export async function createImposedPdfBuilder(
           ColorSpace: iccBased,
           BitsPerComponent: PDFNumber.of(8),
           Filter: PDFName.of('DCTDecode'),
+          // Adobe CMYK JPEGs store inverted samples (255 − ink). PDF reads the
+          // stored values as device ink, so without this the whole card prints
+          // as a negative (white → black, purple → green). Invert back.
+          Decode: pdf.context.obj([1, 0, 1, 0, 1, 0, 1, 0]),
         }),
         card.bytes
       );
@@ -450,8 +414,6 @@ export async function createImposedPdfBuilder(
       contentLines.push(
         `q ${pdfNum(placement.width)} 0 0 ${pdfNum(placement.height)} ${pdfNum(placement.x)} ${pdfNum(placement.y)} cm /${imageName} Do Q`
       );
-      // Bleed band: the artwork's own edge strips repeated outward at 1:1.
-      contentLines.push(...bleedFillOps(imageName, placement, layout.bleedPt));
 
       // --- Card number (record-based value supplied by the caller) ---
       const cardNumber = cardNumbers?.[slotIndex];
@@ -492,7 +454,7 @@ export async function createImposedPdfBuilder(
           [right + markOffsetPt, top, right + markOffsetPt + markLengthPt, top],
           [right, top + markOffsetPt, right, top + markOffsetPt + markLengthPt],
           [left - markOffsetPt - markLengthPt, bottom, left - markOffsetPt, bottom],
-          [left, bottom - markOffsetPt - markLengthPt, markLengthPt, bottom - markOffsetPt],
+          [left, bottom - markOffsetPt - markLengthPt, left, bottom - markOffsetPt],
           [right + markOffsetPt, bottom, right + markOffsetPt + markLengthPt, bottom],
           [right, bottom - markOffsetPt - markLengthPt, right, bottom - markOffsetPt],
         ];
@@ -657,8 +619,8 @@ export function renderSheetPreview(
       // PREVIEW ONLY: the blue trim outline marks the cut line. Neither it nor
       // any overlay is ever drawn into the exported PDF (see
       // createImposedPdfBuilder, which emits images, crop marks and numbering
-      // only). The bleed band is deliberately NOT previewed — the canvas shows
-      // the card at trim size, exactly what the guillotine keeps.
+      // only). The bleed band is not exported or previewed — the canvas and
+      // the PDF show the card at trim size, exactly what the guillotine keeps.
       context.strokeStyle = 'rgba(59, 130, 246, 0.85)';
       context.lineWidth = 1;
       context.strokeRect(trim.x, trim.y, trim.w, trim.h);
