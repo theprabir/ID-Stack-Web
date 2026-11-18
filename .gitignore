@@ -58,3 +58,11 @@ dev-dist/
 # Misc
 .eslintcache
 *.tsbuildinfo
+# Tauri / desktop build
+src-tauri/target/
+src-tauri/gen/
+
+# Desktop installers and executables (published via GitHub Releases)
+*.msi
+*.msix
+src-tauri/target/release/ID Stack.exe

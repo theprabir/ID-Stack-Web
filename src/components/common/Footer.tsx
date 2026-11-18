@@ -21,10 +21,10 @@ export function Footer(): JSX.Element {
       <span className="flex items-center gap-4 max-sm:w-full max-sm:justify-center">
         <span
           className="hidden items-center gap-1 lg:flex"
-          title="All processing happens in your browser"
+          title="All processing happens locally on this PC"
         >
           <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
-          100% client-side
+          100% offline
         </span>
         <span className="flex items-center gap-1.5">
           <span>Created by Prabir kumar Das</span>

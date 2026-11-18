@@ -8,11 +8,13 @@ fix, and check the linked section if you need the why.
 
 **Quick checklist before anything else**
 
-1. Use an up-to-date browser: Chrome/Edge 110+, Firefox 115+ or Safari 16+.
-2. Hard-refresh the page (`Ctrl+Shift+R` / `Cmd+Shift+R`) — the app updates
-   via a service worker and a refresh picks up the newest version.
-3. Try the bundled sample data (`sample-data/` in the project repository) to
-   confirm the app itself works before blaming your files.
+1. Run the current release from
+   [GitHub Releases](https://github.com/theprabir/id-stack-web/releases) — an
+   older installer may lack fixes described here.
+2. Close and reopen the app (the batch state and parsed designs are
+   session-only anyway).
+3. Try the bundled demo project (**Open demo project**, Step 1) to confirm the
+   app itself works before blaming your files.
 4. Check the **Data & Validation** panel (Step 3) — most data problems are
    listed there with exact row numbers.
 
@@ -20,7 +22,7 @@ fix, and check the linked section if you need the why.
 
 ## Table of contents
 
-1. [The app won't load or looks broken](#1-the-app-wont-load-or-looks-broken)
+1. [The app won't start or looks broken](#1-the-app-wont-start-or-looks-broken)
 2. [PSD design problems](#2-psd-design-problems)
 3. [Text renders wrong on generated cards](#3-text-renders-wrong-on-generated-cards)
 4. [Excel & data problems](#4-excel--data-problems)
@@ -33,31 +35,47 @@ fix, and check the linked section if you need the why.
 
 ---
 
-## 1. The app won't load or looks broken
+## 1. The app won't start or looks broken
 
-**Blank page, or the layout looks wrong**
+**Windows says "Windows protected your PC" (SmartScreen)**
 
-- Hard-refresh (`Ctrl+Shift+R`). An old cached service worker can serve a
-  stale bundle after an update; one refresh re-registers the current one.
-- Check for browser extensions that inject scripts (ad blockers, dark-mode
-  extensions) — try a private/incognito window.
-- Confirm the browser version meets the minimum (Chrome/Edge 110+,
-  Firefox 115+, Safari 16+). ID Stack uses modern APIs (OffscreenCanvas-era
-  Canvas, FontFace, WASM) that older browsers lack.
+- Release builds are not code-signed yet, so Windows shows the warning the
+  first time. Click **More info → Run anyway**. Verify you downloaded the file
+  from the project's [Releases page](https://github.com/theprabir/id-stack-web/releases).
 
-**The app worked offline before, but now won't open without internet**
+**Nothing happens when I launch it / the window closes immediately**
 
-- The PWA cache is populated on first visit. If you cleared browsing data or
-  used a different browser profile, open the site once online to re-cache it.
-- Private/incognito windows don't keep service workers after closing —
-  install the app or use a normal window for offline use.
+- ID Stack relies on the Microsoft **Edge WebView2 Runtime**. Windows 11 and
+  most updated Windows 10 PCs already have it; if the app exits instantly,
+  install the runtime once from
+  [developer.microsoft.com/microsoft-edge/webview2](https://developer.microsoft.com/microsoft-edge/webview2/)
+  and start the app again. This is the only dependency the app has.
+- If the runtime cannot be downloaded (PC offline), use the installer that
+  bundles it, or copy the runtime installer over from an online machine.
+
+**The window opens but stays blank / the interface looks broken**
+
+- The window stays hidden until the interface has mounted, so a permanently
+  blank window usually means startup failed. Close it, reopen the app once,
+  and if it persists repair or reinstall the WebView2 runtime.
+- Antivirus or endpoint-protection software occasionally quarantines parts of
+  an unsigned installer — allow the app folder and reinstall.
+- The layout is designed for **1366×768 and up**; the window cannot shrink
+  below 1024×700. Maximize it if the panels look cramped.
 
 **A specific page is stuck on a spinner**
 
 - The header shows a global loading indicator while fonts/parse work run.
   Parsing a very large PSD (hundreds of MB) can take a while — wait.
-- If it truly hangs: hard-refresh, re-upload, and see
+- If it truly hangs: restart the app, re-upload, and see
   [PSD design problems](#2-psd-design-problems).
+
+**I copied the portable `.exe` somewhere and shortcuts stopped working**
+
+- The portable build has no installer, so nothing is registered with Windows.
+  Put `ID Stack.exe` in a permanent folder and create your own shortcut; moving
+  or deleting the file removes the app. Use the setup executable if you want
+  Start-menu entries and uninstall support.
 
 ---
 
@@ -235,9 +253,9 @@ fix, and check the linked section if you need the why.
 
 **Font worked yesterday, missing today**
 
-- Fonts persist in IndexedDB for the same browser/profile. Clearing site
-  data, using incognito, or switching browsers loses them — re-upload once;
-  it takes seconds.
+- Fonts persist in the app's local storage on this PC. Removing the app's
+  data folder (or resetting the app) loses them — re-upload once; it takes
+  seconds.
 
 **Text still renders with a fallback after uploading**
 
@@ -289,11 +307,11 @@ fix, and check the linked section if you need the why.
 - Hundreds of cards take minutes — the ETA in the progress bar is accurate.
   Speed scales with card pixel size: a 300-DPI design renders ~4× the pixels
   of 150-DPI.
-- Close other heavy tabs; the render loop yields to keep the UI responsive
+- Close other heavy apps; the render loop yields to keep the UI responsive
   but competes for CPU with everything else.
 - JPEG output is faster than PDF (PDF adds ICC embedding per file).
 
-**The browser tab crashed or froze during a big batch**
+**The app froze or closed during a big batch**
 
 - **Sheets mode** is memory-bounded: each sheet is encoded as its page closes
   and its canvases are released, and the PDF is rotated at a byte budget, so a
@@ -303,10 +321,10 @@ fix, and check the linked section if you need the why.
 - **Cards mode** still collects one file per card (or per person) in a ZIP and
   should be split across a few hundred rows at a time.
 - Other mitigations: use JPG instead of PDF for per-card output, keep only one
-  side if the back isn't needed, and close other heavy tabs (target is
-  < 800 MB against a 2-core browser tab).
-- The batch runs entirely in the tab — don't close it. Pause/Resume is safe;
-  a crash means re-running.
+  side if the back isn't needed, and close other heavy apps (the target is
+  < 800 MB of memory).
+- The batch runs entirely inside the app — don't close the window. Pause and
+  Resume are safe; a crash means re-running.
 
 **"The cards do not fit on the selected paper size" (sheet mode)**
 
@@ -321,11 +339,12 @@ fix, and check the linked section if you need the why.
   message names the cause (unreadable photo, missing column, corrupt data).
   Fix those rows and re-run only if you need complete output.
 
-**ZIP won't download or is empty**
+**The ZIP won't save or is empty**
 
-- Pop-up/download blockers can swallow the download — allow downloads for
-  the site. The button appears only after the run completes successfully.
-- A "ZIP packaging failed" error means the browser refused the final blob
+- Exports are written through the system save/download dialog — pick a
+  writable folder (Documents or Downloads), and check free disk space. The
+  button appears only after the run completes successfully.
+- A "ZIP packaging failed" error means the app could not build the final file
   (usually memory) — see the crash mitigation above.
 
 ---
@@ -395,21 +414,22 @@ fix, and check the linked section if you need the why.
 
 **My settings/imposition layout disappeared**
 
-- They live in the browser's IndexedDB/localStorage for that site, profile
-  and browser. Clearing browsing data ("Cookies and site data"), private
-  windows, or a different browser all start empty.
+- They live in the app's local storage on this PC (IndexedDB/localStorage in
+  the app's user-data folder, `%LOCALAPPDATA%\com.idstack.desktop`). Deleting
+  that folder — or resetting app data — starts empty. Updating by running a
+  newer installer keeps them.
 
-**Designs and data vanish after reload**
+**Designs and data vanish after restarting the app**
 
-- By design: PSDs, Excel rows, photos and mappings are session-only
-  (browser storage limits). Re-upload after a reload — placeholders,
-  imposition settings and fonts survive.
+- By design: PSDs, Excel rows, photos and mappings are session-only (they are
+  never written to disk). Re-upload after a restart — placeholders, imposition
+  settings and fonts survive.
 
-**IndexedDB errors in the console**
+**Storage errors appear when the app starts**
 
-- Private browsing modes in Firefox/Safari restrict storage. Use a normal
-  window. Also check available disk space — quota errors surface as storage
-  failures.
+- Usually a full disk, a read-only user profile, or antivirus locking the
+  app's data folder. Free some space and reinstall the app if the folder was
+  damaged.
 
 ---
 
@@ -419,7 +439,8 @@ When filing at
 [github.com/theprabir/id-stack-web/issues](https://github.com/theprabir/id-stack-web/issues),
 include:
 
-1. Browser + version, OS, app version (footer chip or About page).
+1. Windows version (10 or 11), whether you use the installed or the portable
+   build, and the app version (footer chip or About page).
 2. What you did (steps), what you expected, what happened.
 3. The exact error text (upload errors, validation entries, batch error list
    row messages).

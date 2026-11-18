@@ -4,15 +4,15 @@
 
 # ID Stack
 
-**Professional ID card design & batch printing — entirely in your browser.**
+**Professional ID card design & batch printing — a fully offline Windows desktop application.**
 
-[![Live](https://img.shields.io/badge/live-id--stack.vercel.app-0078D4?logo=vercel&logoColor=white)](https://id-stack.vercel.app)
+[![Downloads](https://img.shields.io/github/v/release/theprabir/id-stack-web?label=download&color=0078D4)](https://github.com/theprabir/id-stack-web/releases/latest)
 [![Version](https://img.shields.io/badge/version-0.7.4-6366f1)](https://github.com/theprabir/id-stack-web/blob/main/CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-22c55e)](LICENSE)
 
-[**🌐 Launch the app**](https://id-stack.vercel.app) · [**📖 Changelog**](CHANGELOG.md) · [**🐛 Report an issue**](https://github.com/theprabir/id-stack-web/issues)
+[**⬇️ Download for Windows**](https://github.com/theprabir/id-stack-web/releases/latest) · [**📖 Changelog**](CHANGELOG.md) · [**🐛 Report an issue**](https://github.com/theprabir/id-stack-web/issues)
 
-No installation. No backend. No account. Your data never leaves your device.
+Installs once. Runs offline. No backend, no account — your data never leaves your PC.
 
 </div>
 
@@ -40,66 +40,71 @@ No installation. No backend. No account. Your data never leaves your device.
 - 🗂️ **Sheet thumbnails, page navigation & zoom** — every imposed sheet is a clickable thumbnail; jump to a page, zoom 50–300 %, or fit to the panel
 - 🔍 **Trim / safe-area proof overlay** — one toggle draws the trim (cut) line and the 3 mm safe area on the preview, so you see exactly what gets cut and what must stay inside. Guides are preview-only: the exported PDF contains cards, crop marks and numbering — never the blue box
 - 🔢 **Card numbering — per sheet or continuous** — number each card (never the page): *Per sheet* restarts 1–N on every sheet, *Continuous* carries the sequence through the job and split PDF parts, and a record's front and back always print the same number. The preview shows the exact sequence that prints
-- 🧠 **Memory-safe sheet output for huge jobs** — sheet pages are streamed: each card is encoded to CMYK JPEG the moment its page closes and its canvas is released, the PDF is rotated at a fixed byte budget, and very large jobs are written as numbered PDFs (`sheet_Print_part1of3.pdf`, …) instead of exhausting the tab
+- 🧠 **Memory-safe sheet output for huge jobs** — sheet pages are streamed: each card is encoded to CMYK JPEG the moment its page closes and its canvas is released, the PDF is rotated at a fixed byte budget, and very large jobs are written as numbered PDFs (`sheet_Print_part1of3.pdf`, …) instead of exhausting memory
 - 🔤 **Per-field font override** — assign any uploaded font to any text placeholder from the layer list (independent of the PSD's embedded font name); "PSD font" keeps the automatic matching behaviour
 - 👤 **One PDF per person** — double-sided cards export as a single 2-page PDF
 - 🔢 **Barcode/QR placeholders** — pick any image layer as a barcode (EAN-13 default, Code 128, QR via bwip-js) with per-placeholder colours, background and an enable toggle; symbols are sized to the exact placeholder box
 - 🩹 **Missing-photo workflow** — records without a photo render a fully transparent image area (never a demo photo; the frame layer beneath it is hidden too), Step 4 can include or exclude them (default on), and a one-click CSV export lists exactly which records still need photos
 
 ### 🔐 Privacy & Platform
-- 🧠 **100 % client-side** — no server, no API, no database, no accounts; everything runs in your browser
-- 🌐 **Works offline (PWA)** — installable, service-worker cached
-- 🔤 **Custom fonts** — upload .ttf/.otf/.woff/.woff2, persisted in IndexedDB, auto-matched to PSD layers; bundled Arial-compatible font (Arimo) included
+- 🧠 **100 % local** — no server, no API, no database, no accounts; every byte stays on your PC
+- ✈️ **Fully offline** — all assets are bundled into the app; no internet connection is ever needed, not even on first launch
+- 🖥️ **Native Windows app** — installable `.msi` / setup `.exe` plus a portable `.exe`, built with Tauri v2 (native window, taskbar icon, no browser chrome)
+- 🔤 **Custom fonts** — upload .ttf/.otf/.woff/.woff2, persisted locally, auto-matched to PSD layers; bundled Arial-compatible font (Arimo) included
 - 🌗 **Dark & Light themes** — responsive from 1366×768 to 4K
 
 ## 🖥️ System Requirements
-- Modern browser: Chrome 110+, Firefox 115+, Edge 110+, Safari 16+
-- No installation required — runs on Windows, macOS, Linux
+- **Windows 10 or Windows 11, 64-bit**
+- Microsoft **WebView2 Runtime** — preinstalled on Windows 11 and most updated Windows 10 machines; if it is missing, install it once (the setup executable can download it when online)
+- ~50 MB disk space; no other dependencies, no admin rights needed for the per-user setup
 
 ## 🚀 Quick Start
-1. Open **[id-stack.vercel.app](https://id-stack.vercel.app)**
-2. *(fastest)* Click **Open demo project** in Step 1 — a sample employee card (front + back PSDs + Excel + photos) loads fully wired and lands on the pre-filled placeholder step, so you can walk the workflow yourself
-3. Upload your front/back PSD designs
-4. Mark the text/photo layers as placeholders
-5. Import your Excel data and photos, map the columns
-6. Preview a live card, then generate the batch
-7. Export as ZIP, print-ready imposed sheets, or per-person PDFs
+1. Go to **[Releases](https://github.com/theprabir/id-stack-web/releases/latest)** and download the installer:
+   - `ID Stack_<version>_x64-setup.exe` — per-user setup (recommended)
+   - `ID Stack_<version>_x64_en-US.msi` — MSI for managed / silent installs
+   - `ID Stack.exe` — portable; run it from any folder, nothing to install
+2. Launch **ID Stack** from the Start menu (or the portable `.exe`).
+3. *(fastest)* Click **Open demo project** in Step 1 — a sample employee card (front + back PSDs + Excel + photos) loads fully wired and lands on the pre-filled placeholder step, so you can walk the workflow yourself
+4. Upload your front/back PSD designs
+5. Mark the text/photo layers as placeholders
+6. Import your Excel data and photos, map the columns
+7. Preview a live card, then generate the batch
+8. Export as ZIP, print-ready imposed sheets, or per-person PDFs
+
+The app works with no internet connection at any point — downloading it is the only time the network is used.
 
 ## 📊 Project Status
 
 | Phase | Description | Status |
 |---|---|---|
-| 1 | Project Foundation — Vite + React + TS strict, Tailwind/shadcn, routing, Zustand, layout, IndexedDB, PWA, ESLint/Prettier, Vitest | ✅ Complete |
+| 1 | Project Foundation — Vite + React + TS strict, Tailwind/shadcn, routing, Zustand, IndexedDB, ESLint/Prettier, Vitest | ✅ Complete |
 | 3 | Data Import — Excel (SheetJS), photos, column mapping, validation | ✅ Complete |
 | 4 | Batch Processing — Web Worker rendering, progress, pause/resume/cancel, ZIP export | ✅ Complete |
 | 5 | PSD Import — ag-psd parsing, pixel-faithful re-composition, guided 4-step ID Studio | ✅ Complete |
 | 6 | Imposition Engine — sheet layout, numbering, print-ready PDF (pdf-lib), sheet preview | ✅ Complete |
-| 7 | Polish & Production — font manager, error boundaries, performance, final testing, deployment | ✅ Complete |
+| 7 | Polish & Production — font manager, error boundaries, performance, final testing, Windows desktop packaging | ✅ Complete |
 
 > The legacy scratch editor and its template library were removed in v0.6.15 —
 > ID Stack is now fully focused on pre-designed PSD files.
 
-**Upcoming / incomplete:**
-- 🌍 **All 11 UI language translations** — i18n was removed in v0.3.1; UI strings are currently English-only (the architecture's 11-language goal is not yet met)
-- 🖼️ **Per-placeholder photo columns** — one photo is matched per row; per-placeholder photo mapping is not available
-
 ## 📖 Documentation
 
 All guides live in the [`docs/`](docs/) folder and are bundled into the app —
-the in-app **Documentation** page renders them right there:
+the in-app **Documentation** page renders them right there, offline:
 
 | Document | For | Contents |
 |---|---|---|
-| [User manual](docs/user_manual.md) | Users | Every page and workflow: ID Studio's 4 steps, output options, printing, privacy |
-| [Developer manual](docs/developer_manual.md) | Contributors | Stack, architecture, services, data flow, PSD/CMYK/imposition internals, testing, releases |
+| [User manual](docs/user_manual.md) | Users | Installation, every page and workflow: ID Studio's 4 steps, output options, printing, privacy |
+| [Developer manual](docs/developer_manual.md) | Contributors | Stack, architecture, services, data flow, PSD/CMYK/imposition internals, testing, desktop releases |
 | [Keyboard shortcuts](docs/keyboard_shortcuts.md) | Everyone | ID Studio shortcut reference (implemented + planned) |
-| [Troubleshooting guide](docs/troubleshooting.md) | Users | Symptom-first fixes: parsing, fonts, data, generation, printing, storage |
+| [Troubleshooting guide](docs/troubleshooting.md) | Users | Symptom-first fixes: startup, parsing, fonts, data, generation, printing, storage |
 
 ## 🛠️ For Developers
 
 ### Prerequisites
 - Node.js 18+
 - npm (bundled with Node.js)
+- **Rust** (stable toolchain via [rustup](https://rustup.rs)) and the **Visual Studio C++ Build Tools** (MSVC linker) — needed only for the desktop build
 
 ### Installation
 ```bash
@@ -108,20 +113,43 @@ cd id-stack-web
 npm install
 ```
 
-### Run the App (Development)
-Starts the dev server with hot reload, then open **http://localhost:5173/** in your browser:
+### Desktop Development
+Starts the Tauri window against the Vite dev server on port 5210, with hot reload:
 ```bash
-npm run dev
+npm run tauri dev
 ```
-Stop the server with `Ctrl+C`.
+`npm run dev` alone still serves the UI at `http://localhost:5173` in a browser —
+handy for quick UI work, but it is **not** how the app is delivered.
+
+### Build the Installers
+```bash
+npm run tauri build
+```
+Build artifacts:
+- `src-tauri/target/release/ID Stack.exe` — portable executable
+- `src-tauri/target/release/bundle/msi/*.msi` — MSI installer
+- `src-tauri/target/release/bundle/nsis/*-setup.exe` — setup executable
+
+The desktop shell bundles all app assets locally (no internet required at
+runtime), disables the context menu, internal dragging, reload/zoom shortcuts
+and devtools in release builds, and keeps external file drag-and-drop working
+via `dragDropEnabled: false`. `npm run tauri` runs the CLI through
+`scripts/tauri-cli.mjs`, which supplies the MSVC `INCLUDE`/`LIB`/`PATH`
+environment when the machine has no working `vcvars64.bat`.
+
+The `bundle.windows.webviewInstallMode` option in `src-tauri/tauri.conf.json`
+can be set to `offlineInstaller` to embed a ~127 MB WebView2 bootstrapper in the
+installer, for machines that have neither WebView2 nor internet access.
 
 ### Full Command Reference
 
 | Command | What it does |
 |---|---|
-| `npm run dev` | Dev server with hot reload — http://localhost:5173/ |
-| `npm run build` | Type-checks + builds production files to `dist/` |
-| `npm run preview` | Serves the production build locally |
+| `npm run tauri dev` | Runs the desktop app with hot reload (port 5210) |
+| `npm run tauri build` | Builds the Windows `.exe` and `.msi`/`-setup.exe` installers |
+| `npm run dev` | Browser dev server with hot reload — http://localhost:5173/ (development only) |
+| `npm run build` | Type-checks + builds the frontend files to `dist/` |
+| `npm run preview` | Serves the built frontend locally (development only) |
 | `npm test` | Runs the test suite once |
 | `npm run test:watch` | Runs tests in watch mode |
 | `npm run test:coverage` | Runs tests with a coverage report |
@@ -131,11 +159,20 @@ Stop the server with `Ctrl+C`.
 | `npm run format` | Formats source files with Prettier |
 | `npm run format:check` | Verifies Prettier formatting without changing files |
 
-### Deploy
-Push to `main` — auto-deploys to Vercel → **https://id-stack.vercel.app**
+### Releases
+ID Stack is distributed **only** as a Windows desktop app through
+[GitHub Releases](https://github.com/theprabir/id-stack-web/releases). There is
+no hosted web version.
+
+1. Build with `npm run tauri build`.
+2. Create a GitHub Release for the version and attach:
+   - `src-tauri/target/release/bundle/nsis/*-setup.exe`
+   - `src-tauri/target/release/bundle/msi/*.msi`
+   - `src-tauri/target/release/ID Stack.exe` (portable, optional)
+3. Users download, install (or run the portable `.exe`) and work entirely offline.
 
 ## 🙏 Acknowledgments
-Built with React + TypeScript, SheetJS, ag-psd, pdf-lib, Tailwind CSS + shadcn/ui, Vite — and Web Workers for the heavy lifting.
+Built with React + TypeScript, Tauri v2, SheetJS, ag-psd, pdf-lib, Tailwind CSS + shadcn/ui, Vite — and Web Workers for the heavy lifting.
 
 ## 📄 License
 MIT License — see [LICENSE](LICENSE).

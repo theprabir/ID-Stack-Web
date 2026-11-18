@@ -180,8 +180,8 @@ export function DocumentationPage(): JSX.Element {
               Privacy first
             </h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              ID Stack is 100% client-side — designs, data and photos never leave your device. All
-              documentation is bundled with the app and rendered locally.
+              ID Stack is 100% local — designs, data and photos never leave your PC. All
+              documentation is bundled with the app and rendered offline.
             </p>
           </div>
         </div>

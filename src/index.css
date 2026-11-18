@@ -221,6 +221,8 @@
 
   body {
     @apply bg-surface-deepest text-foreground antialiased;
+    /* Desktop app: no rubber-banding, text selection or element dragging. */
+    overscroll-behavior: none;
     font-family:
       Inter,
       system-ui,
@@ -231,6 +233,20 @@
       Arial,
       'Noto Sans',
       sans-serif;
+  }
+
+  *, *::before, *::after {
+    user-select: none;
+    -webkit-user-drag: none;
+  }
+
+  /* Editing surfaces keep normal text selection. */
+  input,
+  textarea,
+  [contenteditable],
+  [contenteditable='true'] {
+    user-select: text;
+    -webkit-user-select: text;
   }
 }
 

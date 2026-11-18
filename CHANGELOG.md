@@ -2,9 +2,25 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.7.4] - 2026-11-05
+## [0.7.4] - 2026-11-18
 
 ### Added
+
+- **Windows desktop application (Tauri v2).** ID Stack now ships as a fully
+  offline Windows application — a per-user setup `.exe`, an `.msi` package and a
+  portable `.exe` — instead of a hosted web app. Tauri reuses the existing
+  `npm run dev` (port 5210) and `npm run build` scripts, points `frontendDist`
+  at `dist/`, and bundles every asset locally, so no network is needed at
+  runtime and the app can be installed and used on a PC that is never online.
+- **Native-feeling desktop shell.** The window stays hidden until React mounts
+  (no white flash, with a 10 s native fallback), the release build has no
+  devtools or console window, and the webview blocks the context menu, internal
+  drags, F5 / Ctrl+R reload, Ctrl+±/0 zoom and Ctrl+wheel zoom. Global CSS
+  disables text selection and overscroll except on inputs, textareas and
+  contenteditable surfaces.
+- **External file drops still work.** `dragDropEnabled: false` keeps the OS
+  from swallowing HTML5 drag events, and window-level `dragover`/`drop` handlers
+  stop a file dropped outside a dropzone from navigating the webview.
 
 - **Sheet thumbnails, page navigation and zoom (Step 4).** The sheet-mode
   preview is no longer a single canvas: a thumbnail strip shows every sheet in
@@ -55,6 +71,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **`npm run tauri` uses `scripts/tauri-cli.mjs`**, which assembles the MSVC
+  `INCLUDE`/`LIB`/`PATH` environment (and puts the real `link.exe` ahead of
+  Git's Unix `link.exe`) so builds work without a VS developer prompt.
+- **Primary target is now the installed desktop app.** The PWA/service worker
+  is registered only when the UI runs in a browser (the Vite dev server); the
+  packaged app skips it, and documentation, README and in-app copy now describe
+  installation from GitHub Releases rather than a hosted URL.
 - **Header uses the real ID Stack logo.** The top bar's generic line-art card
   icon is replaced by the app's own mark (`pwa-192x192.png`, the blue "ID" with
   the stacked cards), rendered as a rounded 28 px tile beside the wordmark. The

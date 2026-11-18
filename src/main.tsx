@@ -4,6 +4,7 @@ import App from './App';
 import { ThemeProvider } from './components/ThemeProvider';
 import { ErrorBoundary } from './components/common';
 import { bootstrapFonts } from './services/fontService';
+import { installDesktopShellGuards, revealDesktopWindow } from './services/desktopShell';
 import './index.css';
 
 /**
@@ -15,7 +16,9 @@ import './index.css';
  */
 async function bootstrap(): Promise<void> {
   // PWA: auto-update service worker (vite-plugin-pwa virtual module).
-  if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  // Skipped in the desktop build — the Tauri webview has no service worker
+  // and assets are already bundled locally.
+  if ('serviceWorker' in navigator && import.meta.env.PROD && !('__TAURI_INTERNALS__' in window)) {
     const { registerSW } = await import('virtual:pwa-register');
     registerSW({ immediate: true });
   }
@@ -34,6 +37,11 @@ async function bootstrap(): Promise<void> {
       </ThemeProvider>
     </React.StrictMode>
   );
+
+  // First paint is ready (fonts resolved before render): reveal the window
+  // that tauri.conf.json creates hidden.
+  await revealDesktopWindow();
 }
 
+installDesktopShellGuards();
 void bootstrap();

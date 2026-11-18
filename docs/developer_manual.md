@@ -27,7 +27,7 @@ testing and release process.
 13. [Testing](#13-testing)
 14. [Performance & memory rules](#14-performance--memory-rules)
 15. [Code conventions](#15-code-conventions)
-16. [Releases & deployment](#16-releases--deployment)
+16. [Releases & distribution](#16-releases--distribution)
 
 ---
 
@@ -48,14 +48,18 @@ testing and release process.
 | State | **Zustand 5** | `persist` middleware where needed |
 | Docs renderer | **react-markdown + remark-gfm** | Bundles `docs/*.md` via Vite `?raw` and renders them in the Documentation page |
 | Storage | **Dexie 4** (IndexedDB) | Database `id-stack` |
-| PWA | **vite-plugin-pwa** (Workbox) | Auto-update SW, precache, Google Fonts runtime cache |
+| Desktop shell | **Tauri v2** (Rust + MSVC) | Native Windows window; every asset bundled locally for offline use |
+| Dev-only PWA | **vite-plugin-pwa** (Workbox) | Used by the browser dev server only; the service worker is skipped inside Tauri |
 | Tests | **Vitest + Testing Library + jsdom + fake-indexeddb** | `tests/**/*.test.{ts,tsx}` |
 
 ### Hard architectural rules (from AGENTS.md)
 
 - **Zero backend.** No server, API, database, auth or accounts. Everything
-  executes client-side.
-- No native dependencies; everything is JS/TS/WASM-in-browser.
+  executes client-side inside the desktop app's webview.
+- No native dependencies beyond the Tauri shell itself; everything else is
+  JS/TS/WASM in the webview.
+- ID Stack ships as a **Windows desktop application**. There is no hosted web
+  version — releases are `.exe`/`.msi` artifacts attached to GitHub Releases.
 - Heavy work must not block the main thread (yielding loops; a dedicated
   worker pool for JPEG encoding).
 - No `any`; strict mode; ESLint + Prettier enforced.
@@ -68,14 +72,22 @@ testing and release process.
 git clone https://github.com/theprabir/id-stack-web.git
 cd id-stack-web
 npm install
-npm run dev        # http://localhost:5173/
+npm run tauri dev  # desktop window with hot reload (Vite on port 5210)
 ```
+
+Desktop builds additionally need the **Rust** stable toolchain and the
+**Visual Studio C++ Build Tools** (MSVC linker). `npm run dev` still serves the
+UI in a browser at `http://localhost:5173/` for quick UI work; it is a
+development aid, not a delivered target. (`tauri dev` passes `--port 5210` to
+Vite, so the desktop dev server runs there.)
 
 ### Command reference
 
 | Command | What it does |
 |---|---|
-| `npm run dev` | Vite dev server with hot reload |
+| `npm run tauri dev` | Tauri desktop window + Vite dev server (hot reload, port 5210) |
+| `npm run tauri build` | Windows `.exe` + `.msi`/`-setup.exe` installers in `src-tauri/target/release/` |
+| `npm run dev` | Vite dev server with hot reload — http://localhost:5173/ (browser, development only) |
 | `npm run build` | `tsc --noEmit` (full typecheck) **then** production build to `dist/` |
 | `npm run preview` | Serves the production build |
 | `npm test` | Vitest once |
@@ -108,19 +120,21 @@ Node **≥ 18** required (`engines` in package.json).
 
 ```
 ├── AGENTS.md / Architecture.md / Design.md / CHANGELOG.md
-├── index.html                  # PWA entry
-├── vite.config.ts              # build + test + PWA + aliases
+├── index.html                  # webview entry document
+├── vite.config.ts              # build + test + dev-server PWA + aliases
+├── src-tauri/                  # desktop shell: Rust crate, tauri.conf.json, capabilities, icons
+├── scripts/tauri-cli.mjs       # MSVC-aware Tauri CLI wrapper (`npm run tauri`)
 ├── tailwind.config.ts / postcss.config.js
 ├── sample-data/                # demo source assets: front/back PSDs, employees.xlsx, photos, fonts
 ├── public/sample/              # the demo project served by "Open demo project"
 ├── screenshots/                # images used by the docs/README
-├── scripts/                    # e.g. generate-icons.mjs (PWA icons)
+├── scripts/                    # tauri-cli.mjs, generate-icons.mjs (app icons)
 ├── tests/                      # Vitest suites (mirror src structure)
 │   ├── services/  stores/  utils/  components/
 │   └── *.test.ts               # service, store, util and component suites
 ├── dist/                       # build output (gitignored)
 └── src/
-    ├── main.tsx                # bootstrap: SW + fonts → React
+    ├── main.tsx                # bootstrap: desktop guards + fonts → React (SW only in browser dev)
     ├── App.tsx                 # router + layout (Header/Sidebar/Footer)
     ├── index.css               # Tailwind layers + theme tokens
     ├── assets/fonts/           # bundled Arimo faces (Arial-metric)
@@ -167,8 +181,10 @@ client-side badge, credit).
 
 ### Bootstrap sequence (`src/main.tsx`)
 
-1. Register the PWA service worker (production builds only,
-   `registerSW({ immediate: true })`).
+1. In a plain browser (dev server only) register the PWA service worker
+   (`registerSW({ immediate: true })`). Inside Tauri it is skipped — the app
+   already loads every asset from the bundled files — and the desktop shell
+   guards plus the window-reveal call are installed instead.
 2. `await bootstrapFonts()` — restore IndexedDB fonts + register bundled
    Arimo/Arial faces **before** React mounts, so the first canvas measurement
    and paint already have the right families.
@@ -554,7 +570,7 @@ npm run test:coverage # v8 coverage report
 
 ---
 
-## 16. Releases & deployment
+## 16. Releases & distribution
 
 - **Version**: bump `package.json` `version` (or `npm version …`) — the
   footer chip and About page read `__APP_VERSION__` automatically.
@@ -563,21 +579,37 @@ npm run test:coverage # v8 coverage report
 - **Build & verify**:
 
   ```bash
-  npm run lint && npm run typecheck && npm test && npm run build
+  npm run lint && npm run typecheck && npm test
+  npm run tauri build
   ```
 
-  (The build itself runs the typecheck first — a type error blocks deploy,
-  see the v0.6.12 note about the stray probe test breaking Vercel.)
-- **Deploy**: push to `main` → Vercel auto-deploys
-  https://id-stack.vercel.app. Service worker is auto-update
-  (`registerType: 'autoUpdate'`), so clients pick up new builds on their
-  next visit.
-- **PWA assets**: icons come from `scripts/generate-icons.mjs` (run when the
-  logo changes); `includeAssets` covers favicon/robots/apple-touch-icon.
-- When adding dependencies: pure JS/TS/WASM only (no native builds), verify
-  bundle impact and that the SW precache glob (`**/*.{js,css,html,ico,png,
-  svg,woff2}`) still covers what's needed (the .icc/.wasm assets are
-  imported as URLs and therefore bundled as assets).
+  (`npm run tauri build` runs `npm run build` via `beforeBuildCommand`, which
+  type-checks and produces `dist/` before the Rust bundle embeds it.)
+- **Distribution**: ID Stack is delivered **only** as a Windows desktop
+  application — there is no hosted or web deployment. Publish a GitHub Release
+  for the version and attach the build artifacts:
+
+  | Artifact | Path |
+  |---|---|
+  | Per-user setup | `src-tauri/target/release/bundle/nsis/*-setup.exe` |
+  | MSI | `src-tauri/target/release/bundle/msi/*.msi` |
+  | Portable | `src-tauri/target/release/ID Stack.exe` |
+
+  Users download from the Releases page and run the app offline; nothing is
+  fetched at runtime.
+- **Icons**: `scripts/generate-icons.mjs` regenerates the PNG sources, then
+  `npm run tauri icon public/pwa-512x512.png` refreshes `src-tauri/icons/`
+  when the logo changes.
+- **Code signing**: release builds are currently unsigned, so Windows
+  SmartScreen may prompt on first run. Adding an Authenticode certificate is
+  the only change needed to remove that prompt.
+- **WebView2**: the default `bundle.windows.webviewInstallMode`
+  (`downloadBootstrapper`) fetches the runtime only when the target PC lacks
+  it. Set it to `offlineInstaller` if releases must install on machines that
+  have neither WebView2 nor internet access.
+- When adding dependencies: pure JS/TS/WASM only (no native builds beyond the
+  Tauri shell), and keep every asset bundle-resolvable — `.icc`/`.wasm` files
+  are imported as URLs and bundled by Vite, so they work offline automatically.
 
 ---
 

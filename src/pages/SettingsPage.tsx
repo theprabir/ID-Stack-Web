@@ -275,7 +275,7 @@ export function SettingsPage(): JSX.Element {
       <SettingsSection
         icon={ShieldCheck}
         title="Privacy & data"
-        description="ID Stack is 100% client-side — nothing to configure, by design."
+        description="ID Stack is 100% local — nothing to configure, by design."
       >
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           <div className="rounded-lg border bg-surface-card p-3">
@@ -288,9 +288,7 @@ export function SettingsPage(): JSX.Element {
           <div className="rounded-lg border bg-surface-card p-3">
             <Save className="h-4 w-4 text-primary" aria-hidden="true" />
             <p className="mt-1.5 text-xs font-medium">Local storage</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              Everything is saved in your browser.
-            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">Everything is saved on this PC.</p>
           </div>
           <div className="rounded-lg border bg-surface-card p-3">
             <Info className="h-4 w-4 text-primary" aria-hidden="true" />

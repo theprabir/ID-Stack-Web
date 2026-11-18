@@ -1,0 +1,51 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "ID Stack",
+  "version": "0.7.4",
+  "identifier": "com.idstack.desktop",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:5210",
+    "beforeDevCommand": "npm run dev -- --port 5210 --strictPort",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "ID Stack",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1024,
+        "minHeight": 700,
+        "center": true,
+        "resizable": true,
+        "fullscreen": false,
+        "visible": false,
+        "dragDropEnabled": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "msi",
+      "nsis"
+    ],
+    "publisher": "Prabir Kumar Das",
+    "copyright": "MIT Licensed",
+    "category": "Productivity",
+    "shortDescription": "Professional ID card design and batch printing, fully offline.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  },
+  "mainBinaryName": "ID Stack"
+}

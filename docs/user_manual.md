@@ -1,8 +1,8 @@
 # ID Stack — User Manual
 
-A complete, step-by-step guide to using **ID Stack**, the browser-based ID card
-designer and batch printing studio. Everything runs on your own device — no
-installation, no account, no upload of your data to any server.
+A complete, step-by-step guide to using **ID Stack**, the Windows desktop ID
+card designer and batch printing studio. Everything runs on your own PC — no
+account, no internet connection, no upload of your data to any server.
 
 > **Companion documents:** [Keyboard shortcuts](keyboard_shortcuts.md) ·
 > [Troubleshooting guide](troubleshooting.md)
@@ -63,18 +63,38 @@ has no cloud, and it never sends your files anywhere.
 
 ### Requirements
 
-- A modern browser: **Chrome 110+, Edge 110+, Firefox 115+ or Safari 16+**
-- Nothing to install — the app runs at [id-stack.vercel.app](https://id-stack.vercel.app)
+- **Windows 10 or Windows 11, 64-bit**
+- Microsoft **WebView2 Runtime** — already present on Windows 11 and on most
+  updated Windows 10 PCs. If it is missing, the setup can install it when the
+  PC is online (see [Troubleshooting §1](troubleshooting.md#1-the-app-wont-start-or-looks-broken)).
+- No other dependencies, and no internet connection is needed to *use* the app.
 
-### Open the app
+### Download and install
 
-Go to **https://id-stack.vercel.app**. On first visit the browser caches the
-app so it also works **offline** afterwards (see [Privacy & offline use](#7-privacy--offline-use)).
+1. Open **[github.com/theprabir/id-stack-web/releases/latest](https://github.com/theprabir/id-stack-web/releases/latest)**.
+2. Download one of the files in the **Assets** list:
 
-### Optional: install as a desktop app
+   | File | What it is |
+   |---|---|
+   | `ID Stack_<version>_x64-setup.exe` | Per-user setup — recommended. Installs without administrator rights and adds Start-menu and desktop shortcuts. |
+   | `ID Stack_<version>_x64_en-US.msi` | MSI package, for managed deployment or silent installs. |
+   | `ID Stack.exe` | Portable — copy it anywhere and run it; nothing is installed. |
 
-In Chrome or Edge, an **install icon** appears in the address bar — click it to
-install ID Stack as a standalone app with its own window and taskbar icon.
+3. Run the downloaded file. Windows SmartScreen may ask for confirmation the
+   first time ("More info" → "Run anyway") because the build is not code-signed.
+4. Launch **ID Stack** from the Start menu, the desktop shortcut, or the
+   portable `.exe`.
+
+All application assets are bundled inside the app, so it is fully usable the
+moment it starts — including on a PC that has never been online (see
+[Privacy & offline use](#7-privacy--offline-use)).
+
+### Updating
+
+ID Stack does not update itself. To move to a newer release, download the
+installer from the Releases page and run it — it replaces the installed
+version in place; your settings, uploaded fonts and imposition preferences are
+kept. The portable `.exe` is simply replaced by the new file.
 
 ### Have your files ready
 
@@ -198,8 +218,8 @@ Below it, four cards:
 
 **Fonts (right, below)**
 - If your design uses fonts you have as files, **drop them on the panel or click
-  to browse** (`.ttf .otf .woff .woff2`). Fonts persist in your browser and
-  reload automatically — you only do this once per browser.
+  to browse** (`.ttf .otf .woff .woff2`). Fonts persist on this PC and reload
+  automatically — you only do this once per machine.
 - Uploaded fonts are matched to the fonts embedded in the PSD by their
   **internal name** (read from the font file itself), so a PSD asking for
   `AKBALAN` matches `AKBALAN.ttf` even if the file was renamed. The Fonts
@@ -450,9 +470,9 @@ the sheets shows exactly what will print.
 **Documentation** — the in-app guides hub: a quick-start summary of the PSD
 Studio workflow plus the full guides rendered right inside the app — this
 manual, the troubleshooting guide, the keyboard-shortcut reference, the
-developer manual and the changelog. Guides open with a shareable
-`?guide=` link and a back button; their markdown sources live in the
-repository's `docs/` folder.
+developer manual and the changelog. Guides open in place with a back button;
+their markdown sources are bundled from the repository's `docs/` folder, so the
+whole help centre works offline.
 
 **Settings**
 
@@ -495,17 +515,20 @@ profile (GitHub / Instagram / copy email), featured projects and licence info.
 
 ## 7. Privacy & offline use
 
-- **100% client-side** — parsing, rendering, colour conversion and ZIP
-  packaging all happen in your browser. There is no server, no analytics, no
-  account.
+- **100% local** — parsing, rendering, colour conversion and ZIP packaging all
+  happen inside the app on your PC. There is no server, no analytics, no
+  account, and no network request at any point.
 - **Where your data lives:** Excel rows, photos and rendered cards exist only
-  in the browser tab's memory (and the ZIP you download). Uploaded fonts and
-  imposition settings are stored in the browser's
-  **IndexedDB/localStorage** so they survive reloads — clearing site data
-  removes them.
-- **Offline:** after the first visit, the app is served from the service
-  worker cache. Note that offline use still requires re-uploading PSDs per
-  session (they are intentionally not persisted).
+  in the running app's memory and in the files you export. Uploaded fonts and
+  imposition settings are stored in the app's local storage
+  (**IndexedDB/localStorage** in the app's user-data folder) so they survive
+  restarts — uninstalling the app, or clearing its data, removes them.
+- **Offline:** everything the app needs is bundled in the installer or
+  portable `.exe`. There is no first-run download and no cache to warm up, so
+  it behaves identically on a network-free machine.
+- **Exports** are saved wherever your download/save dialog points; ID Stack
+  never uploads them. PSDs must still be re-uploaded per session (they are
+  intentionally not persisted).
 
 ---
 
@@ -517,7 +540,7 @@ profile (GitHub / Instagram / copy email), featured projects and licence info.
 | Spreadsheets | `.xlsx`, `.xls`, `.csv` | First sheet only; row 1 must be the header; duplicate column names are de-duplicated automatically |
 | Photos | `.jpg .jpeg .png .webp .gif .bmp` | Centre-cropped to the placeholder's aspect |
 | Fonts | `.ttf .otf .woff .woff2` | Persisted locally; matched to PSD font names |
-| Export | CMYK JPG, CMYK PDF (per card, per person double-sided, or imposed sheets) | Packaged as `id-cards.zip` |
+| Export | CMYK JPG, CMYK PDF (per card, per person double-sided, or imposed sheets) | Packaged as `id-cards.zip` in your Downloads/save location |
 | Naming tokens | `{Row}`, `{Column}`, `{{Column}}` | e.g. `{Name}_{ID}` |
 | Sheets | A4/A3/Letter/Legal/Tabloid/custom; mm/cm/in/pt; bleed, gap, margin, crop marks, numbering | Imposition panel |
 | Barcodes | EAN-13 (default), Code 128, QR (bwip-js) | Any image layer as placeholder; per-placeholder toggle, colours, exact box size |
@@ -531,5 +554,5 @@ profile (GitHub / Instagram / copy email), featured projects and licence info.
 
 ---
 
-*ID Stack is open source (MIT). Issues and feature requests:
-[github.com/theprabir/id-stack-web/issues](https://github.com/theprabir/id-stack-web/issues).*
+*ID Stack is open source (MIT). Downloads, issues and feature requests:
+[github.com/theprabir/id-stack-web](https://github.com/theprabir/id-stack-web).*

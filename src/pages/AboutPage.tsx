@@ -102,7 +102,7 @@ export function AboutPage(): JSX.Element {
                 </span>
               </div>
               <p className="text-xs text-muted-foreground mt-1 leading-normal">
-                Open-source browser ID card designer & batch printing studio
+                Open-source ID card designer & batch printing studio for Windows
               </p>
             </div>
           </div>
@@ -166,7 +166,7 @@ export function AboutPage(): JSX.Element {
               </div>
 
               <p className="text-xs text-foreground/80 leading-relaxed max-w-2xl">
-                Specializes in privacy-first, browser-executed software, publishing tools, and
+                Specializes in privacy-first, locally executed software, publishing tools, and
                 custom font rendering engines.
               </p>
 
@@ -242,7 +242,9 @@ export function AboutPage(): JSX.Element {
                   </div>
                   <div className="min-w-0">
                     <h3 className="text-base font-bold text-foreground truncate">ID Stack</h3>
-                    <p className="text-[11px] text-muted-foreground truncate">Card Design & Printing</p>
+                    <p className="text-[11px] text-muted-foreground truncate">
+                      Card Design & Printing
+                    </p>
                   </div>
                 </div>
                 <span className="shrink-0 text-[10px] font-semibold uppercase px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
@@ -251,8 +253,8 @@ export function AboutPage(): JSX.Element {
               </div>
 
               <p className="text-xs text-foreground/80 leading-relaxed">
-                A browser-based ID card design suite with PSD layer import, batch Excel data
-                binding, and print-ready imposed PDF exporting.
+                A desktop ID card design suite with PSD layer import, batch Excel data binding, and
+                print-ready imposed PDF exporting.
               </p>
 
               <div className="mt-4 space-y-2">
@@ -268,7 +270,9 @@ export function AboutPage(): JSX.Element {
             </div>
 
             <div className="mt-5 sm:mt-6 pt-3.5 border-t border-border flex items-center justify-between text-xs">
-              <span className="text-muted-foreground font-mono text-[11px]">Version {APP_VERSION}</span>
+              <span className="text-muted-foreground font-mono text-[11px]">
+                Version {APP_VERSION}
+              </span>
               <a
                 href={APP_REPO_URL}
                 target="_blank"
@@ -357,7 +361,7 @@ export function AboutPage(): JSX.Element {
           <div className="rounded-xl border border-border bg-surface-panel p-4">
             <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 mb-1.5">
               <ShieldCheck className="h-4 w-4 shrink-0" />
-              <h4 className="text-xs font-semibold text-foreground">100% In-Browser</h4>
+              <h4 className="text-xs font-semibold text-foreground">100% Offline</h4>
             </div>
             <p className="text-[11px] text-muted-foreground leading-normal">
               Your files and photos never touch external servers. Processing occurs entirely
