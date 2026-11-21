@@ -2,6 +2,87 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.7.5] - 2026-11-21
+
+### Added
+
+- **Native Save/Export dialogs.** Every file the app produces now goes through
+  the Windows "Save as" dialog instead of landing silently in
+  `%USERPROFILE%\Downloads`: batch ZIPs, per-person PDFs, imposed-sheet PDFs
+  and their numbered parts, the missing-photo CSV and the diagnostics archive.
+  The dialog is pre-filled with the file name and the folder used last time, so
+  a job can be saved straight into its own project folder, and the folder is
+  remembered for the next export. The chosen path is granted per-file in Rust
+  (`allow_export_path`), so the webview never receives blanket filesystem
+  access. Implemented with `tauri-plugin-dialog` + `tauri-plugin-fs`.
+- **"Open folder" after saving, plus a recent-exports list.** The batch panel
+  shows the full saved path with an **Open folder** button that selects the file
+  in Explorer (`reveal_path`), and **Settings → Exports** lists the last 12
+  exports (name, time, size, folder) with **Show** and **Clear list**. This ends
+  the "where did my PDFs go?" support question without adding any storage
+  outside the app.
+- **Reliable background batches + taskbar progress.** A run can now be left
+  alone with the window minimized or Windows locked:
+  - the WebView2 window disables background timer throttling, occlusion
+    backgrounding and renderer backgrounding, so the render loop keeps its
+    timers;
+  - `batchService.nextFrame()` yields through a plain timer while
+    `document.hidden` instead of waiting on a `requestAnimationFrame` that a
+    minimized window never fires;
+  - `SetThreadExecutionState` keeps Windows awake for the duration of the run
+    (the screen may still turn off) and is cleared in a `finally` block;
+  - live progress is mirrored onto the taskbar button
+    (`useTaskbarProgress`, amber while paused, cleared when idle or on unmount),
+    and the panel states that minimizing is safe.
+- **Release-build logging.** `tauri-plugin-log` now runs in release builds too,
+  writing a rotating, 2 MB-capped `logs/id-stack.log` in the app log folder
+  (debug builds additionally log to stdout). Frontend messages go through the
+  same file via the `log_message` command, and uncaught errors / unhandled
+  rejections are captured at bootstrap (`installGlobalErrorLogging`), so a blank
+  window in a shipped build leaves a trace.
+- **Settings → Diagnostics with a one-click bundle.** **Export diagnostics
+  (.zip)** builds a local archive (via JSZip) containing `system.txt` (app and
+  shell versions, WebView2/Edge from the user agent, OS, locale, display),
+  `settings.json` (imposition settings, uploaded font names/sizes, UI
+  preferences, recent exports) and the last 1.5 MB of each log file, then asks
+  where to save it. **Open log folder** reveals the same folder in Explorer. No
+  telemetry and no network request anywhere in the path.
+- **Single-instance guard and window state.** `tauri-plugin-single-instance`
+  (registered before every other plugin) un-minimizes and focuses the running
+  window when the app is launched again, so two instances can never open the
+  same Dexie database. `tauri-plugin-window-state` restores size, position and
+  maximized state between launches.
+- **New services/hooks** — `exportService` (save, reveal, recent exports,
+  remembered folder), `diagnosticsService`, `appLog`, `keepAwake`,
+  `useRecentExports`, `useTaskbarProgress`, and the `RecentExports` component.
+
+### Changed
+
+- **Batch output buttons say Save, not Download.** Each finished file (or
+  numbered sheet part) has its own **Save …** button that opens the native
+  dialog; a saved run shows the path with **Open folder**, a failed save shows
+  the error inline, and a cancelled dialog leaves the file ready to retry.
+- **The missing-photo CSV button is now "Save missing-photo list"** and uses the
+  same native dialog.
+- **`batchService.downloadBlob` was removed** — anchor downloads now exist only
+  as the browser dev-server fallback inside `exportService`.
+- **The Settings page gained Exports and Diagnostics sections**; the Privacy
+  cards are unchanged.
+- **Version display** — `package.json`, `src-tauri/Cargo.toml`,
+  `tauri.conf.json`, the README badge and this changelog are in sync (0.7.5).
+
+### Tests
+
+- `exportService.test.ts` (new) — browser fallback downloads and records a
+  `downloaded` entry; native save grants the picked path, writes the exact
+  bytes, remembers the folder and pre-fills the next dialog; a cancelled dialog
+  writes nothing and records nothing; a failed write is recorded with its error;
+  a repeated export replaces its entry; byte formatting.
+- `diagnosticsService.test.ts` (new) — the ZIP contains `system.txt`,
+  `settings.json` and `logs/id-stack.log`; font binaries are replaced by
+  name/size metadata; a build with no log files still produces a valid bundle;
+  the log folder is reported only in the desktop build.
+
 ## [0.7.4] - 2026-11-18
 
 ### Added

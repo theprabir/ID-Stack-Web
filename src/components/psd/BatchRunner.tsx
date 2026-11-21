@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Play, Pause, Square, Download, Loader2, Grid3x3, FileStack } from 'lucide-react';
+import { Play, Pause, Square, Download, Loader2, Grid3x3, FileStack, FolderOpen } from 'lucide-react';
 import type { PsdProject } from '@/types/psd';
 import type { ExcelData, PhotoMatchResult, DataRow } from '@/types/data';
 import { usePsdStore } from '@/stores/psdStore';
@@ -18,6 +18,10 @@ import { ImpositionPanel } from './ImpositionPanel';
 import { SheetPreview } from './SheetPreview';
 import { Button, Input, Select, Label, Checkbox } from '@/components/ui';
 import { getColumnNames, toCsv } from '@/services/excelService';
+import { saveExport, revealExportPath, type SaveExportResult } from '@/services/exportService';
+import { setBatchActive } from '@/services/keepAwake';
+import { logMessage } from '@/services/appLog';
+import { useTaskbarProgress } from '@/hooks/useTaskbarProgress';
 
 interface BatchRunnerProps {
   project: PsdProject;
@@ -92,9 +96,17 @@ export function BatchRunner({
     void restoreImpositionSettings();
   }, [restoreImpositionSettings]);
 
-  /** Finished downloads: one PDF, a ZIP, or the numbered parts of a big job */
-  const [output, setOutput] = useState<{ url: string; fileName: string }[] | null>(null);
+  /** Finished files waiting to be saved: one PDF, a ZIP, or numbered parts */
+  const [output, setOutput] = useState<{ blob: Blob; fileName: string }[] | null>(null);
   const [isZipping, setIsZipping] = useState(false);
+  /** Outcome of the last native save, for the "Open folder" affordance */
+  const [lastSave, setLastSave] = useState<{
+    fileName: string;
+    path: string | null;
+    status: SaveExportResult['status'];
+    error?: string;
+  } | null>(null);
+  const [savingFile, setSavingFile] = useState<string | null>(null);
   /** Download block: scrolled into view automatically when a run finishes */
   const downloadRef = useRef<HTMLDivElement>(null);
   const controlRef = useRef<'running' | 'paused' | 'cancelled' | 'done'>('done');
@@ -286,8 +298,8 @@ export function BatchRunner({
   );
 
   const start = useCallback(async () => {
-    if (output) output.forEach((file) => URL.revokeObjectURL(file.url));
     setOutput(null);
+    setLastSave(null);
     setControl('running');
     setBatchState({
       control: 'running',
@@ -298,37 +310,37 @@ export function BatchRunner({
     });
 
     const batchOptions: BatchOptions = { ...options, imposition };
-    await runBatch(
-      project,
-      { ...excelData, rows: rowsToProcess },
-      mappings,
-      photoMatches,
-      batchOptions,
-      () => controlRef.current,
-      {
-        onProgress: (state: BatchState) => {
-          setBatchState(state);
-          if (state.control !== 'running') setControl(state.control);
-        },
-        onComplete: (result) => {
-          setIsZipping(false);
-          if (result) {
-            // A very large sheet job arrives as several numbered PDFs; a
-            // normal job arrives as the single file (or ZIP) in `blob`.
-            const files = result.parts ?? [
-              { blob: result.blob, fileName: result.fileName },
-            ];
-            setOutput(
-              files.map((file) => ({
-                url: URL.createObjectURL(file.blob),
-                fileName: file.fileName,
-              }))
-            );
-          }
-          setControl('done');
-        },
-      }
-    );
+    logMessage('info', `Batch started: ${rowsToProcess.length} record(s)`);
+    // Stop Windows from sleeping mid-run; the screen may still turn off.
+    void setBatchActive(true);
+    try {
+      await runBatch(
+        project,
+        { ...excelData, rows: rowsToProcess },
+        mappings,
+        photoMatches,
+        batchOptions,
+        () => controlRef.current,
+        {
+          onProgress: (state: BatchState) => {
+            setBatchState(state);
+            if (state.control !== 'running') setControl(state.control);
+          },
+          onComplete: (result) => {
+            setIsZipping(false);
+            if (result) {
+              // A very large sheet job arrives as several numbered PDFs; a
+              // normal job arrives as the single file (or ZIP) in `blob`.
+              setOutput(result.parts ?? [{ blob: result.blob, fileName: result.fileName }]);
+              logMessage('info', `Batch complete: ${result.fileName}`);
+            }
+            setControl('done');
+          },
+        }
+      );
+    } finally {
+      void setBatchActive(false);
+    }
   }, [
     project,
     excelData,
@@ -347,13 +359,24 @@ export function BatchRunner({
     if (rowsMissingPhoto.length === 0) return;
     const csv = toCsv(getColumnNames(excelData), rowsMissingPhoto);
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = 'missing-photos.csv';
-    anchor.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    void saveExport(blob, 'missing-photos.csv', 'csv');
   }, [excelData, rowsMissingPhoto]);
+
+  /** Save one finished file through the native dialog (v0.7.5) */
+  const saveFile = useCallback(async (file: { blob: Blob; fileName: string }) => {
+    setSavingFile(file.fileName);
+    try {
+      const result = await saveExport(file.blob, file.fileName);
+      setLastSave({
+        fileName: result.fileName,
+        path: result.path,
+        status: result.status,
+        error: result.error,
+      });
+    } finally {
+      setSavingFile(null);
+    }
+  }, []);
 
   const isRunning = control === 'running' || control === 'paused';
   const progress = batchState
@@ -361,6 +384,10 @@ export function BatchRunner({
       ? (batchState.current / batchState.total) * 100
       : 0
     : 0;
+
+  // Taskbar button progress: the run stays visible while minimized.
+  const taskbarStatus = control === 'paused' ? 'paused' : control === 'running' ? 'normal' : 'none';
+  useTaskbarProgress(taskbarStatus, progress);
 
   return (
     <section
@@ -492,7 +519,7 @@ export function BatchRunner({
               disabled={rowsMissingPhoto.length === 0 || isRunning}
             >
               <Download className="h-4 w-4" aria-hidden="true" />
-              Download missing-photo list ({rowsMissingPhoto.length})
+              Save missing-photo list ({rowsMissingPhoto.length})
             </Button>
           </div>
 
@@ -511,25 +538,58 @@ export function BatchRunner({
             </div>
           )}
 
-          {/* Download: one file, or the numbered parts of a split job */}
+          {/* Save: native dialog, one file per generated part (v0.7.5) */}
           {output && output.length > 0 && (
             <div ref={downloadRef} className="mt-3 space-y-1.5">
+              <p className="text-[11px] text-muted-foreground">
+                {output.length === 1
+                  ? 'Your file is ready. Choose where to save it — the folder is remembered.'
+                  : `${output.length} files are ready. Save each one — the folder is remembered.`}
+              </p>
               {output.map((file) => (
                 <Button
                   key={file.fileName}
                   variant="default"
                   className="w-full"
-                  onClick={() => {
-                    const link = document.createElement('a');
-                    link.href = file.url;
-                    link.download = file.fileName;
-                    link.click();
-                  }}
+                  disabled={savingFile !== null}
+                  onClick={() => void saveFile(file)}
                 >
-                  <Download className="h-4 w-4" aria-hidden="true" />
-                  Download {file.fileName}
+                  {savingFile === file.fileName ? (
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Download className="h-4 w-4" aria-hidden="true" />
+                  )}
+                  Save {file.fileName}
                 </Button>
               ))}
+              {lastSave && lastSave.status === 'saved' && lastSave.path && (
+                <div className="flex items-center justify-between gap-2 rounded-md border bg-surface-card/60 px-2.5 py-2">
+                  <p className="min-w-0 flex-1 break-all text-[11px] text-muted-foreground">
+                    Saved to <span className="text-foreground">{lastSave.path}</span>
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={() => {
+                      if (lastSave.path) void revealExportPath(lastSave.path);
+                    }}
+                  >
+                    <FolderOpen className="h-3.5 w-3.5" aria-hidden="true" />
+                    Open folder
+                  </Button>
+                </div>
+              )}
+              {lastSave && lastSave.status === 'failed' && (
+                <p className="text-[11px] text-destructive">
+                  Could not save {lastSave.fileName}: {lastSave.error ?? 'unknown error'}
+                </p>
+              )}
+              {lastSave && lastSave.status === 'cancelled' && (
+                <p className="text-[11px] text-muted-foreground">
+                  Save cancelled — the file is still ready above.
+                </p>
+              )}
             </div>
           )}
         </div>
@@ -612,6 +672,12 @@ export function BatchRunner({
               </ul>
             )}
           </div>
+        )}
+
+        {isRunning && (
+          <p className="mb-2 text-[11px] text-muted-foreground">
+            Safe to minimize: the run keeps going and the taskbar button shows its progress.
+          </p>
         )}
 
         {isRunning ? (

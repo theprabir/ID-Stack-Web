@@ -1,7 +1,24 @@
+import { useCallback, useEffect, useState } from 'react';
 import { useTheme } from '@/hooks/useTheme';
 import { useUIStore, type ThemeId, type ThemeMode } from '@/stores/uiStore';
-import { Label } from '@/components/ui';
-import { Sun, Moon, Monitor, Save, ShieldCheck, Server, Info, Check, Palette } from 'lucide-react';
+import { Button, Label } from '@/components/ui';
+import { RecentExports } from '@/components/common/RecentExports';
+import { buildDiagnosticsArchive, getLogDirectory } from '@/services/diagnosticsService';
+import { revealExportPath, saveExport, type SaveExportResult } from '@/services/exportService';
+import {
+  Sun,
+  Moon,
+  Monitor,
+  Save,
+  ShieldCheck,
+  Server,
+  Info,
+  Check,
+  Palette,
+  FolderOpen,
+  FileArchive,
+  Loader2,
+} from 'lucide-react';
 
 /** One labelled settings section card */
 function SettingsSection({
@@ -208,6 +225,39 @@ export function SettingsPage(): JSX.Element {
   const themeId = useUIStore((state) => state.themeId);
   const setThemeId = useUIStore((state) => state.setThemeId);
 
+  // --- Diagnostics (v0.7.5) ---------------------------------------------
+  const [logDirectory, setLogDirectory] = useState<string | null>(null);
+  const [isBuildingDiagnostics, setIsBuildingDiagnostics] = useState(false);
+  const [diagnosticsResult, setDiagnosticsResult] = useState<SaveExportResult | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void getLogDirectory().then((directory) => {
+      if (active) setLogDirectory(directory);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const exportDiagnostics = useCallback(async () => {
+    setIsBuildingDiagnostics(true);
+    setDiagnosticsResult(null);
+    try {
+      const { blob, fileName } = await buildDiagnosticsArchive();
+      setDiagnosticsResult(await saveExport(blob, fileName, 'diagnostics'));
+    } catch (error) {
+      setDiagnosticsResult({
+        status: 'failed',
+        path: null,
+        fileName: 'id-stack-diagnostics.zip',
+        error: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setIsBuildingDiagnostics(false);
+    }
+  }, []);
+
   return (
     <div className="mx-auto max-w-2xl space-y-6 p-6 sm:p-8">
       <div>
@@ -268,6 +318,82 @@ export function SettingsPage(): JSX.Element {
               />
             </div>
           </div>
+        </div>
+      </SettingsSection>
+
+      {/* Exports: where files went + reveal in Explorer (v0.7.5) */}
+      <SettingsSection
+        icon={FolderOpen}
+        title="Exports"
+        description="Every file you saved, with the folder it went to."
+      >
+        <RecentExports />
+      </SettingsSection>
+
+      {/* Diagnostics: local logs, no telemetry (v0.7.5) */}
+      <SettingsSection
+        icon={FileArchive}
+        title="Diagnostics"
+        description="A local log and a one-click bundle for bug reports. Nothing is sent anywhere automatically."
+      >
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <Button
+              variant="default"
+              onClick={() => void exportDiagnostics()}
+              disabled={isBuildingDiagnostics}
+            >
+              {isBuildingDiagnostics ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <FileArchive className="h-4 w-4" aria-hidden="true" />
+              )}
+              {isBuildingDiagnostics ? 'Building bundle…' : 'Export diagnostics (.zip)'}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (logDirectory) void revealExportPath(logDirectory);
+              }}
+              disabled={!logDirectory}
+            >
+              <FolderOpen className="h-4 w-4" aria-hidden="true" />
+              Open log folder
+            </Button>
+          </div>
+          <p className="break-all text-[11px] text-muted-foreground">
+            {logDirectory
+              ? `Logs: ${logDirectory}`
+              : 'Log files are written by the installed desktop app; the browser dev server keeps none.'}
+          </p>
+          {diagnosticsResult && diagnosticsResult.status === 'saved' && diagnosticsResult.path && (
+            <div className="flex items-center justify-between gap-2 rounded-md border bg-surface-card/60 px-2.5 py-2">
+              <p className="min-w-0 flex-1 break-all text-[11px] text-muted-foreground">
+                Saved to <span className="text-foreground">{diagnosticsResult.path}</span>
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="shrink-0"
+                onClick={() => {
+                  if (diagnosticsResult.path) void revealExportPath(diagnosticsResult.path);
+                }}
+              >
+                <FolderOpen className="h-3.5 w-3.5" aria-hidden="true" />
+                Show
+              </Button>
+            </div>
+          )}
+          {diagnosticsResult && diagnosticsResult.status === 'failed' && (
+            <p className="text-[11px] text-destructive">
+              Could not create the bundle: {diagnosticsResult.error ?? 'unknown error'}
+            </p>
+          )}
+          {diagnosticsResult && diagnosticsResult.status === 'cancelled' && (
+            <p className="text-[11px] text-muted-foreground">
+              Save cancelled — nothing was written.
+            </p>
+          )}
         </div>
       </SettingsSection>
 

@@ -350,9 +350,10 @@ scrolls internally if needed.
   (the PSD's demo photo is never printed). Turn it OFF to process only
   records that have a matched photo — the Generate button then shows the
   reduced count. The toggle resets to ON each time you open Step 4.
-- **Download missing-photo list (N)** — exports those records (all of your
-  columns) as a UTF-8 CSV that opens directly in Excel, so you can collect
-  exactly the missing photos. Disabled while no photos are missing.
+- **Save missing-photo list (N)** — opens the native save dialog for those
+  records (all of your columns) as a UTF-8 CSV that opens directly in Excel, so
+  you can collect exactly the missing photos. Disabled while no photos are
+  missing.
 
 - Press **Generate N card(s)** to start.
 
@@ -360,19 +361,26 @@ scrolls internally if needed.
 
 - A **progress bar** with "current / total", and a live **ETA** ("12s left" /
   "2 min left").
+- You can **minimize the window or lock Windows** while it runs: the batch
+  keeps going in the background, the taskbar button shows the live progress,
+  and Windows is kept awake until the job ends. Come back whenever you like.
 - **Pause** suspends the run; it becomes **Resume**.
 - The **stop button** cancels; everything rendered so far is discarded.
 - **Errors** (if any) appear in a red list with the row number and reason —
   one bad row never stops the others.
 
-**When finished:** a download button appears. Inside you'll find one file per
-card (or per person) named by your pattern — or, in Sheets mode, the imposed
-sheet PDFs (`sheet_Print.pdf` for the combined layout, or
-`sheet_Front_Back.pdf` / `sheet_Front.pdf` / `sheet_Back.pdf`). Very large
-sheet jobs are written as **numbered parts** (`sheet_Print_part1of3.pdf`,
-`sheet_Print_part2of3.pdf`, …) that continue the card numbering —
-each part is listed with its own download button. Keep them together: they
-form one job.
+**When finished:** one **Save** button appears per file. Each opens the native
+Windows "Save as" dialog, pre-filled with the file name and the folder you used
+last time, so a job can go straight into its own project folder. After saving,
+the panel shows the full path with an **Open folder** button (the file is
+selected in Explorer). Inside the export you'll find one file per card (or per
+person) named by your pattern — or, in Sheets mode, the imposed sheet PDFs
+(`sheet_Print.pdf` for the combined layout, or `sheet_Front_Back.pdf` /
+`sheet_Front.pdf` / `sheet_Back.pdf`). Very large sheet jobs are written as
+**numbered parts** (`sheet_Print_part1of3.pdf`, `sheet_Print_part2of3.pdf`, …)
+that continue the card numbering — each part has its own Save button. Keep them
+together: they form one job. Everything you save is also listed under
+**Settings → Exports** with its folder.
 
 **Sheet layout (left, Sheets mode only)**
 
@@ -480,6 +488,9 @@ whole help centre works offline.
 |---|---|---|
 | Appearance | **Color palette** | Classic / Warm Lime / Carbon Teal, each with its own dark and light mode. |
 | Appearance | **Dark / Light** tiles | Same as the header toggle; applies instantly and is remembered. |
+| Exports | **Recent exports** | The last 12 files you saved, with time, size and folder. **Show** reveals one in Explorer; **Clear list** forgets the list (the files stay on disk). |
+| Diagnostics | **Export diagnostics (.zip)** | Bundles the local log, app/Windows/WebView2 versions and a settings snapshot for bug reports. Written where you choose — never uploaded. |
+| Diagnostics | **Open log folder** | Opens `%LOCALAPPDATA%\com.idstack.desktop\logs`. |
 | Privacy & data | Informational | "No server / Local storage / No account" — nothing to configure. |
 
 **About** — current version chip, "100% Client-Side" badge, the author's

@@ -5,6 +5,8 @@ import { ThemeProvider } from './components/ThemeProvider';
 import { ErrorBoundary } from './components/common';
 import { bootstrapFonts } from './services/fontService';
 import { installDesktopShellGuards, revealDesktopWindow } from './services/desktopShell';
+import { installGlobalErrorLogging, logMessage } from './services/appLog';
+import { VERSION } from './services/version';
 import './index.css';
 
 /**
@@ -41,7 +43,11 @@ async function bootstrap(): Promise<void> {
   // First paint is ready (fonts resolved before render): reveal the window
   // that tauri.conf.json creates hidden.
   await revealDesktopWindow();
+  logMessage('info', `UI mounted (v${VERSION})`);
 }
 
+// Capture uncaught errors into the rotating app log before anything mounts, so
+// a release build records a blank-window failure instead of nothing.
+installGlobalErrorLogging();
 installDesktopShellGuards();
 void bootstrap();

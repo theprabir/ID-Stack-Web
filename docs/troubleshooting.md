@@ -311,6 +311,13 @@ fix, and check the linked section if you need the why.
   but competes for CPU with everything else.
 - JPEG output is faster than PDF (PDF adds ICC embedding per file).
 
+**I minimized the window or locked the PC during a run**
+
+- That is safe. The batch keeps running, Windows is kept awake until it
+  finishes, and the taskbar button shows live progress (paused runs turn
+  amber). WebView2's background timer throttling is disabled by the app, so a
+  minimized run proceeds at full speed.
+
 **The app froze or closed during a big batch**
 
 - **Sheets mode** is memory-bounded: each sheet is encoded as its page closes
@@ -434,6 +441,11 @@ fix, and check the linked section if you need the why.
 ---
 
 ## 10. Reporting a bug
+
+**Fastest option: Settings → Export diagnostics.** Click **Export diagnostics
+(.zip)** and attach the archive to the issue — it contains the app log,
+app/Windows/WebView2 versions and a settings snapshot (no card data, no photos,
+no fonts). **Open log folder** shows the live log if you want to read it first.
 
 When filing at
 [github.com/theprabir/id-stack-web/issues](https://github.com/theprabir/id-stack-web/issues),

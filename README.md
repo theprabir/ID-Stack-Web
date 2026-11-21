@@ -7,7 +7,7 @@
 **Professional ID card design & batch printing — a fully offline Windows desktop application.**
 
 [![Downloads](https://img.shields.io/github/v/release/theprabir/id-stack-web?label=download&color=0078D4)](https://github.com/theprabir/id-stack-web/releases/latest)
-[![Version](https://img.shields.io/badge/version-0.7.4-6366f1)](https://github.com/theprabir/id-stack-web/blob/main/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.7.5-6366f1)](https://github.com/theprabir/id-stack-web/blob/main/CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-22c55e)](LICENSE)
 
 [**⬇️ Download for Windows**](https://github.com/theprabir/id-stack-web/releases/latest) · [**📖 Changelog**](CHANGELOG.md) · [**🐛 Report an issue**](https://github.com/theprabir/id-stack-web/issues)
@@ -33,7 +33,9 @@ Installs once. Runs offline. No backend, no account — your data never leaves y
 - 📈 **Excel import** — .xlsx/.xls/.csv (SheetJS) with column mapping, weighted fuzzy **Auto-map** (exact/substring/synonym/keyword scoring with a synonym dictionary) and a validation report (errors vs warnings per row)
 - 📷 **Photo pipeline** — multi-photo import with filename/column auto-matching and manual assignment
 - ⚡ **Batch generation** — hundreds of cards with progress bar, ETA, pause/resume/cancel and error list; CMYK JPEG encoding + DEFLATE run in a dedicated Web Worker
+- 🌙 **Runs safely in the background** — minimize the window or lock Windows mid-run: the loop keeps going (background throttling disabled, sleep blocked while the job runs) and the taskbar button shows live progress
 - 📦 **ZIP export** — one file per card with `{Name}_{ID}` / `{{Column}}` naming patterns
+- 🗂️ **Native "Save as" dialogs** — every export (ZIP, imposed PDFs, CSV, diagnostics) asks where to save, remembers that folder, and offers **Open folder** afterwards; Settings lists the last 12 exports with their paths, so files never silently vanish into Downloads
 - 🎨 **CMYK export** — ICC-corrected CMYK JPEG (Adobe APP14 transform=0) and direct CMYK PDF (embedded ICC profile + GTS_PDFX OutputIntent)
 - 🖨️ **Imposition engine** — N cards per sheet on A4/A3/Letter/Legal/Tabloid or custom paper (mm/cm/in/pt) with bleed, gap, margin, crop marks and positioned card numbering
 - 📐 **Exact print size — no scaling, ever** — each card prints at its own physical size (pixels ÷ DPI), placed 1:1 on its trim slot; the bleed setting only extends the edge pixels outwards (repeated at 1:1), so a 3 mm bleed no longer enlarges an 86 mm card. Crop marks sit on the real cut line
@@ -49,7 +51,8 @@ Installs once. Runs offline. No backend, no account — your data never leaves y
 ### 🔐 Privacy & Platform
 - 🧠 **100 % local** — no server, no API, no database, no accounts; every byte stays on your PC
 - ✈️ **Fully offline** — all assets are bundled into the app; no internet connection is ever needed, not even on first launch
-- 🖥️ **Native Windows app** — installable `.msi` / setup `.exe` plus a portable `.exe`, built with Tauri v2 (native window, taskbar icon, no browser chrome)
+- 🖥️ **Native Windows app** — installable `.msi` / setup `.exe` plus a portable `.exe`, built with Tauri v2 (native window, taskbar icon, no browser chrome); a second launch focuses the running window and the window size/position/maximized state is remembered
+- 🩺 **Local diagnostics** — a rotating size-capped log (release builds included) and a one-click **Export diagnostics** ZIP (log, versions, WebView2, settings snapshot) for bug reports. No telemetry, no network
 - 🔤 **Custom fonts** — upload .ttf/.otf/.woff/.woff2, persisted locally, auto-matched to PSD layers; bundled Arial-compatible font (Arimo) included
 - 🌗 **Dark & Light themes** — responsive from 1366×768 to 4K
 

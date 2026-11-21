@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.7.4"
+version = "0.7.5"
 description = "ID Stack — offline ID card design and batch printing"
 authors = ["Prabir Kumar Das"]
 license = "MIT"
@@ -23,3 +23,7 @@ serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
 tauri = { version = "2.12.6", features = [] }
 tauri-plugin-log = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-window-state = "2"

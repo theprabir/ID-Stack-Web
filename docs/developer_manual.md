@@ -151,7 +151,7 @@ Node **≥ 18** required (`engines` in package.json).
     ├── stores/       # Zustand: psdStore, dataStore, uiStore
     ├── services/     # business logic (see §6) — no React here
     ├── workers/      # exportWorker.ts (CMYK JPEG encoding)
-    ├── hooks/        # useTheme, useFontFamilies (font-registry subscription)
+    ├── hooks/        # useTheme, useFontFamilies, useRecentExports, useTaskbarProgress
     ├── constants/    # app.ts
     ├── types/        # psd.ts, data.ts (all data models)
     ├── utils/        # id.ts
@@ -185,10 +185,13 @@ client-side badge, credit).
    (`registerSW({ immediate: true })`). Inside Tauri it is skipped — the app
    already loads every asset from the bundled files — and the desktop shell
    guards plus the window-reveal call are installed instead.
-2. `await bootstrapFonts()` — restore IndexedDB fonts + register bundled
+2. `installGlobalErrorLogging()` — `window.onerror` and `unhandledrejection`
+   are written to the rotating app log (release builds included), so a blank
+   window leaves evidence instead of nothing.
+3. `await bootstrapFonts()` — restore IndexedDB fonts + register bundled
    Arimo/Arial faces **before** React mounts, so the first canvas measurement
    and paint already have the right families.
-3. Render `<ThemeProvider → ErrorBoundary → App>` inside
+4. Render `<ThemeProvider → ErrorBoundary → App>` inside
    `ReactDOM.createRoot` (StrictMode).
 
 ### Single pipeline (PSD-first)
@@ -240,6 +243,29 @@ modules.
 | `fontService.ts` | FontFace registry, IndexedDB persistence, bundled Arimo aliases (Arial/ArialMT/…), PostScript name matching (`matchPsdFont`, `resolveFontFamily`, `exactFontCss`), `preloadFontsForText` (awaited `document.fonts.load` before any measurement), name-table PostScript aliasing |
 | `storageService.ts` | Dexie schema + typed table access (see §8) |
 | `version.ts` | `__APP_VERSION__` passthrough |
+| `exportService.ts` | `saveExport()` — native "Save as" via `@tauri-apps/plugin-dialog`, then `invoke('allow_export_path')` (grants that one file in the fs scope) + `writeFile`; the last folder is remembered and the last 12 exports are kept in localStorage. `revealExportPath()` shows a file in Explorer. Browser dev builds keep the anchor download |
+| `diagnosticsService.ts` | `buildDiagnosticsArchive()` — JSZip bundle of `read_log_files` output, environment (app/shell versions, WebView2 user agent, OS, display) and a settings snapshot (imposition, font names/sizes, UI prefs, recent exports). No card data, no binaries |
+| `appLog.ts` | `logMessage(level, message)` → `invoke('log_message')` (same rotating file as Rust) plus dev console; `installGlobalErrorLogging()` |
+| `keepAwake.ts` | `setBatchActive(bool)` → `invoke('set_batch_active')`, which calls `SetThreadExecutionState` so Windows cannot sleep mid-batch |
+
+### Desktop shell integration (Tauri 2, v0.7.5)
+
+`src-tauri/` is a thin native shell around the same React bundle.
+
+| Piece | What it does |
+|---|---|
+| Plugins | `single-instance` (registered **first**: a second launch un-minimizes and focuses `main` instead of opening a second webview over the same Dexie DB), `window-state` (size/position/maximized across launches), `dialog` (native save), `fs` (scoped writes), `log` |
+| `allow_export_path` | Adds exactly the user-picked path to the fs plugin scope — the webview never gets blanket filesystem access |
+| `reveal_path` | `explorer /select,<file>` (or opens the folder itself) for the "Open folder" buttons |
+| `set_batch_active` | `SetThreadExecutionState(ES_CONTINUOUS \| ES_SYSTEM_REQUIRED)` while a batch runs |
+| `log_message` / `log_directory` / `read_log_files` | Frontend → log file bridge, log-folder path, and the (1.5 MB tail per file, `.log`/`.txt` only) log reader behind **Export diagnostics** |
+| Logging | Always on: `tauri-plugin-log` → `logs/id-stack.log` in the app log dir, 2 MB cap with `KeepOne` rotation; stdout too in debug builds |
+| Window config | `additionalBrowserArgs` keeps the WebView2 defaults and adds `--disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding`, so a minimized batch keeps its timers |
+| Capabilities | `core:window:allow-set-progress-bar` (taskbar progress), `core:app:allow-version`, `dialog:allow-save`, `fs:allow-write-file` |
+
+`batchService.nextFrame()` yields through a timer while `document.hidden` and
+races rAF with a timer otherwise — the loop never depends on a rendering
+frame that a minimized window would not produce.
 
 ---
 
