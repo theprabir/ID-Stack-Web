@@ -36,3 +36,49 @@ export function buildName(
 
   return name;
 }
+
+/**
+ * Make a file name unique inside one archive (v0.7.6).
+ *
+ * JSZip silently replaces an existing entry with the same path, which is how
+ * two classes both named "Class 5" — or a naming template that omits {Row} —
+ * lost every file but the last. Duplicates get a ` (2)`, ` (3)`… suffix before
+ * the extension, in the OS convention users already understand.
+ *
+ * @param used - Set of lowercased names already added (mutated)
+ * @param fileName - Desired file name
+ * @returns A name that is not in `used` (registered in the set)
+ */
+export function uniqueFileName(used: Set<string>, fileName: string): string {
+  const key = fileName.toLowerCase();
+  if (!used.has(key)) {
+    used.add(key);
+    return fileName;
+  }
+  const dot = fileName.lastIndexOf('.');
+  const stem = dot > 0 ? fileName.slice(0, dot) : fileName;
+  const extension = dot > 0 ? fileName.slice(dot) : '';
+  let counter = 2;
+  let candidate = `${stem} (${counter})${extension}`;
+  while (used.has(candidate.toLowerCase())) {
+    counter += 1;
+    candidate = `${stem} (${counter})${extension}`;
+  }
+  used.add(candidate.toLowerCase());
+  return candidate;
+}
+
+/**
+ * Sanitise one archive folder/file segment (Windows-invalid characters).
+ *
+ * @param value - Raw segment
+ * @returns Safe segment ("source" when nothing usable remains)
+ */
+export function sanitizeSegment(value: string): string {
+  const cleaned = value
+    .replace(/[\\/:*?"<>|]+/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\.+$/, '');
+  return cleaned.length > 0 ? cleaned : 'source';
+}

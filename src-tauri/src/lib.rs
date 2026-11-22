@@ -161,6 +161,7 @@ pub fn run() {
 
   builder
     .plugin(tauri_plugin_dialog::init())
+    .plugin(tauri_plugin_opener::init())
     .plugin(tauri_plugin_fs::init())
     // Remembers size, position and maximized state between launches.
     .plugin(tauri_plugin_window_state::Builder::default().build())

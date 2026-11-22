@@ -1,5 +1,7 @@
+import { useMemo } from 'react';
 import { AlertTriangle, CheckCircle2, Table2, XCircle, ImagePlus } from 'lucide-react';
 import type { ExcelData } from '@/types/data';
+import { rowKey } from '@/types/data';
 import { useDataStore } from '@/stores/dataStore';
 import { cn } from '@/lib/utils';
 
@@ -28,12 +30,25 @@ export function DataPreview({
   tableMaxHeightPx = 260,
 }: DataPreviewProps): JSX.Element {
   const validation = useDataStore((state) => state.validation);
-  const photos = useDataStore((state) => state.photos);
+  const photoLibraries = useDataStore((state) => state.photoLibraries);
+  const photoSourceMap = useDataStore((state) => state.photoSourceMap);
   const matchConfig = useDataStore((state) => state.photoMatchConfig);
   const matchResult = useDataStore((state) => state.photoMatchResult);
   const assignPhotoManually = useDataStore((state) => state.assignPhotoManually);
+  const sources = useDataStore((state) => state.sources);
+  const activeSourceId = useDataStore((state) => state.activeSourceId);
+  const setActiveSource = useDataStore((state) => state.setActiveSource);
 
   const rowCount = excelData?.rows.length ?? 0;
+
+  // Manual picks must come from the active source's own library, never from
+  // another class's photos (v0.7.6 review).
+  const scopedPhotos = useMemo(() => {
+    const library =
+      photoLibraries.find((candidate) => candidate.id === photoSourceMap[activeSourceId ?? '']) ??
+      (photoLibraries.length === 1 ? photoLibraries[0] : undefined);
+    return library?.photos ?? [];
+  }, [photoLibraries, photoSourceMap, activeSourceId]);
 
   const errorCount = validation?.issues.filter((issue) => issue.severity === 'error').length ?? 0;
   const warningCount =
@@ -58,6 +73,43 @@ export function DataPreview({
           Data &amp; Validation
         </h2>
       </div>
+
+      {/* One tab per data source — validation, preview and manual matching
+          always operate on exactly one source (v0.7.6). */}
+      {sources.length > 1 && (
+        <div role="tablist" aria-label="Data sources" className="themed-scrollbar mb-3 flex gap-1 overflow-x-auto pb-1">
+          {sources.map((source) => (
+            <button
+              key={source.id}
+              type="button"
+              role="tab"
+              aria-selected={source.id === activeSourceId}
+              disabled={Boolean(source.error)}
+              onClick={() => setActiveSource(source.id)}
+              title={source.error ?? source.label}
+              className={cn(
+                'shrink-0 rounded-md border px-2 py-1 text-[11px] transition-colors',
+                source.id === activeSourceId
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'text-muted-foreground hover:bg-accent/10',
+                source.error && 'border-destructive/40 text-destructive'
+              )}
+            >
+              {source.label} · {source.rows.length}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {sources.some((source) => source.error) && (
+        <div role="alert" className="mb-3 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
+          {sources
+            .filter((source) => source.error)
+            .map((source) => (
+              <p key={source.id}>{source.error}</p>
+            ))}
+        </div>
+      )}
 
       {/* Validation summary */}
       {validation && (
@@ -119,12 +171,13 @@ export function DataPreview({
           </h3>
           <div className="themed-scrollbar max-h-72 space-y-2 overflow-auto rounded-md border bg-surface-card p-2">
             {excelData.rows.map((row) => {
-              const assignedPhotoId = matchConfig.manualAssignments?.[row.rowIndex];
-              const assigned = photos.find((photo) => photo.id === assignedPhotoId);
-              const auto = matchResult?.assignments.get(row.rowIndex);
+              const key = rowKey(row);
+              const assignedPhotoId = matchConfig.manualAssignments?.[String(key)];
+              const assigned = scopedPhotos.find((photo) => photo.id === assignedPhotoId);
+              const auto = matchResult?.assignments.get(key);
               return (
                 <div
-                  key={row.rowIndex}
+                  key={String(key)}
                   className="flex items-center gap-2 rounded border bg-surface-panel p-2"
                 >
                   {/* Current assignment thumbnail (larger, clearly visible) */}
@@ -158,7 +211,7 @@ export function DataPreview({
                         aria-label={`Clear photo for row ${row.rowIndex + 1}`}
                         onClick={() => {
                           if (assignedPhotoId !== undefined) {
-                            assignPhotoManually(row.rowIndex, '');
+                            assignPhotoManually(key, '');
                           }
                         }}
                         className={cn(
@@ -168,13 +221,13 @@ export function DataPreview({
                       >
                         None
                       </button>
-                      {photos.map((photo) => (
+                      {scopedPhotos.map((photo) => (
                         <button
                           key={photo.id}
                           type="button"
                           title={photo.fileName}
                           aria-label={`Assign ${photo.fileName} to row ${row.rowIndex + 1}`}
-                          onClick={() => assignPhotoManually(row.rowIndex, photo.id)}
+                          onClick={() => assignPhotoManually(key, photo.id)}
                           className={cn(
                             'h-10 w-10 shrink-0 overflow-hidden rounded border transition-all',
                             assignedPhotoId === photo.id
@@ -221,7 +274,7 @@ export function DataPreview({
           <tbody>
             {excelData.rows.map((row) => (
               <tr
-                key={row.rowIndex}
+                key={String(rowKey(row))}
                 onClick={() => onSelectRow(row.rowIndex)}
                 className={cn(
                   'cursor-pointer border-t transition-colors',

@@ -15,6 +15,7 @@
  */
 import { isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { openExternal } from './externalLinkService';
 
 /** Ctrl/Cmd combinations that the desktop shell owns instead of the webview */
 const BLOCKED_CTRL_KEYS = new Set(['r', 'R', '+', '=', '-', '_', '0']);
@@ -42,6 +43,24 @@ export function installDesktopShellGuards(): void {
   window.addEventListener('dragstart', swallow);
   window.addEventListener('dragover', swallow);
   window.addEventListener('drop', swallow);
+
+  // External links: the webview cannot open a new browser tab, so any
+  // http(s) anchor (About, footer credit, guide source links, markdown) is
+  // handed to the OS default browser instead (v0.7.6).
+  document.addEventListener(
+    'click',
+    (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const anchor = target.closest('a[href]');
+      if (!anchor) return;
+      const href = anchor.getAttribute('href') ?? '';
+      if (!/^https?:/i.test(href)) return;
+      event.preventDefault();
+      void openExternal(href);
+    },
+    true
+  );
 
   window.addEventListener(
     'keydown',

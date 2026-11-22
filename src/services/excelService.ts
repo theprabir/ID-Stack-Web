@@ -1,11 +1,13 @@
 import * as XLSX from 'xlsx';
 import type {
   ExcelData,
+  ExcelSource,
   DataRow,
   ValidationResult,
   ValidationIssue,
   ColumnMapping,
 } from '@/types/data';
+import { generateId } from '@/utils/id';
 
 /** Supported input formats */
 const SUPPORTED_EXTENSIONS = ['.xlsx', '.xls', '.csv'];
@@ -72,6 +74,73 @@ export async function parseExcelFile(file: File): Promise<ExcelData> {
     raw: false,
   });
 
+  const { columns, rows } = readMatrix(matrix);
+  return { columns, rows, fileName: file.name };
+}
+
+/**
+ * Get the column names from parsed data.
+ * @param data - Parsed Excel data
+ * @returns Column names in file order
+ */
+export function getColumnNames(data: ExcelData): string[] {
+  return data.columns;
+}
+
+/**
+ * Order-independent column signature used to compare data sources.
+ * Headers are trimmed, lowercased and sorted, so the same columns in a
+ * different order (or different case) still compare equal — mappings are by
+ * name, not by position.
+ *
+ * @param columns - Column headers
+ * @returns Stable signature string
+ */
+export function columnSignature(columns: string[]): string {
+  return columns
+    .map((column) => column.trim().toLowerCase())
+    .filter((column) => column.length > 0)
+    .sort()
+    .join('|');
+}
+
+/**
+ * Rename a source's columns to the reference source's spelling when the
+ * signatures match (v0.7.6). Mapping is shared across the run, so a file whose
+ * headers differ only in case (`NAME` vs `Name`) must use the canonical names
+ * or its fields would silently render blank.
+ *
+ * @param source - Newly parsed source
+ * @param reference - Source that defines the canonical column names
+ * @returns The source, with columns/rows renamed when needed
+ */
+export function alignSourceColumns(source: ExcelSource, reference: ExcelSource): ExcelSource {
+  const canonical = new Map(
+    reference.columns.map((column) => [column.trim().toLowerCase(), column] as const)
+  );
+  const renames = new Map<string, string>();
+  for (const column of source.columns) {
+    const match = canonical.get(column.trim().toLowerCase());
+    if (match !== undefined && match !== column) renames.set(column, match);
+  }
+  if (renames.size === 0) return source;
+
+  const rows = source.rows.map((row) => {
+    const values: Record<string, string> = {};
+    for (const [column, value] of Object.entries(row.values)) {
+      values[renames.get(column) ?? column] = value;
+    }
+    return { ...row, values };
+  });
+  return {
+    ...source,
+    columns: source.columns.map((column) => renames.get(column) ?? column),
+    rows,
+  };
+}
+
+/** Read a header row and data rows out of a sheet matrix */
+function readMatrix(matrix: unknown[][]): { columns: string[]; rows: DataRow[] } {
   if (matrix.length < 2) {
     throw new Error('The spreadsheet needs a header row and at least one data row.');
   }
@@ -105,16 +174,90 @@ export async function parseExcelFile(file: File): Promise<ExcelData> {
     }
   }
 
-  return { columns: uniqueColumns, rows, fileName: file.name };
+  return { columns: uniqueColumns, rows };
 }
 
 /**
- * Get the column names from parsed data.
- * @param data - Parsed Excel data
- * @returns Column names in file order
+ * Parse every non-empty sheet of a workbook (or the single CSV table) into
+ * independent data sources (v0.7.6).
+ *
+ * A multi-sheet workbook produces one source per sheet so each class can be
+ * generated into its own PDF; a one-sheet file keeps the file name as its
+ * output base name.
+ *
+ * @param file - .xlsx, .xls or .csv file
+ * @returns One source per usable sheet (never empty)
+ * @throws Error when the file is unsupported or has no usable sheet
  */
-export function getColumnNames(data: ExcelData): string[] {
-  return data.columns;
+export async function parseExcelSources(file: File): Promise<ExcelSource[]> {
+  if (!isSupportedSpreadsheet(file)) {
+    throw new Error(
+      `Unsupported file type "${file.name}". Supported: ${SUPPORTED_EXTENSIONS.join(', ')}`
+    );
+  }
+
+  const buffer = await file.arrayBuffer();
+  let workbook: XLSX.WorkBook;
+  try {
+    workbook = XLSX.read(buffer, { type: 'array' });
+  } catch (error) {
+    throw new Error(
+      `Could not read spreadsheet "${file.name}": ${error instanceof Error ? error.message : 'unknown error'}`
+    );
+  }
+
+  const parsed: Array<{ sheetName: string; columns: string[]; rows: DataRow[] }> = [];
+  const readErrors: string[] = [];
+  for (const sheetName of workbook.SheetNames) {
+    const sheet = workbook.Sheets[sheetName];
+    if (!sheet) continue;
+    const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
+      header: 1,
+      defval: '',
+      blankrows: false,
+      raw: false,
+    });
+    try {
+      const { columns, rows } = readMatrix(matrix);
+      if (rows.length > 0) parsed.push({ sheetName, columns, rows });
+    } catch (error) {
+      // Empty sheets are normal in real workbooks; keep them out of the
+      // source list but remember why if no sheet turns out usable.
+      readErrors.push(`${sheetName}: ${error instanceof Error ? error.message : 'unreadable'}`);
+    }
+  }
+
+  if (parsed.length === 0) {
+    throw new Error(
+      `"${file.name}" has no sheet with a header row and at least one data row.${readErrors.length > 0 ? ` (${readErrors[0]})` : ''}`
+    );
+  }
+
+  const singleSheet = parsed.length === 1;
+  const fileStem = file.name.replace(/\.[^.]+$/, '').trim() || file.name;
+
+  return parsed.map(({ sheetName, columns, rows }) => {
+    const id = generateId();
+    const scopedRows: DataRow[] = rows.map((row) => ({
+      ...row,
+      sourceId: id,
+      uid: `${id}::${row.rowIndex}`,
+    }));
+    return {
+      id,
+      fileName: file.name,
+      sheetName,
+      label: singleSheet ? file.name : `${file.name} › ${sheetName}`,
+      baseName: singleSheet ? fileStem : sheetName,
+      columns,
+      rows: scopedRows,
+      // A stray blank column left by formatting must not block an otherwise
+      // identical file from joining the run.
+      signature: columnSignature(
+        columns.filter((column) => rows.some((row) => (row.values[column] ?? '').length > 0))
+      ),
+    };
+  });
 }
 
 /**

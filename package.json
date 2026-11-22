@@ -1,7 +1,7 @@
 {
   "name": "id-stack",
   "private": true,
-  "version": "0.7.5",
+  "version": "0.7.6",
   "type": "module",
   "description": "ID Stack — Professional ID Card Design & Batch Printing Software — 100% client-side",
   "license": "MIT",
@@ -36,6 +36,7 @@
     "@tauri-apps/api": "^2.12.5",
     "@tauri-apps/plugin-dialog": "^2.8.4",
     "@tauri-apps/plugin-fs": "^2.7.1",
+    "@tauri-apps/plugin-opener": "^2.7.3",
     "ag-psd": "^31.0.2",
     "buffer": "^6.0.3",
     "bwip-js": "^4.11.4",

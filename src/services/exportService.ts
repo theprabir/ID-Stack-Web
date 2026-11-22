@@ -164,6 +164,20 @@ function filtersFor(fileName: string): { name: string; extensions: string[] }[] 
   return [{ name: 'File', extensions: extension ? [extension] : ['*'] }];
 }
 
+/**
+ * File name at the end of a Windows/POSIX path.
+ * The save dialog may return a renamed target, so the export record must use
+ * what was actually written, not the suggested name (v0.7.6 fix: recent
+ * exports showed "sheet_print" even when the user saved "Class 5").
+ *
+ * @param path - Absolute path chosen in the dialog
+ * @returns Base name of the file
+ */
+export function baseNameOf(path: string): string {
+  const separator = Math.max(path.lastIndexOf('\\'), path.lastIndexOf('/'));
+  return separator >= 0 ? path.slice(separator + 1) : path;
+}
+
 /** Browser fallback: the historical anchor download to the Downloads folder */
 function downloadInBrowser(blob: Blob, fileName: string): void {
   const url = URL.createObjectURL(blob);
@@ -219,18 +233,19 @@ export async function saveExport(
     await invoke('allow_export_path', { path: target });
     await writeFile(target, new Uint8Array(await blob.arrayBuffer()));
 
+    const savedName = baseNameOf(target);
     rememberDirectory(target);
     remember({
       id: `${Date.now()}-${target}`,
-      fileName,
+      fileName: savedName,
       path: target,
       bytes: blob.size,
       savedAt: new Date().toISOString(),
       kind,
       status: 'saved',
     });
-    logMessage('info', `Saved export ${fileName} (${blob.size} bytes)`);
-    return { status: 'saved', path: target, fileName };
+    logMessage('info', `Saved export ${savedName} (${blob.size} bytes)`);
+    return { status: 'saved', path: target, fileName: savedName };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     logMessage('error', `Export failed (${fileName}): ${message}`);

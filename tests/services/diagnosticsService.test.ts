@@ -48,7 +48,7 @@ describe('diagnosticsService', () => {
     );
 
     const system = await zip.file('system.txt')!.async('string');
-    expect(system).toContain('appVersion: 0.7.5');
+    expect(system).toContain('appVersion: 0.7.6');
     expect(system).toContain('shellVersion: 0.7.5');
     expect(system).toContain('id-stack.log');
 

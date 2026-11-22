@@ -4,7 +4,14 @@ import { useUIStore, type ThemeId, type ThemeMode } from '@/stores/uiStore';
 import { Button, Label } from '@/components/ui';
 import { RecentExports } from '@/components/common/RecentExports';
 import { buildDiagnosticsArchive, getLogDirectory } from '@/services/diagnosticsService';
-import { revealExportPath, saveExport, type SaveExportResult } from '@/services/exportService';
+import {
+  clearRecentExports,
+  formatBytes,
+  revealExportPath,
+  saveExport,
+  type SaveExportResult,
+} from '@/services/exportService';
+import { getStorageOverview, type StorageOverview } from '@/services/storageService';
 import {
   Sun,
   Moon,
@@ -18,6 +25,9 @@ import {
   FolderOpen,
   FileArchive,
   Loader2,
+  HardDrive,
+  RefreshCw,
+  Trash2,
 } from 'lucide-react';
 
 /** One labelled settings section card */
@@ -230,6 +240,33 @@ export function SettingsPage(): JSX.Element {
   const [isBuildingDiagnostics, setIsBuildingDiagnostics] = useState(false);
   const [diagnosticsResult, setDiagnosticsResult] = useState<SaveExportResult | null>(null);
 
+  // --- Storage overview (v0.7.6) ----------------------------------------
+  const [storage, setStorage] = useState<StorageOverview | null>(null);
+  const [isMeasuring, setIsMeasuring] = useState(false);
+
+  const refreshStorage = useCallback(async () => {
+    setIsMeasuring(true);
+    try {
+      setStorage(await getStorageOverview());
+    } catch {
+      // A blocked/failed IndexedDB read must not leave the section spinning.
+      setStorage({
+        usageBytes: 0,
+        quotaBytes: 0,
+        localStorageBytes: 0,
+        fonts: { count: 0, bytes: 0 },
+        projects: { count: 0, bytes: 0 },
+        keyValue: { count: 0, bytes: 0 },
+      });
+    } finally {
+      setIsMeasuring(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshStorage();
+  }, [refreshStorage]);
+
   useEffect(() => {
     let active = true;
     void getLogDirectory().then((directory) => {
@@ -328,6 +365,91 @@ export function SettingsPage(): JSX.Element {
         description="Every file you saved, with the folder it went to."
       >
         <RecentExports />
+      </SettingsSection>
+
+      {/* Storage: what the app keeps on this PC (v0.7.6) */}
+      <SettingsSection
+        icon={HardDrive}
+        title="Storage"
+        description="Everything ID Stack stores locally, and how much room it uses."
+      >
+        <div className="space-y-3">
+          {storage ? (
+            <>
+              <div>
+                <div className="mb-1 flex items-center justify-between text-xs">
+                  <span className="font-medium">App storage</span>
+                  <span className="text-muted-foreground">
+                    {formatBytes(storage.usageBytes)}
+                    {storage.quotaBytes > 0 ? ` of ${formatBytes(storage.quotaBytes)}` : ''}
+                  </span>
+                </div>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-surface-card">
+                  <div
+                    className="h-full bg-primary"
+                    style={{
+                      width: `${Math.min(
+                        100,
+                        storage.quotaBytes > 0
+                          ? (storage.usageBytes / storage.quotaBytes) * 100
+                          : storage.usageBytes > 0
+                            ? 100
+                            : 0
+                      )}%`,
+                    }}
+                  />
+                </div>
+              </div>
+              <dl className="grid grid-cols-3 gap-2 text-center">
+                <div className="rounded-md border bg-surface-card px-2 py-1.5">
+                  <dt className="text-[11px] text-muted-foreground">Fonts</dt>
+                  <dd className="text-xs font-medium">{storage.fonts.count}</dd>
+                  <dd className="text-[10px] text-muted-foreground">
+                    {formatBytes(storage.fonts.bytes)}
+                  </dd>
+                </div>
+                <div className="rounded-md border bg-surface-card px-2 py-1.5">
+                  <dt className="text-[11px] text-muted-foreground">Projects</dt>
+                  <dd className="text-xs font-medium">{storage.projects.count}</dd>
+                  <dd className="text-[10px] text-muted-foreground">
+                    {formatBytes(storage.projects.bytes)}
+                  </dd>
+                </div>
+                <div className="rounded-md border bg-surface-card px-2 py-1.5">
+                  <dt className="text-[11px] text-muted-foreground">Settings</dt>
+                  <dd className="text-xs font-medium">{storage.keyValue.count}</dd>
+                  <dd className="text-[10px] text-muted-foreground">
+                    {formatBytes(storage.keyValue.bytes + storage.localStorageBytes)}
+                  </dd>
+                </div>
+              </dl>
+            </>
+          ) : (
+            <p className="text-xs text-muted-foreground">Measuring local storage…</p>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={() => void refreshStorage()} disabled={isMeasuring}>
+              <RefreshCw className={isMeasuring ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} aria-hidden="true" />
+              Refresh
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (!window.confirm('Clear the recent-export list? The saved files on disk are not deleted.')) return;
+                clearRecentExports();
+                void refreshStorage();
+              }}
+            >
+              <Trash2 className="h-4 w-4" aria-hidden="true" />
+              Clear recent exports
+            </Button>
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            Uploaded fonts and settings stay on this PC. Photos and Excel data are held in memory
+            for the current session only and are never uploaded.
+          </p>
+        </div>
       </SettingsSection>
 
       {/* Diagnostics: local logs, no telemetry (v0.7.5) */}

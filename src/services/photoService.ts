@@ -1,3 +1,4 @@
+import { rowKey } from '@/types/data';
 import type { PhotoRecord, PhotoMatchConfig, PhotoMatchResult, DataRow } from '@/types/data';
 import { generateId } from '@/utils/id';
 
@@ -55,7 +56,10 @@ export function readImageSize(file: File): Promise<{ width: number; height: numb
  * @param files - Files from input/drag-drop
  * @returns Loaded photo records
  */
-export async function loadPhotos(files: FileList | File[]): Promise<PhotoRecord[]> {
+export async function loadPhotos(
+  files: FileList | File[],
+  libraryId?: string
+): Promise<PhotoRecord[]> {
   const records: PhotoRecord[] = [];
   for (const file of Array.from(files)) {
     if (!isSupportedImage(file)) continue;
@@ -68,6 +72,7 @@ export async function loadPhotos(files: FileList | File[]): Promise<PhotoRecord[
       file,
       width,
       height,
+      libraryId,
     });
   }
   return records;
@@ -143,10 +148,15 @@ export function matchPhotos(
   photos: PhotoRecord[],
   config: PhotoMatchConfig
 ): PhotoMatchResult {
-  const assignments = new Map<number, PhotoRecord>();
+  const assignments = new Map<number | string, PhotoRecord>();
   const usedPhotoIds = new Set<string>();
 
-  const photoByKey = new Map(photos.map((photo) => [photo.baseName, photo]));
+  // First photo wins for a duplicated base name: silently overwriting would
+  // make one of two same-named people unreachable (the UI flags the clash).
+  const photoByKey = new Map<string, PhotoRecord>();
+  for (const photo of photos) {
+    if (!photoByKey.has(photo.baseName)) photoByKey.set(photo.baseName, photo);
+  }
   /** Fuzzy index for lenient fallback matching (spaces/underscores/case) */
   const fuzzyByKey = new Map<string, PhotoRecord>();
   for (const photo of photos) {
@@ -156,11 +166,11 @@ export function matchPhotos(
 
   if (config.mode === 'manual') {
     for (const row of rows) {
-      const photoId = config.manualAssignments?.[row.rowIndex];
+      const photoId = config.manualAssignments?.[String(rowKey(row))];
       if (!photoId) continue;
       const photo = photos.find((candidate) => candidate.id === photoId);
       if (photo) {
-        assignments.set(row.rowIndex, photo);
+        assignments.set(rowKey(row), photo);
         usedPhotoIds.add(photo.id);
       }
     }
@@ -171,7 +181,7 @@ export function matchPhotos(
       if (!rawValue) continue;
       const photo = findPhotoLenient(rawValue, photoByKey, fuzzyByKey, usedPhotoIds);
       if (photo) {
-        assignments.set(row.rowIndex, photo);
+        assignments.set(rowKey(row), photo);
         usedPhotoIds.add(photo.id);
       }
     }
@@ -182,7 +192,7 @@ export function matchPhotos(
         if (!value) continue;
         const photo = findPhotoLenient(value, photoByKey, fuzzyByKey, usedPhotoIds);
         if (photo) {
-          assignments.set(row.rowIndex, photo);
+          assignments.set(rowKey(row), photo);
           usedPhotoIds.add(photo.id);
           break;
         }
@@ -191,8 +201,8 @@ export function matchPhotos(
   }
 
   const unmatchedRowIndexes = rows
-    .map((row) => row.rowIndex)
-    .filter((rowIndex) => !assignments.has(rowIndex));
+    .filter((row) => !assignments.has(rowKey(row)))
+    .map((row) => row.rowIndex);
 
   const unusedPhotoNames = photos
     .filter((photo) => !usedPhotoIds.has(photo.id))

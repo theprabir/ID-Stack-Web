@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import type { DataRow } from '@/types/data';
 import { usePsdStore } from '@/stores/psdStore';
 import { useDataStore, PREVIEW_ROW_COUNT } from '@/stores/dataStore';
-import { matchPhotos } from '@/services/photoService';
 import { getPreview } from '@/services/excelService';
 import {
   PsdUploader,
@@ -62,17 +61,14 @@ export function IdStudioPage(): JSX.Element {
   const excelData = useDataStore((state) => state.excelData);
   const mappings = useDataStore((state) => state.mappings);
   const revalidate = useDataStore((state) => state.revalidate);
-  const photoMatchConfig = useDataStore((state) => state.photoMatchConfig);
-  const photos = useDataStore((state) => state.photos);
+  const photoMatchResult = useDataStore((state) => state.photoMatchResult);
   const [step, setStep] = useState(1);
   const [selectedRowIndex, setSelectedRowIndex] = useState<number | null>(null);
   const [previewSide, setPreviewSide] = useState<'front' | 'back'>('front');
 
-  // Photo matching derived from the shared data store.
-  const photoMatches = useMemo(
-    () => (excelData ? matchPhotos(excelData.rows, photos, photoMatchConfig) : null),
-    [excelData, photos, photoMatchConfig]
-  );
+  // Photo matching is computed per source in the store (v0.7.6), so two
+  // classes with the same pupil names never share an assignment.
+  const photoMatches = excelData ? photoMatchResult : null;
 
   const selectedRow: DataRow | null =
     selectedRowIndex !== null

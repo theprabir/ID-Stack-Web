@@ -2,6 +2,67 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.7.6] - 2026-11-22
+
+### Added
+
+- **Multiple files and multi-sheet workbooks (one PDF each, one ZIP).** Every
+  imported file and every non-empty sheet is now its own data source. Generate
+  runs each source separately with the same mappings and produces one PDF per
+  source, named exactly after the sheet (multi-sheet workbooks) or after the
+  file (single-sheet files: `class5.xlsx` → `Class 5.pdf`). All PDFs are
+  delivered in **one** ZIP; split parts keep their `_partNoftotal` suffix.
+  Cards mode keeps a single source at the ZIP root and gives each source its
+  own folder when there are several.
+- **Column-mismatch gate.** A file whose columns do not match the first source
+  is listed with the exact file/sheet name and reason, and generation is
+  blocked until that file is removed. Column order and letter case are ignored
+  because mapping is by name. Removing the blocking file re-evaluates the rest
+  automatically.
+- **ZIP photo libraries with per-source mapping.** Images and any number of ZIP
+  archives can be dropped together; every ZIP becomes its own photo library
+  (nested folders flattened, `__MACOSX`/`Thumbs.db`/non-images skipped and
+  reported). Each data source is mapped to its own library — automatically on
+  an exact normalised name match (`Class 5 Photos.zip` → `Class 5`), otherwise
+  from a dropdown — so two classes may both contain `ravi.jpg` and row 3 without
+  colliding. The previous loose-image flow is unchanged.
+- **Collision-safe output names.** Duplicate names produced by identical file
+  and sheet names, or by a naming template without `{Row}`, get ` (2)`, ` (3)`
+  suffixes instead of silently overwriting each other inside the ZIP.
+- **Settings → Storage.** Shows the app's local footprint (origin usage/quota,
+  uploaded fonts, saved projects, settings/localStorage) with a refresh and a
+  confirmed **Clear recent exports** action. Nothing leaves the PC.
+
+### Changed
+
+- **Generate defaults to imposed-sheet PDF.** Format defaults to **PDF** and
+  output layout to **Sheets (imposed)**, matching the print workflow; JPG and
+  per-card output remain selectable.
+- **The save dialog opens automatically when generation finishes** (single
+  output). The manual **Save …** button remains for re-saving or after
+  cancelling the dialog.
+- **External links open in the default browser** in the desktop build via
+  `tauri-plugin-opener`; `target="_blank"` links previously did nothing in the
+  Tauri webview. The browser dev server keeps normal tab behaviour.
+
+### Fixed
+
+- **Recent exports showed `sheet_print` instead of the chosen name.** The
+  export record and dialog result now use the actual basename written to disk,
+  so a file saved as `Class 5.pdf` is listed as `Class 5.pdf` (the path was
+  already correct).
+- **Duplicate photo names overwrote each other silently** in the matching
+  index; the first photo now wins and libraries flag ambiguous names for a
+  manual pick.
+
+### Tests
+
+- `v076.test.ts` (new) — per-sheet parsing and source-scoped row identity,
+  single-sheet file naming, order/case-insensitive column signatures,
+  collision suffixes, archive folder sanitising, ZIP extraction with skipped
+  metadata, exact-only smart mapping, and two classes sharing pupil names and
+  row indexes without cross-assignment.
+
 ## [0.7.5] - 2026-11-21
 
 ### Added

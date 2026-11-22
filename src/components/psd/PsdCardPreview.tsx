@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Eye } from 'lucide-react';
 import type { SideType } from '@/types/psd';
-import type { DataRow } from '@/types/data';
+import { rowKey, type DataRow } from '@/types/data';
 import { usePsdStore } from '@/stores/psdStore';
 import { useDataStore } from '@/stores/dataStore';
 import { compositeDesign } from '@/services/psdCompositeService';
@@ -41,7 +41,7 @@ export function PsdCardPreview({
 
     const render = async (): Promise<void> => {
       try {
-        const photo = row ? photoMatchResult?.assignments.get(row.rowIndex) : undefined;
+        const photo = row ? photoMatchResult?.assignments.get(rowKey(row)) : undefined;
         const rendered = await compositeDesign(design, {
           placeholders: placeholders.filter((placeholder) => placeholder.side === side),
           mappings,

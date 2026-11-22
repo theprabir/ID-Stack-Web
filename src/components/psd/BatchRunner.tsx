@@ -2,9 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Play, Pause, Square, Download, Loader2, Grid3x3, FileStack, FolderOpen } from 'lucide-react';
 import type { PsdProject } from '@/types/psd';
 import type { ExcelData, PhotoMatchResult, DataRow } from '@/types/data';
+import { rowKey } from '@/types/data';
 import { usePsdStore } from '@/stores/psdStore';
 import { useDataStore } from '@/stores/dataStore';
-import { runBatch, type BatchOptions, type BatchState } from '@/services/batchService';
+import {
+  runBatchSources,
+  type BatchOptions,
+  type BatchSource,
+  type BatchState,
+} from '@/services/batchService';
 import {
   artworkSizePt,
   computeSheetLayout,
@@ -54,15 +60,35 @@ export function BatchRunner({
   const setBatchControl = usePsdStore((state) => state.setBatchControl);
   const setBatchState = usePsdStore((state) => state.setBatchState);
   const mappings = useDataStore((state) => state.mappings);
+  const sources = useDataStore((state) => state.sources);
+  const photoMatchBySource = useDataStore((state) => state.photoMatchBySource);
   const imposition = usePsdStore((state) => state.impositionSettings);
   const setImpositionSettings = usePsdStore((state) => state.setImpositionSettings);
   const restoreImpositionSettings = usePsdStore((state) => state.restoreImpositionSettings);
 
+  // Usable sources (a column-mismatched file blocks the whole run, v0.7.6).
+  const validSources = useMemo(
+    () => sources.filter((source) => !source.error && source.rows.length > 0),
+    [sources]
+  );
+  const blockedSources = useMemo(() => sources.filter((source) => source.error), [sources]);
+  const totalSourceRows = useMemo(
+    () => validSources.reduce((sum, source) => sum + source.rows.length, 0),
+    [validSources]
+  );
+
   // --- Missing-photo controls (v0.7.2) -----------------------------------
-  // Single source of truth: records with no matched photo (toggle + CSV).
+  // Single source of truth: records with no matched photo (toggle + CSV),
+  // aggregated across every data source.
   const rowsMissingPhoto = useMemo(
-    () => excelData.rows.filter((row) => !photoMatches.assignments.has(row.rowIndex)),
-    [excelData.rows, photoMatches]
+    () =>
+      validSources.flatMap((source) =>
+        source.rows.filter((row) => {
+          const match = photoMatchBySource[source.id] ?? photoMatches;
+          return !match.assignments.has(rowKey(row));
+        })
+      ),
+    [validSources, photoMatchBySource, photoMatches]
   );
 
   // Defaults to ENABLED on every visit to Step 4; a change the user makes
@@ -77,18 +103,21 @@ export function BatchRunner({
   // Records this run will actually produce.
   const rowsToProcess = useMemo(
     () =>
-      includeMissingPhotos
-        ? excelData.rows
-        : excelData.rows.filter((row) => photoMatches.assignments.has(row.rowIndex)),
-    [includeMissingPhotos, excelData.rows, photoMatches]
+      validSources.flatMap((source) => {
+        const match = photoMatchBySource[source.id] ?? photoMatches;
+        return includeMissingPhotos
+          ? source.rows
+          : source.rows.filter((row) => match.assignments.has(rowKey(row)));
+      }),
+    [includeMissingPhotos, validSources, photoMatchBySource, photoMatches]
   );
 
   const [options, setOptions] = useState<LocalBatchOptions>({
-    format: 'jpg',
+    format: 'pdf',
     quality: 0.92,
     naming: '{Name}_{Row}',
     sides: 'both',
-    outputMode: 'cards',
+    outputMode: 'sheets',
   });
 
   // Restore persisted imposition settings once at mount.
@@ -98,7 +127,6 @@ export function BatchRunner({
 
   /** Finished files waiting to be saved: one PDF, a ZIP, or numbered parts */
   const [output, setOutput] = useState<{ blob: Blob; fileName: string }[] | null>(null);
-  const [isZipping, setIsZipping] = useState(false);
   /** Outcome of the last native save, for the "Open folder" affordance */
   const [lastSave, setLastSave] = useState<{
     fileName: string;
@@ -196,7 +224,14 @@ export function BatchRunner({
   }>({ front: [], back: [] });
   const [isRenderingPreview, setIsRenderingPreview] = useState(false);
 
-  const previewRows = useMemo<DataRow[]>(() => rowsToProcess.slice(0, 8), [rowsToProcess]);
+  // The preview shows the active source, so its photo matches and row keys
+  // line up; the sheet counts below still cover the whole multi-source job.
+  const previewRows = useMemo<DataRow[]>(() => {
+    const rows = includeMissingPhotos
+      ? excelData.rows
+      : excelData.rows.filter((row) => photoMatches.assignments.has(rowKey(row)));
+    return rows.slice(0, 8);
+  }, [includeMissingPhotos, excelData.rows, photoMatches]);
   const previewRowKey = useMemo(
     () => previewRows.map((row) => row.rowIndex).join(','),
     [previewRows]
@@ -214,7 +249,7 @@ export function BatchRunner({
         const front: HTMLCanvasElement[] = [];
         const back: HTMLCanvasElement[] = [];
         for (const row of previewRows) {
-          const photo = photoMatches.assignments.get(row.rowIndex);
+          const photo = photoMatches.assignments.get(rowKey(row));
           if (project.front) {
             front.push(
               await compositeDesign(project.front, {
@@ -259,21 +294,37 @@ export function BatchRunner({
     if (!layout) return null;
     const hasFront = Boolean(project.front) && options.sides !== 'back';
     const hasBack = Boolean(project.back) && options.sides !== 'front';
-    const counts = countJobSheets(
-      layout,
-      hasFront ? rowsToProcess.length : 0,
-      hasBack ? rowsToProcess.length : 0,
-      imposition.arrangement
-    );
+    // Each source is its own job (and its own PDF), so pages are counted per
+    // source and summed — a combined row count would undercount the partial
+    // sheets at every source boundary.
+    const counts = { frontSheets: 0, backSheets: 0, total: 0 };
+    for (const source of validSources) {
+      const match = photoMatchBySource[source.id] ?? photoMatches;
+      const rows = includeMissingPhotos
+        ? source.rows.length
+        : source.rows.filter((row) => match.assignments.has(rowKey(row))).length;
+      const sourceCounts = countJobSheets(
+        layout,
+        hasFront ? rows : 0,
+        hasBack ? rows : 0,
+        imposition.arrangement
+      );
+      counts.frontSheets += sourceCounts.frontSheets;
+      counts.backSheets += sourceCounts.backSheets;
+      counts.total += sourceCounts.total;
+    }
     return { layout, counts, hasFront, hasBack };
   }, [
     isPreviewActive,
     imposition,
     exactCardSizePt,
-    rowsToProcess.length,
     project.front,
     project.back,
     options.sides,
+    validSources,
+    includeMissingPhotos,
+    photoMatchBySource,
+    photoMatches,
   ]);
 
   const sheetSummary = useMemo(() => {
@@ -297,71 +348,6 @@ export function BatchRunner({
     [setBatchControl]
   );
 
-  const start = useCallback(async () => {
-    setOutput(null);
-    setLastSave(null);
-    setControl('running');
-    setBatchState({
-      control: 'running',
-      current: 0,
-      total: rowsToProcess.length,
-      etaSeconds: 0,
-      errors: [],
-    });
-
-    const batchOptions: BatchOptions = { ...options, imposition };
-    logMessage('info', `Batch started: ${rowsToProcess.length} record(s)`);
-    // Stop Windows from sleeping mid-run; the screen may still turn off.
-    void setBatchActive(true);
-    try {
-      await runBatch(
-        project,
-        { ...excelData, rows: rowsToProcess },
-        mappings,
-        photoMatches,
-        batchOptions,
-        () => controlRef.current,
-        {
-          onProgress: (state: BatchState) => {
-            setBatchState(state);
-            if (state.control !== 'running') setControl(state.control);
-          },
-          onComplete: (result) => {
-            setIsZipping(false);
-            if (result) {
-              // A very large sheet job arrives as several numbered PDFs; a
-              // normal job arrives as the single file (or ZIP) in `blob`.
-              setOutput(result.parts ?? [{ blob: result.blob, fileName: result.fileName }]);
-              logMessage('info', `Batch complete: ${result.fileName}`);
-            }
-            setControl('done');
-          },
-        }
-      );
-    } finally {
-      void setBatchActive(false);
-    }
-  }, [
-    project,
-    excelData,
-    rowsToProcess,
-    mappings,
-    photoMatches,
-    options,
-    imposition,
-    output,
-    setBatchState,
-    setControl,
-  ]);
-
-  /** Export the records with no matched photo as a UTF-8 CSV (v0.7.2). */
-  const downloadMissingPhotos = useCallback(() => {
-    if (rowsMissingPhoto.length === 0) return;
-    const csv = toCsv(getColumnNames(excelData), rowsMissingPhoto);
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-    void saveExport(blob, 'missing-photos.csv', 'csv');
-  }, [excelData, rowsMissingPhoto]);
-
   /** Save one finished file through the native dialog (v0.7.5) */
   const saveFile = useCallback(async (file: { blob: Blob; fileName: string }) => {
     setSavingFile(file.fileName);
@@ -377,6 +363,118 @@ export function BatchRunner({
       setSavingFile(null);
     }
   }, []);
+
+  const start = useCallback(async () => {
+    setOutput(null);
+    setLastSave(null);
+    setControl('running');
+    setBatchState({
+      control: 'running',
+      current: 0,
+      total: rowsToProcess.length,
+      etaSeconds: 0,
+      errors: [],
+    });
+
+    const batchOptions: BatchOptions = { ...options, imposition };
+    // One run per source: identical columns and mappings, separate photo
+    // libraries, separate output names (v0.7.6).
+    const batchSources: BatchSource[] = validSources.map((source) => {
+      const match = photoMatchBySource[source.id] ?? {
+        assignments: new Map(),
+        unmatchedRowIndexes: source.rows.map((row) => row.rowIndex),
+        unusedPhotoNames: [],
+      };
+      const rows = includeMissingPhotos
+        ? source.rows
+        : source.rows.filter((row) => match.assignments.has(rowKey(row)));
+      return {
+        id: source.id,
+        label: source.label,
+        baseName: source.baseName,
+        data: { columns: source.columns, rows, fileName: source.label },
+        photoMatches: match,
+      };
+    });
+    logMessage(
+      'info',
+      `Batch started: ${rowsToProcess.length} record(s) from ${batchSources.length} source(s)`
+    );
+    // Stop Windows from sleeping mid-run; the screen may still turn off.
+    void setBatchActive(true);
+    try {
+      await runBatchSources(
+        project,
+        batchSources,
+        mappings,
+        batchOptions,
+        () => controlRef.current,
+        {
+          onProgress: (state: BatchState) => {
+            setBatchState(state);
+            if (state.control !== 'running') setControl(state.control);
+          },
+          onComplete: (result) => {
+            if (result) {
+              // A very large sheet job arrives as several numbered PDFs; a
+              // normal job arrives as the single file (or ZIP) in `blob`.
+              const files = result.parts ?? [
+                { blob: result.blob, fileName: result.fileName },
+              ];
+              setOutput(files);
+              // v0.7.6: open the save dialog automatically when generation
+              // finishes. The manual Save button stays for re-saving.
+              if (files.length === 1 && files[0]) void saveFile(files[0]);
+              logMessage('info', `Batch complete: ${result.fileName}`);
+            }
+            setControl('done');
+          },
+        }
+      );
+    } catch (error) {
+      // A job-level failure (layout/writer setup) must end the run visibly
+      // instead of leaving the panel stuck on "running".
+      const message = error instanceof Error ? error.message : 'Unknown generation error';
+      logMessage('error', `Batch failed: ${message}`);
+      setBatchState({
+        control: 'done',
+        current: 0,
+        total: rowsToProcess.length,
+        etaSeconds: 0,
+        errors: [{ rowIndex: -1, message }],
+      });
+      setControl('done');
+    } finally {
+      void setBatchActive(false);
+    }
+  }, [
+    project,
+    rowsToProcess,
+    validSources,
+    photoMatchBySource,
+    includeMissingPhotos,
+    mappings,
+    options,
+    imposition,
+    saveFile,
+    setBatchState,
+    setControl,
+  ]);
+
+  /** Export the records with no matched photo as a UTF-8 CSV (v0.7.2). */
+  const downloadMissingPhotos = useCallback(() => {
+    if (rowsMissingPhoto.length === 0) return;
+    const columns = ['Source', ...(validSources[0]?.columns ?? getColumnNames(excelData))];
+    const rows = validSources.flatMap((source) => {
+      const match = photoMatchBySource[source.id] ?? photoMatches;
+      return source.rows
+        .filter((row) => !match.assignments.has(rowKey(row)))
+        .map((row) => ({ rowIndex: row.rowIndex, values: { Source: source.label, ...row.values } }));
+    });
+    const csv = toCsv(columns, rows);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    void saveExport(blob, 'missing-photos.csv', 'csv');
+  }, [excelData, rowsMissingPhoto, validSources, photoMatchBySource, photoMatches]);
 
   const isRunning = control === 'running' || control === 'paused';
   const progress = batchState
@@ -405,6 +503,23 @@ export function BatchRunner({
       <div className="themed-scrollbar grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto pr-1 lg:grid-cols-2">
         {/* Options + progress (left) */}
         <div className="flex min-w-0 flex-col">
+          {blockedSources.length > 0 && (
+            <div
+              role="alert"
+              className="mb-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+            >
+              <p className="font-medium">Fix the column mismatch before generating.</p>
+              <ul className="mt-1 space-y-0.5">
+                {blockedSources.map((source) => (
+                  <li key={source.id}>{source.error}</li>
+                ))}
+              </ul>
+              <p className="mt-1 text-destructive/80">
+                Remove the listed file on Step 1 — the other sources are not processed until it is
+                gone.
+              </p>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-2">
             <div>
               <Label htmlFor="batch-format" className="mb-1 block text-xs text-muted-foreground">
@@ -503,7 +618,7 @@ export function BatchRunner({
                 Include records without photos
               </label>
               <span className="shrink-0 text-[11px] text-muted-foreground">
-                {rowsMissingPhoto.length} of {excelData.rows.length} missing
+                {rowsMissingPhoto.length} of {totalSourceRows} missing
               </span>
             </div>
             <p className="mt-1.5 text-[11px] text-muted-foreground">
@@ -648,7 +763,6 @@ export function BatchRunner({
             </div>
             <p className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
               {control === 'paused' && <Pause className="h-3 w-3" aria-hidden="true" />}
-              {isZipping && <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />}
               {batchState.current} / {batchState.total} cards
               {batchState.etaSeconds > 1 && control === 'running' && (
                 <>
@@ -663,7 +777,9 @@ export function BatchRunner({
               <ul className="themed-scrollbar mt-1 max-h-20 overflow-auto rounded border bg-surface-card p-1.5 text-xs text-destructive">
                 {batchState.errors.slice(0, 10).map((error, index) => (
                   <li key={`${error.rowIndex}-${index}`}>
-                    Row {error.rowIndex + 1}: {error.message}
+                    {error.source ? `${error.source} — ` : ''}
+                    {error.rowIndex >= 0 ? `Row ${error.rowIndex + 1}: ` : ''}
+                    {error.message}
                   </li>
                 ))}
                 {batchState.errors.length > 10 && (
@@ -711,7 +827,7 @@ export function BatchRunner({
             variant="default"
             className="w-full"
             onClick={() => void start()}
-            disabled={rowsToProcess.length === 0}
+            disabled={rowsToProcess.length === 0 || blockedSources.length > 0}
           >
             <Play className="h-4 w-4" aria-hidden="true" />
             Generate {rowsToProcess.length} card(s)

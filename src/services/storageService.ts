@@ -139,3 +139,71 @@ export async function loadPsdProjectRecord(id: string): Promise<PsdProjectRecord
   const record = await getDatabase().psdProjects.get(id);
   return record ?? null;
 }
+
+/** Local storage usage broken down by store (Settings → Storage, v0.7.6) */
+export interface StorageOverview {
+  /** Bytes used by the whole origin, when the browser reports it */
+  usageBytes: number;
+  /** Origin quota, when reported */
+  quotaBytes: number;
+  /** UTF-16 size of all localStorage entries */
+  localStorageBytes: number;
+  fonts: { count: number; bytes: number };
+  projects: { count: number; bytes: number };
+  keyValue: { count: number; bytes: number };
+}
+
+/** Rough byte size of a structured-clone value (JSON length, UTF-16) */
+function roughBytes(value: unknown): number {
+  try {
+    return JSON.stringify(value)?.length ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Measure what ID Stack keeps on this PC. Everything is local; this exists so
+ * a user can see (and trim) the app's footprint without guessing.
+ *
+ * @returns Usage overview (zeros when a measurement is unavailable)
+ */
+export async function getStorageOverview(): Promise<StorageOverview> {
+  const database = getDatabase();
+  const [fontRecords, projectRecords, keyValueRecords, estimate] = await Promise.all([
+    database.fonts.toArray(),
+    database.psdProjects.toArray(),
+    database.keyValue.toArray(),
+    typeof navigator !== 'undefined' && navigator.storage?.estimate
+      ? navigator.storage.estimate()
+      : Promise.resolve({ usage: 0, quota: 0 } as StorageEstimate),
+  ]);
+
+  let localStorageBytes = 0;
+  try {
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index) ?? '';
+      localStorageBytes += (key.length + (localStorage.getItem(key)?.length ?? 0)) * 2;
+    }
+  } catch {
+    // A blocked localStorage simply reports zero.
+  }
+
+  return {
+    usageBytes: estimate.usage ?? 0,
+    quotaBytes: estimate.quota ?? 0,
+    localStorageBytes,
+    fonts: {
+      count: fontRecords.length,
+      bytes: fontRecords.reduce((sum, record) => sum + (record.buffer?.byteLength ?? 0), 0),
+    },
+    projects: {
+      count: projectRecords.length,
+      bytes: projectRecords.reduce((sum, record) => sum + roughBytes(record), 0),
+    },
+    keyValue: {
+      count: keyValueRecords.length,
+      bytes: keyValueRecords.reduce((sum, record) => sum + roughBytes(record), 0),
+    },
+  };
+}
