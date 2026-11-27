@@ -105,13 +105,29 @@ export function fuzzyMatchKey(value: string): string {
 }
 
 /**
+ * Numeric key for a purely numeric photo base name, or null.
+ * "7.jpg" → "7", "007.jpg" → "7" — so a serial column ("Sl no.") matches
+ * serially numbered photo files even when one side is zero-padded.
+ *
+ * @param value - Cell value or photo file name
+ * @returns Canonical number as a string, or null when not purely numeric
+ */
+function numericMatchKey(value: string): string | null {
+  const base = normaliseMatchKey(value);
+  if (!/^\d+$/.test(base)) return null;
+  return String(Number(base));
+}
+
+/**
  * Find a photo for a raw cell/file-name value with progressive leniency:
  * 1. exact base-name match ("john smith" === "john smith.jpg")
- * 2. fuzzy match ignoring spaces/underscores/hyphens/dots ("john_smith"
+ * 2. numeric match ("01" matches "1.jpg" and "001.jpg")
+ * 3. fuzzy match ignoring spaces/underscores/hyphens/dots ("john_smith"
  *    matches "John Smith", "john  smith" matches "johnsmith.jpg")
  *
  * @param value - Raw cell value or file name
  * @param photoByKey - Exact base-name index
+ * @param numericByKey - Index of purely numeric photo names
  * @param fuzzyByKey - Fuzzy normalised index
  * @param usedPhotoIds - Photo ids already assigned (skipped)
  * @returns Matched photo or undefined
@@ -119,11 +135,16 @@ export function fuzzyMatchKey(value: string): string {
 function findPhotoLenient(
   value: string,
   photoByKey: Map<string, PhotoRecord>,
+  numericByKey: Map<string, PhotoRecord>,
   fuzzyByKey: Map<string, PhotoRecord>,
   usedPhotoIds: Set<string>
 ): PhotoRecord | undefined {
   const exact = photoByKey.get(normaliseMatchKey(value));
   if (exact && !usedPhotoIds.has(exact.id)) return exact;
+
+  const numericKey = numericMatchKey(value);
+  const numeric = numericKey ? numericByKey.get(numericKey) : undefined;
+  if (numeric && !usedPhotoIds.has(numeric.id)) return numeric;
 
   const fuzzy = fuzzyByKey.get(fuzzyMatchKey(value));
   if (fuzzy && !usedPhotoIds.has(fuzzy.id)) return fuzzy;
@@ -135,7 +156,8 @@ function findPhotoLenient(
  * Match photos to data rows according to the configured strategy.
  *
  * - 'filename': row's first mapped/available value that equals a photo base name
- * - 'column': row cell in `config.columnName` holds the photo file name
+ * - 'column': row cell in `config.columnName` holds the photo file name (a
+ *   serial number matches serially numbered photos, zero-padding included)
  * - 'manual': explicit rowIndex → photoId assignments
  *
  * @param rows - Data rows to match
@@ -163,6 +185,12 @@ export function matchPhotos(
     const key = fuzzyMatchKey(photo.fileName);
     if (key && !fuzzyByKey.has(key)) fuzzyByKey.set(key, photo);
   }
+  /** Numeric index so a serial column can match "1.jpg", "01.jpg", … */
+  const numericByKey = new Map<string, PhotoRecord>();
+  for (const photo of photos) {
+    const key = numericMatchKey(photo.baseName);
+    if (key && !numericByKey.has(key)) numericByKey.set(key, photo);
+  }
 
   if (config.mode === 'manual') {
     for (const row of rows) {
@@ -179,7 +207,7 @@ export function matchPhotos(
     for (const row of rows) {
       const rawValue = row.values[columnName] ?? '';
       if (!rawValue) continue;
-      const photo = findPhotoLenient(rawValue, photoByKey, fuzzyByKey, usedPhotoIds);
+      const photo = findPhotoLenient(rawValue, photoByKey, numericByKey, fuzzyByKey, usedPhotoIds);
       if (photo) {
         assignments.set(rowKey(row), photo);
         usedPhotoIds.add(photo.id);
@@ -190,7 +218,7 @@ export function matchPhotos(
     for (const row of rows) {
       for (const value of Object.values(row.values)) {
         if (!value) continue;
-        const photo = findPhotoLenient(value, photoByKey, fuzzyByKey, usedPhotoIds);
+        const photo = findPhotoLenient(value, photoByKey, numericByKey, fuzzyByKey, usedPhotoIds);
         if (photo) {
           assignments.set(rowKey(row), photo);
           usedPhotoIds.add(photo.id);

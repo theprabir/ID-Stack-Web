@@ -87,8 +87,10 @@ let nextId = 1;
 let workerBroken = false;
 /** Cached pool size so every request agrees on it */
 let poolSizeCache = 0;
-/** Last primed plate message, replayed to workers created after priming */
-let pendingPlate: PrimePlateRequest | null = null;
+/** Primed plate messages, replayed to workers created after priming */
+const pendingPlates: PrimePlateRequest[] = [];
+/** Plates to keep primed (front and back, with room for a design change) */
+const MAX_PLATES = 4;
 
 /** Per-request watchdog: a wedged worker must not stall a whole job */
 const REQUEST_TIMEOUT_MS = 60_000;
@@ -165,9 +167,9 @@ function createWorker(slot: Slot): boolean {
       dispatch();
     };
     slot.worker = worker;
-    // A worker created after priming still needs the batch's plate. Posting it
-    // here happens before any request can be dispatched to this worker.
-    if (pendingPlate) worker.postMessage(pendingPlate);
+    // A worker created after priming still needs the batch's plates. Posting
+    // them here happens before any request can be dispatched to this worker.
+    for (const message of pendingPlates) worker.postMessage(message);
     return true;
   } catch {
     return false;
@@ -358,8 +360,12 @@ export function primeEncodePlate(plateId: string, rgba: Uint8ClampedArray): void
   const buffer = whole
     ? (rgba.buffer as ArrayBuffer)
     : (new Uint8ClampedArray(rgba).buffer as ArrayBuffer);
-  pendingPlate = { type: 'prime-plate', plateId, rgba: buffer };
-  for (const slot of slots) slot.worker.postMessage(pendingPlate);
+  const message: PrimePlateRequest = { type: 'prime-plate', plateId, rgba: buffer };
+  const existing = pendingPlates.findIndex((entry) => entry.plateId === plateId);
+  if (existing >= 0) pendingPlates.splice(existing, 1);
+  pendingPlates.push(message);
+  while (pendingPlates.length > MAX_PLATES) pendingPlates.shift();
+  for (const slot of slots) slot.worker.postMessage(message);
 }
 
 /**

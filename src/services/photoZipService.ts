@@ -185,13 +185,32 @@ export async function extractPhotoLibrary(
 }
 
 /**
- * Suggest a 1:1 mapping from libraries to data sources using exact normalised
- * name matches only. A key that matches more than one source or library is
- * left for the user, never guessed.
+ * Last number in a normalised key: "employeedata1" → "1", "class5" → "5".
+ * Leading zeros are dropped so "data_01" and "photos_1" agree.
+ *
+ * @param key - Normalised source/library key
+ * @returns The serial number as a string, or null when there is none
+ */
+function serialSuffix(key: string): string | null {
+  const matches = key.match(/\d+/g);
+  const last = matches?.[matches.length - 1];
+  if (!last) return null;
+  return String(Number(last));
+}
+
+/**
+ * Suggest a 1:1 mapping from libraries to data sources.
+ *
+ * Two passes, both refusing to guess between several candidates:
+ * 1. exact normalised name ("Class 5 Photos.zip" ↔ "Class 5.xlsx");
+ * 2. the same serial number, which is how a multi-class hand-over is usually
+ *    named ("Employee_data_1.xlsx" ↔ "employee_photo_1.zip"). Without this
+ *    pass a batch of numbered files and numbered ZIPs left EVERY source with
+ *    no photos, so no photo column matched anything.
  *
  * @param sources - Imported data sources
  * @param libraries - Imported photo libraries
- * @returns sourceId → libraryId for the unambiguous exact matches
+ * @returns sourceId → libraryId for the unambiguous matches
  */
 export function autoMapLibraries(
   sources: ExcelSource[],
@@ -231,6 +250,29 @@ export function autoMapLibraries(
     if (byLibrary.get(libraryId)?.size === 1) {
       mapping[sourceId] = libraryId;
     }
+  }
+
+  // Second pass: pair by serial number. A number shared by two libraries (or
+  // two sources) stays unassigned for the user to resolve.
+  const claimed = new Set(Object.values(mapping));
+  const librariesBySerial = new Map<string, string[]>();
+  for (const { library } of libraryKeys) {
+    if (claimed.has(library.id)) continue;
+    const serial = serialSuffix(normalizeLibraryKey(library.name));
+    if (!serial) continue;
+    librariesBySerial.set(serial, [...(librariesBySerial.get(serial) ?? []), library.id]);
+  }
+  for (const source of sources) {
+    if (source.error || mapping[source.id]) continue;
+    const serial =
+      serialSuffix(normalizeLibraryKey(source.baseName)) ??
+      serialSuffix(normalizeLibraryKey(source.fileName));
+    if (!serial) continue;
+    const candidates = (librariesBySerial.get(serial) ?? []).filter((id) => !claimed.has(id));
+    if (candidates.length !== 1) continue;
+    const libraryId = candidates[0]!;
+    mapping[source.id] = libraryId;
+    claimed.add(libraryId);
   }
 
   return mapping;

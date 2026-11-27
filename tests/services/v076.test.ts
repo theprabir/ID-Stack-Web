@@ -155,6 +155,38 @@ describe('v0.7.6 — photo libraries and smart mapping', () => {
     expect(autoMapLibraries(sources, libraries)).toEqual({ s1: 'l1', s2: 'l2' });
   });
 
+  it('pairs numbered data files with numbered photo archives (v0.7.9)', () => {
+    const sources = [
+      makeSource({ id: 's1', baseName: 'Employee_data_1', fileName: 'Employee_data_1.xlsx' }),
+      makeSource({ id: 's2', baseName: 'Employee_data_2', fileName: 'Employee_data_2.xlsx' }),
+      makeSource({ id: 's3', baseName: 'Employee_data_3', fileName: 'Employee_data_3.xlsx' }),
+    ];
+    const libraries: PhotoLibrary[] = [
+      { id: 'l1', kind: 'zip', name: 'employee_photo_1.zip', photos: [] },
+      { id: 'l2', kind: 'zip', name: 'employee_photo_2.zip', photos: [] },
+      { id: 'l3', kind: 'zip', name: 'employee_photo_3.zip', photos: [] },
+    ];
+
+    // The names share no words, only the serial number — which is exactly how
+    // a multi-class hand-over is named.
+    expect(autoMapLibraries(sources, libraries)).toEqual({ s1: 'l1', s2: 'l2', s3: 'l3' });
+  });
+
+  it('pairs zero-padded serials and refuses ambiguous numbers', () => {
+    const sources = [
+      makeSource({ id: 's1', baseName: 'class_01', fileName: 'class_01.xlsx' }),
+      makeSource({ id: 's2', baseName: 'class_02', fileName: 'class_02.xlsx' }),
+    ];
+    const libraries: PhotoLibrary[] = [
+      { id: 'l1', kind: 'zip', name: 'photos-1.zip', photos: [] },
+      // Two archives with the same serial: the user must choose.
+      { id: 'l2a', kind: 'zip', name: 'backup-2.zip', photos: [] },
+      { id: 'l2b', kind: 'zip', name: 'retake-2.zip', photos: [] },
+    ];
+
+    expect(autoMapLibraries(sources, libraries)).toEqual({ s1: 'l1' });
+  });
+
   it('does not give a workbook-named ZIP to just one of its sheets', () => {
     const sources = [
       makeSource({ id: 's1', baseName: 'Class 5', fileName: 'classes.xlsx' }),

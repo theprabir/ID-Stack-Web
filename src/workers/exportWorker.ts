@@ -28,7 +28,6 @@
 import * as encoder from '../services/cmykJpegEncoder';
 import { spliceCardOntoPlate } from '../services/cmykPlateSplice';
 import {
-  initWasm,
   cmsCreate_sRGBProfile,
   cmsOpenProfileFromMem,
   cmsCreateTransform,
@@ -38,6 +37,7 @@ import {
 } from '@kittl/little-cms';
 import { TYPE_RGB_8, TYPE_CMYK_8 } from '@kittl/little-cms/formats';
 import { CMYK_TRANSFORM_FLAGS } from '../services/cmykTransformFlags';
+import { loadLittleCms } from '../services/lcmsEngine';
 
 /** Remember the batch's first card for later diffs */
 interface PrimePlateRequest {
@@ -83,15 +83,16 @@ interface WorkerResponse {
 let transformHandle: cmsHTRANSFORM | null = null;
 let enginePromise: Promise<cmsHTRANSFORM> | null = null;
 
-/** The batch's first card: pixels + their exact CMYK (one plate at a time) */
+/** A plate: the pixels it was captured from plus their exact CMYK */
 interface PlateCache {
-  id: string;
   rgba: Uint8Array;
-  /** Lazily computed on first use (one full transform per worker per batch) */
+  /** Lazily computed on first use (one full transform per worker per plate) */
   cmyk: Uint8Array | null;
 }
 
-let plate: PlateCache | null = null;
+/** Plates by id — a duplex job needs one per side */
+const plates = new Map<string, PlateCache>();
+const MAX_PLATES = 4;
 
 /** Post to the main thread (the DOM lib types `self` as a Window here) */
 function post(message: WorkerResponse, transfer: ArrayBuffer[] = []): void {
@@ -121,8 +122,8 @@ async function ensureEngine(wasmUrl: string, profileUrl: string): Promise<cmsHTR
   if (transformHandle !== null) return transformHandle;
   if (!enginePromise) {
     enginePromise = (async () => {
-      const init = await initWasm(wasmUrl);
-      if (init.error) throw new Error(`LittleCMS failed to initialise: ${String(init.error)}`);
+      // Shared loader: single flight per worker + retry on a failed asset fetch.
+      await loadLittleCms(wasmUrl);
       const srgb = cmsCreate_sRGBProfile();
       if (srgb.error) throw new Error('Failed to create the sRGB ICC profile.');
       const response = await fetch(profileUrl);
@@ -182,8 +183,8 @@ async function encodeCard(request: Extract<WorkerRequest, { type: 'encode-card' 
   const rgba = new Uint8Array(request.rgba);
   let cmyk: Uint8Array | null = null;
 
-  const cached = plate;
-  if (cached && cached.id === request.plateId) {
+  const cached = plates.get(request.plateId);
+  if (cached) {
     if (!cached.cmyk) {
       // One full transform per worker per batch, then reused.
       cached.cmyk = rgbaToCmyk(transform, cached.rgba);
@@ -207,8 +208,13 @@ async function encodeCard(request: Extract<WorkerRequest, { type: 'encode-card' 
 /** Dispatch one worker message */
 async function handleRequest(request: WorkerRequest): Promise<void> {
   if (request.type === 'prime-plate') {
-    // Fire-and-forget: keep the batch's first card for later cards to diff.
-    plate = { id: request.plateId, rgba: new Uint8Array(request.rgba), cmyk: null };
+    // Fire-and-forget: keep this card for later cards to diff.
+    plates.set(request.plateId, { rgba: new Uint8Array(request.rgba), cmyk: null });
+    while (plates.size > MAX_PLATES) {
+      const oldest = plates.keys().next();
+      if (oldest.done) break;
+      plates.delete(oldest.value);
+    }
     return;
   }
 

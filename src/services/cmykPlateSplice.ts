@@ -48,8 +48,37 @@ export interface PlateSpliceResult {
 /** Runs the ICC transform over `rgb` (3 bytes per pixel); returns CMYK samples */
 export type RgbToCmykTransform = (rgb: Uint8Array, pixelCount: number) => Uint8Array;
 
+/** RGBA bytes: canvas readback gives a clamped array, workers carry plain bytes */
+export type PixelBuffer = Uint8Array | Uint8ClampedArray;
+
 /** Bytes per RGBA pixel / per CMYK sample */
 const BYTES_PER_PIXEL = 4;
+
+/**
+ * How many pixels of `card` differ from `plateRgba`, or `null` when the two
+ * cannot be compared (different size, misaligned views).
+ *
+ * A pure word comparison with no allocations — used to pick the best plate for
+ * a card when a batch has more than one (front and back share a card size, so
+ * a single plate would make every back pay a full transform).
+ *
+ * @param card - The card's RGBA pixels (4 bytes per pixel)
+ * @param plateRgba - Candidate plate pixels (4 bytes per pixel)
+ */
+export function countChangedPixels(card: PixelBuffer, plateRgba: PixelBuffer): number | null {
+  if (plateRgba.length === 0 || plateRgba.length % BYTES_PER_PIXEL !== 0) return null;
+  if (card.length !== plateRgba.length) return null;
+  if ((card.byteOffset & 3) !== 0 || (plateRgba.byteOffset & 3) !== 0) return null;
+
+  const pixelCount = plateRgba.length / BYTES_PER_PIXEL;
+  const cardWords = new Uint32Array(card.buffer, card.byteOffset, pixelCount);
+  const plateWords = new Uint32Array(plateRgba.buffer, plateRgba.byteOffset, pixelCount);
+  let differing = 0;
+  for (let pixel = 0; pixel < pixelCount; pixel += 1) {
+    if (cardWords[pixel] !== plateWords[pixel]) differing += 1;
+  }
+  return differing;
+}
 
 /**
  * Build a card's CMYK buffer from a plate plus a transform of what changed.
@@ -63,7 +92,7 @@ const BYTES_PER_PIXEL = 4;
  *          transform the whole card.
  */
 export function spliceCardOntoPlate(
-  card: Uint8Array,
+  card: PixelBuffer,
   plate: CmykPlate,
   transform: RgbToCmykTransform
 ): PlateSpliceResult | null {

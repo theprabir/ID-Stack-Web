@@ -2,110 +2,63 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.7.8] — performance, colour-safe (unreleased)
+## [0.7.7] — performance and multi-batch fixes (unreleased)
 
 ### Changed
 
-- **Only the pixels that change are colour-converted.** The exact sRGB→CMYK
-  transform was now the dominant cost (~150 ms of the ~213 ms per card), yet
-  only ~14 % of a printed card differs between records — the photo and the text
-  fields. The first card of a batch is captured as a **plate** (its RGBA plus
-  its exactly transformed CMYK) and sent to every worker; each later card is
-  compared with the plate and only its differing pixels go through LittleCMS,
-  the rest being copied from the plate's CMYK buffer.
-- **The printed bytes are unchanged by construction, not by approximation.** The
-  transform is per-pixel and deterministic, so a pixel whose RGB equals the
-  plate's has the same CMYK; differing pixels are transformed from their own
-  bytes. Verified three ways: `tests/services/cmykPlateSplice.test.ts` replays
-  the splice under a deterministic fake transform and requires the result to
-  equal a full transform; a 650×1028 demo card spliced with the real LittleCMS
-  transform matched a full transform over all **2 672 800 bytes**; and the
-  worker's plate-path JPEG matched the legacy full-pipeline JPEG byte for byte
-  (276 143 and 297 822 bytes, no differing byte, including a card with a
-  different photo and later in the batch).
-- **Plates are advisory.** A worker that was created after priming (crash
-  recovery, `setWorkerPoolSize`) or a card of another size simply transforms in
-  full — same output, no correctness dependency on cache state. The plate is
-  dropped when the project changes (`resetCmykPlateCache`).
+- **Imposed-sheet PDF export is multi-core and pipelined.** The CMYK JPEG encoder
+  is 2.6× faster per core (152.8 → 57.9 ms per 1011×638 card; Huffman tables are
+  built once per worker), each worker owns its own LittleCMS transform, a page's
+  cards encode in parallel while the next page renders, and sheets mode no longer
+  waits a `requestAnimationFrame` per card. The pool is
+  `clamp(round(hardwareConcurrency / 2), 2, 8)` — measured faster on real cores
+  than on hyperthreads.
+- **Layer rasters and font loads are memoised** per batch (bounded, cleared when
+  the project changes); photo layers are deliberately not cached.
+- **Printed CMYK is unchanged.** The transform stays pinned to
+  `FLAGS_NOOPTIMIZE`; the optimised CLUT (149 → 33–47 ms) was rejected because it
+  moves 52.6 % of CMYK samples by up to 8/255.
+- **Only changed pixels are colour-converted.** The first card of a size becomes
+  a *plate* (its RGBA plus its exactly transformed CMYK); later cards transform
+  only differing pixels and copy the rest. A duplex job keeps one plate per side.
+  Output is byte-identical by construction: the splice matched a full transform
+  over all 2 672 800 bytes, and the worker JPEG matched the legacy pipeline byte
+  for byte. Plates are advisory — a missing plate simply means a full transform.
 
 ### Performance (measured, 2-core/4-thread laptop, 30 records, demo design)
 
-- Front only, imposed sheets, exact CMYK: **6391 ms → 3054–3378 ms** at steady
-  state (213 → ~102–113 ms/card, **4.7 → 8.8–9.8 cards/s**) for 30 records.
-  The first job of a session is still slower (worker WASM init + plate
-  transform + font warm-up).
-- Per-card encode breakdown after the change: ~19–24 ms ICC (down from 156 ms),
-  ~140 ms CMYK JPEG, ~12 ms canvas readback. The JPEG compressor is now the
-  bottleneck.
+- Front only, imposed sheets: **6391 → 3054–3378 ms** warm (213 → ~102–113 ms/card,
+  4.7 → 8.8–9.8 cards/s). Per card afterwards ~19–24 ms ICC (from 156 ms),
+  ~140 ms CMYK JPEG, ~12 ms canvas readback — the compressor is the bottleneck.
+- On the 4-core machine: encoder 152.8 → 57.9 ms per card; imposed duplex job
+  15047 → 10557 ms.
 
-## [0.7.7] — performance (unreleased)
+### Fixed
 
-### Changed
+- **Numbered photo archives now pair with their numbered data files.**
+  `autoMapLibraries` gained a second pass pairing a source and an archive by the
+  same serial number (leading zeros dropped, ambiguous numbers still left to the
+  user). `Employee_data_1/2/3.xlsx` with `employee_photo_1/2/3.zip` previously
+  left every source with no library, so no photo column could match anything.
+- **A serial column ("Sl no.") matches serially numbered photos** (`1` ↔
+  `01.jpg`); text/name matching is unchanged.
+- **LittleCMS WASM can no longer fail a whole job on a transient load.**
+  `initWasm` has no in-flight guard, so concurrent exports each instantiated
+  their own module; under load one fetch could fail with
+  `Aborted(both async and sync fetching of the wasm failed)`. `src/services/lcmsEngine.ts`
+  is now the only caller per realm (main thread and each worker): single flight,
+  three attempts with a cache-busting retry URL, and a clear error naming the
+  failed asset. `initCmykEngine` is single-flight too, and a failed setup no
+  longer poisons the session.
 
-- **The imposed-sheet (PDF) export is now multi-core and pipelined.** v0.7.6
-  encoded one card at a time through a single worker, waited for the whole
-  page before rendering the next one, and yielded to the browser after every
-  card. The card encoder is now 2.6× faster per core (see below), the worker
-  pool runs `clamp(hardwareConcurrency − 1, 2, 8)` encoders, a page's cards
-  encode in parallel while the caller renders the next page, and sheets mode
-  no longer pays a 16.7 ms `requestAnimationFrame` per card. The pool is
-  `clamp(round(hardwareConcurrency / 2), 2, 8)`.
-- **Layer rasters are decoded once per batch, not once per card.** Untouched
-  PSD layers were re-loaded through a fresh `Image` for every record; they are
-  now memoised (bounded LRU, cleared when the project changes). Photo layers
-  are deliberately not cached (each record has its own photo).
-- **Font preloading is memoised.** A design's faces/sizes were requested from
-  `document.fonts.load` ~18 times per card; successful requests are remembered.
-- **The sRGB→CMYK ICC transform moved into the worker pool.** It ran on the
-  main thread, one card at a time, while the encoders sat idle: 126–133 ms per
-  demo card, more than the JPEG encode itself. Each worker now owns its own
-  LittleCMS instance and transform, so conversion and compression both scale
-  across cores.
-- **Printed CMYK is unchanged.** The sRGB→CMYK transform is pinned to
-  `FLAGS_NOOPTIMIZE` in `cmykTransformFlags.ts` (shared by the main thread and
-  every worker). An optimised CLUT would cut the transform from 149–151 ms to
-  33–47 ms per card, but it moves 52.6 % of CMYK samples by up to 8/255
-  (high-res grid: 36.1 % by up to 6/255) — that is a colour decision, and the
-  exact pipeline is what ships.
-- **The pool is sized per physical core, not per SMT thread.**
-  `hardwareConcurrency` counts hyperthreads; these encode jobs are CPU +
-  memory-bandwidth bound and each carries ~5 MB of buffers, so
-  `max(2, threads/2)` keeps workers on real cores. On a 2-core/4-thread laptop
-  the same 30-card job took 4611 ms with 3 workers and 3613 ms with 2.
+### Verified
 
-### Performance (measured, Node 24 / Chromium · 4-core laptop)
-
-- CMYK JPEG encoder, 1011×638 card at quality 92, byte-identical output:
-  **152.8 ms → 57.9 ms per image** at steady state (6.5 → 17.3 images/s/core),
-  and 257 ms → 80 ms on a cold first image (the Huffman/bit-category tables are
-  now built once per worker instead of per image).
-- With the 3-worker pool this machine allows, encode throughput alone rises
-  from ~6.5 to ~52 images/s before counting the pipelined render.
-- Imposed-sheet jobs in the running app (bundled demo design, 650×1028 @300 dpi,
-  A4, interleaved + duplex, quality 0.92, 30 records):
-  - before the ICC move — `30 records, 10 sheet(s) in 15047 ms (502 ms/card;
-    encode 26616 ms, PDF 54 ms)`
-  - after — `30 records, 10 sheet(s) in 10557 ms (352 ms/card; encode 18462 ms,
-    PDF 83 ms)`; front-only — `5 sheet(s) in 6223 ms (207 ms/card)`.
-  - Per printed face that is ~176 ms (double-sided) / 207 ms (front only) on 4
-    cores. The remaining cost is the CMYK transform (126 ms) + JPEG (110 ms) per
-    face at 63 % pool efficiency; reaching 500 cards in under a minute needs the
-    optimised ICC path, more cores, or a lower JPEG quality.
-- Stage D was verified byte-identical in the browser: the worker-produced JPEG
-  for a real composited card matched the main-thread path exactly (260 158
-  bytes, first differing byte: none).
-- With the exact transform (2-core/4-thread laptop, same demo design, 30
-  records, pool of 2): front only `6391 ms` warm (213 ms/card, 4.7 cards/s) and
-  `6594 ms` on the first job of a session. The exact ICC pipeline (~149 ms of
-  the ~213 ms) is the dominant cost; placeholder areas cover only 21.7 % of the
-  demo card, so the next colour-safe win is transforming only the pixels that
-  differ from a per-design plate rather than the whole card.
-
-### Tests
-
-- `cmykJpegEncoderGolden.test.ts` (new) — SHA-256 of encoder output for four
-  fixtures (including the real 1011×638 card size) captured from v0.7.6, plus
-  the APP14/SOF0 header check. Any change in encoded bytes fails the suite.
+- 3 workbooks + 3 photo ZIPs (116 records, front + back, imposed sheets) driven
+  through the wizard: archives auto-pair and both the `Photo` and `Sl no.`
+  columns match **40 / 36 / 40** records; the job completes with 0 row errors.
+- CMYK output unchanged: golden encoder test (`cmykJpegEncoderGolden.test.ts`)
+  and plate-splice equivalence tests, plus `npm run typecheck`,
+  `npx vitest run` and `npm run build`.
 
 ## [0.7.6] - 2026-11-22
 

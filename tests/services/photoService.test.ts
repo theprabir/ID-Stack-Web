@@ -132,6 +132,28 @@ describe('photoService — matchPhotos', () => {
     expect(result.unusedPhotoNames).toEqual([]);
   });
 
+  it('mode column matches a serial column against numbered photos (v0.7.9)', () => {
+    // A "Sl no." column (1, 2, 10) with photos named 01.jpg, 2.jpg, 010.jpg.
+    const serialPhotos = [
+      makePhoto('p1', '01.jpg'),
+      makePhoto('p2', '2.jpg'),
+      makePhoto('p3', '010.jpg'),
+    ];
+    const serialRows = [
+      makeRow(0, { 'Sl no.': '1' }),
+      makeRow(1, { 'Sl no.': '02' }),
+      makeRow(2, { 'Sl no.': '10' }),
+    ];
+    const result = matchPhotos(serialRows, serialPhotos, {
+      mode: 'column',
+      columnName: 'Sl no.',
+    });
+    expect(result.assignments.get(0)?.id).toBe('p1');
+    expect(result.assignments.get(1)?.id).toBe('p2');
+    expect(result.assignments.get(2)?.id).toBe('p3');
+    expect(result.unmatchedRowIndexes).toEqual([]);
+  });
+
   it('mode column fuzzy-matches names with spaces vs underscores', () => {
     // Excel says "Ravi Verma", photo file is "ravi_verma.jpg".
     const spacedPhotos = [makePhoto('p1', 'ravi_verma.jpg')];

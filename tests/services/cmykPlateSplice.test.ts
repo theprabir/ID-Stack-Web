@@ -9,7 +9,11 @@
  * running app.
  */
 import { describe, expect, it } from 'vitest';
-import { spliceCardOntoPlate, type CmykPlate } from '@/services/cmykPlateSplice';
+import {
+  countChangedPixels,
+  spliceCardOntoPlate,
+  type CmykPlate,
+} from '@/services/cmykPlateSplice';
 
 /** Deterministic, per-pixel, channel-mixing stand-in for the ICC transform */
 function fakeTransform(rgb: Uint8Array, count: number): Uint8Array {
@@ -114,6 +118,18 @@ describe('cmykPlateSplice — spliced output equals a full transform', () => {
     const result = spliceCardOntoPlate(card, plate, fakeTransform);
     expect(result?.changedPixels).toBe(0);
     expectSameBytes(result?.cmyk, transformAll(card));
+  });
+
+  it('counts differing pixels so the closest plate can be picked', () => {
+    const plate = makeRgba(32, 32, 9);
+    const card = plate.slice();
+    expect(countChangedPixels(card, plate)).toBe(0);
+    for (let pixel = 0; pixel < 5; pixel += 1) {
+      const index = pixel * 4;
+      card[index] = (card[index] ?? 0) ^ 0xff;
+    }
+    expect(countChangedPixels(card, plate)).toBe(5);
+    expect(countChangedPixels(card.subarray(0, 100), plate)).toBeNull();
   });
 
   it('refuses buffers it cannot splice (caller falls back to a full transform)', () => {

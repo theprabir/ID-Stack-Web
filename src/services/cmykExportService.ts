@@ -15,8 +15,8 @@ import {
   encodeJpegInWorker,
   primeEncodePlate,
 } from '@/services/workerPool';
+import { countChangedPixels } from '@/services/cmykPlateSplice';
 import {
-  initWasm,
   cmsCreate_sRGBProfile,
   cmsOpenProfileFromMem,
   cmsCreateTransform,
@@ -29,6 +29,7 @@ import {
 } from '@kittl/little-cms';
 import { TYPE_RGB_8, TYPE_CMYK_8 } from '@kittl/little-cms/formats';
 import { CMYK_TRANSFORM_FLAGS } from './cmykTransformFlags';
+import { loadLittleCms } from './lcmsEngine';
 import cmykProfileUrl from '@/assets/profiles/default_cmyk.icc?url';
 import lcmsWasmUrl from '@/assets/profiles/lcms.wasm?url';
 
@@ -51,44 +52,54 @@ async function getCmykProfileBytes(): Promise<Uint8Array> {
 let transformHandle: cmsHTRANSFORM | null = null;
 let srgbHandle: cmsHPROFILE | null = null;
 let cmykHandle: cmsHPROFILE | null = null;
+/** Single-flight guard: concurrent callers share one setup, never two WASM heaps */
+let enginePromise: Promise<void> | null = null;
 
 /**
  * Initialise LittleCMS WASM and the sRGB→CMYK transform.
- * Safe to call repeatedly; the transform is created once and reused.
+ * Safe to call repeatedly and concurrently; the transform is created once and
+ * reused, and a failed attempt is retried by the next caller.
  *
  * @throws Error when WASM init, profile loading or transform creation fails
  */
-export async function initCmykEngine(): Promise<void> {
-  if (transformHandle !== null) return;
+export function initCmykEngine(): Promise<void> {
+  if (transformHandle !== null) return Promise.resolve();
+  if (enginePromise) return enginePromise;
 
-  const initResult = await initWasm(new URL(lcmsWasmUrl, document.baseURI).href);
-  if (initResult.error) {
-    throw new Error(`LittleCMS failed to initialise: ${String(initResult.error)}`);
-  }
+  enginePromise = (async () => {
+    // `loadLittleCms` owns the one allowed initWasm call (single flight + retry).
+    await loadLittleCms(new URL(lcmsWasmUrl, document.baseURI).href);
 
-  const srgb = cmsCreate_sRGBProfile();
-  if (srgb.error) throw new Error('Failed to create the sRGB ICC profile.');
-  srgbHandle = srgb.value;
+    const srgb = cmsCreate_sRGBProfile();
+    if (srgb.error) throw new Error('Failed to create the sRGB ICC profile.');
+    srgbHandle = srgb.value;
 
-  const cmykBytes = await getCmykProfileBytes();
-  const cmyk = cmsOpenProfileFromMem(cmykBytes);
-  if (cmyk.error) throw new Error('Failed to load the bundled CMYK ICC profile.');
-  cmykHandle = cmyk.value;
+    const cmykBytes = await getCmykProfileBytes();
+    const cmyk = cmsOpenProfileFromMem(cmykBytes);
+    if (cmyk.error) throw new Error('Failed to load the bundled CMYK ICC profile.');
+    cmykHandle = cmyk.value;
 
-  const transform = cmsCreateTransform(
-    srgbHandle,
-    TYPE_RGB_8,
-    cmykHandle,
-    TYPE_CMYK_8,
-    CmsIntent.Percepttual,
-    CMYK_TRANSFORM_FLAGS
-  );
-  if (transform.error) throw new Error('Failed to create the sRGB→CMYK colour transform.');
-  transformHandle = transform.value;
+    const transform = cmsCreateTransform(
+      srgbHandle,
+      TYPE_RGB_8,
+      cmykHandle,
+      TYPE_CMYK_8,
+      CmsIntent.Percepttual,
+      CMYK_TRANSFORM_FLAGS
+    );
+    if (transform.error) throw new Error('Failed to create the sRGB→CMYK colour transform.');
+    transformHandle = transform.value;
+  })();
+  enginePromise.catch(() => {
+    // A failed setup must not poison the session: the next export retries.
+    enginePromise = null;
+  });
+  return enginePromise;
 }
 
 /** Release all cached LittleCMS handles. */
 export function disposeCmykEngine(): void {
+  enginePromise = null;
   if (transformHandle !== null) {
     cmsDeleteTransform(transformHandle);
     transformHandle = null;
@@ -251,24 +262,37 @@ async function encodeCmykJpegOnMainThread(
   return encodeJpegInWorker(cmyk, canvas.width, canvas.height, jpegQuality);
 }
 
+/** One captured card that later cards are measured against */
+interface Plate {
+  id: string;
+  rgba: Uint8ClampedArray;
+}
+
 /**
- * The batch's first card, used as the CMYK plate (v0.7.8).
- *
- * Later cards reuse its transformed CMYK for every pixel that is unchanged,
- * so the expensive exact transform only runs over what actually differs. The
- * output is byte-identical (see `cmykPlateSplice`).
+ * Two plates per card size: a duplex job renders a front and a back at the same
+ * size, so a single plate would make every back transform against the front
+ * artwork (75 % of its pixels differ, measured) and gain nothing.
  */
-let plate: { id: string; key: string; rgba: Uint8ClampedArray } | null = null;
+const PLATES_PER_SIZE = 2;
+
+/**
+ * The batch's first cards, used as CMYK plates (v0.7.8).
+ *
+ * Later cards reuse the closest plate's transformed CMYK for every pixel that
+ * is unchanged, so the expensive exact transform only runs over what actually
+ * differs. The output is byte-identical (see `cmykPlateSplice`).
+ */
+const platesBySize = new Map<string, Plate[]>();
 let plateSerial = 0;
 
 /**
- * Drop the cached plate (a design changed, so its pixels no longer apply).
+ * Drop the cached plates (a design changed, so their pixels no longer apply).
  *
- * Purely an efficiency reset: a stale plate still produces identical output,
+ * Purely an efficiency reset: stale plates still produce identical output,
  * because every differing pixel is transformed from its own bytes.
  */
 export function resetCmykPlateCache(): void {
-  plate = null;
+  platesBySize.clear();
 }
 
 /**
@@ -298,15 +322,33 @@ export async function encodeCmykJpeg(
     return encodeCmykJpegOnMainThread(canvas, jpegQuality);
   }
 
+  // Capture a plate from each of the first cards of a size (front and back).
   const key = `${canvas.width}x${canvas.height}`;
-  if (!plate || plate.key !== key) {
+  let plates = platesBySize.get(key);
+  if (!plates) {
+    plates = [];
+    platesBySize.set(key, plates);
+  }
+  if (plates.length < PLATES_PER_SIZE) {
     plateSerial += 1;
-    plate = {
+    const captured: Plate = {
       id: `${key}#${plateSerial}`,
-      key,
       rgba: new Uint8ClampedArray(imageData.data),
     };
-    primeEncodePlate(plate.id, plate.rgba);
+    plates.push(captured);
+    primeEncodePlate(captured.id, captured.rgba);
+  }
+
+  // Use the plate this card resembles most. One extra comparison per card
+  // (~1–2 ms) buys the back side of a duplex job a nearly free transform.
+  const [firstPlate, secondPlate] = plates;
+  let chosen = firstPlate;
+  if (firstPlate && secondPlate) {
+    const firstDiff = countChangedPixels(imageData.data, firstPlate.rgba);
+    const secondDiff = countChangedPixels(imageData.data, secondPlate.rgba);
+    if (secondDiff !== null && (firstDiff === null || secondDiff < firstDiff)) {
+      chosen = secondPlate;
+    }
   }
 
   return encodeCardInWorker(
@@ -314,7 +356,7 @@ export async function encodeCmykJpeg(
     canvas.width,
     canvas.height,
     jpegQuality,
-    plate.id,
+    chosen ? chosen.id : '',
     wasmAssetUrl(),
     profileAssetUrl(),
     () => encodeCmykJpegOnMainThread(canvas, jpegQuality)
