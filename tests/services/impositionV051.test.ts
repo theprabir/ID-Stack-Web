@@ -22,7 +22,7 @@ vi.mock('@kittl/little-cms', () => ({
   CmsIntent: { Percepttual: 1 },
 }));
 vi.mock('@kittl/little-cms/formats', () => ({ TYPE_RGB_8: 0, TYPE_CMYK_8: 0 }));
-vi.mock('@kittl/little-cms/flags', () => ({ FLAGS_NOOPTIMIZE: 0 }));
+vi.mock('@kittl/little-cms/flags', () => ({ FLAGS_NOOPTIMIZE: 0, FLAGS_HIGHRESPRECALC: 0 }));
 vi.mock('@/assets/profiles/default_cmyk.icc?url', () => ({ default: 'mock://icc' }));
 vi.mock('@/assets/fonts/arimo-regular.ttf?url', () => ({ default: 'mock://a.ttf' }));
 vi.mock('@/assets/fonts/arimo-bold.ttf?url', () => ({ default: 'mock://b.ttf' }));

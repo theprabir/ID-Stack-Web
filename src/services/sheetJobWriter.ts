@@ -46,6 +46,13 @@ export interface SheetPart {
   fileName: string;
 }
 
+/** One page's cards after CMYK encoding (slot order preserved) */
+interface EncodedPage {
+  cards: SheetCardSource[];
+  /** Embedded JPEG bytes of this page (for the part budget) */
+  bytes: number;
+}
+
 /** Options for {@link SheetJobWriter} */
 export interface SheetJobWriterOptions {
   /** Imposition settings (paper, bleed, gap, marks, numbering) */
@@ -88,6 +95,13 @@ export class SheetJobWriter {
   /** True while a part is being closed (blocks recursive rotation) */
   private closing = false;
 
+  /**
+   * Serialises page appends. Encoding starts immediately per page, so a page
+   * can encode while the caller renders the next one; only `addSheet` has to
+   * happen in order (a PDF page order must match the printed sheets).
+   */
+  private appendChain: Promise<void> = Promise.resolve();
+
   private builder: ImposedPdfBuilder | null = null;
   private buffer: SheetCardSource[];
   /** Printed card number per slot, parallel to `buffer` */
@@ -98,6 +112,11 @@ export class SheetJobWriter {
   private backPage: Array<SheetCardSource> = [];
   private backNumbers: Array<number | null> = [];
   private backPlaced = 0;
+
+  /** Wall time spent CMYK-encoding card pages (parallel across the pool) */
+  private encodeMsTotal = 0;
+  /** Wall time spent registering/appending pages into the PDF document */
+  private appendMsTotal = 0;
 
   /** Pages written into the CURRENT document */
   private pagesInPart = 0;
@@ -137,6 +156,22 @@ export class SheetJobWriter {
     const writer = new SheetJobWriter(options);
     writer.builder = await writer.newBuilder();
     return writer;
+  }
+
+  /**
+   * Phase timings for the whole job (diagnostics).
+   *
+   * `encodeMs` is the wall time of page encoding (the worker pool runs a
+   * page's cards in parallel), `appendMs` the time spent building PDF pages.
+   * Comparing them with the job's total time shows whether a slow export is
+   * render-, encode- or PDF-bound.
+   */
+  get timings(): { encodeMs: number; appendMs: number; pages: number } {
+    return {
+      encodeMs: Math.round(this.encodeMsTotal),
+      appendMs: Math.round(this.appendMsTotal),
+      pages: this.pagesFinished + this.pagesInPart,
+    };
   }
 
   /** Sheets (pages) written across all finished parts plus the current one */
@@ -215,6 +250,8 @@ export class SheetJobWriter {
    */
   async finish(): Promise<SheetPart[]> {
     await this.flushPage();
+    // Drain any page the caller flushed without awaiting (pipelined runs).
+    await this.appendChain;
     if (this.sheetCount === 0) {
       // Nothing was ever placed (every record failed, or all rows were
       // skipped): drop the empty document instead of handing the caller a
@@ -246,39 +283,97 @@ export class SheetJobWriter {
     return builder;
   }
 
-  /** Encode one page's canvases, append it, then release the canvases */
+  /**
+   * Encode one page's canvases and append it, in order.
+   *
+   * Encoding starts immediately and runs across the worker pool, so a page
+   * encodes while the caller renders the next one. Appends are serialised so
+   * the PDF page order always matches the printed sheets.
+   */
   private async writePage(
     page: SheetCardSource[],
     numbers: Array<number | null> = []
   ): Promise<void> {
-    const builder = this.builder;
-    if (!builder) return;
-    const encoded: SheetCardSource[] = new Array(page.length);
+    const encoded = this.encodePage(page);
+    // Encoding may reject before an append awaits it (pipelined callers);
+    // don't let that surface as an unhandled rejection.
+    encoded.catch(() => undefined);
+    const appended = this.appendChain.then(() => this.appendPage(encoded, numbers));
+    this.appendChain = appended.then(
+      () => undefined,
+      () => undefined
+    );
     try {
-      for (let index = 0; index < page.length; index += 1) {
-        const entry = page[index] ?? null;
-        if (entry === null) {
-          encoded[index] = null;
-        } else if ('bytes' in entry) {
-          this.bytesInPart += entry.bytes.length;
-          encoded[index] = entry;
-        } else {
-          const card = await encodeCardForSheet(entry, this.options.quality);
-          this.bytesInPart += card.bytes.length;
-          encoded[index] = card;
-          // The canvas is no longer needed — this is the whole point of
-          // streaming: a sheet's pixels never outlive its page.
-          releaseCanvas(entry);
-        }
-      }
-      await builder.addSheet(encoded, numbers);
-      this.pagesInPart += 1;
-      this.options.onSheetWritten?.(this.sheetCount, this.options.totalSheets);
-    } finally {
+      await appended;
+    } catch (error) {
       // Covered slots may still hold canvases if encoding failed midway.
       for (const entry of page) {
         if (entry && !('bytes' in entry)) releaseCanvas(entry);
       }
+      throw error;
+    }
+  }
+
+  /** Encode and append a page inside the current append chain (no re-chaining) */
+  private async appendNow(
+    page: SheetCardSource[],
+    numbers: Array<number | null>
+  ): Promise<void> {
+    const encoded = this.encodePage(page);
+    encoded.catch(() => undefined);
+    await this.appendPage(encoded, numbers);
+  }
+
+  /**
+   * Encode every slot of a page. The pool bounds real concurrency; each slot
+   * keeps its own index, so layout and numbering can never shift.
+   */
+  private async encodePage(page: SheetCardSource[]): Promise<EncodedPage> {
+    const startedAt = performance.now();
+    const cards: SheetCardSource[] = new Array<SheetCardSource>(page.length);
+    let bytes = 0;
+    await Promise.all(
+      page.map(async (entry, index) => {
+        if (!entry) {
+          cards[index] = null;
+          return;
+        }
+        if ('bytes' in entry) {
+          cards[index] = entry;
+          bytes += entry.bytes.length;
+          return;
+        }
+        try {
+          const card = await encodeCardForSheet(entry, this.options.quality);
+          cards[index] = card;
+          bytes += card.bytes.length;
+        } finally {
+          // The canvas is no longer needed — this is the whole point of
+          // streaming: a sheet's pixels never outlive its page.
+          releaseCanvas(entry);
+        }
+      })
+    );
+    this.encodeMsTotal += performance.now() - startedAt;
+    return { cards, bytes };
+  }
+
+  /** Append one encoded page, rotating the part when its budget is spent */
+  private async appendPage(
+    encoded: Promise<EncodedPage>,
+    numbers: Array<number | null>
+  ): Promise<void> {
+    const { cards, bytes } = await encoded;
+    const builder = this.builder;
+    if (!builder) return;
+    this.bytesInPart += bytes;
+    try {
+      const startedAt = performance.now();
+      await builder.addSheet(cards, numbers);
+      this.appendMsTotal += performance.now() - startedAt;
+      this.pagesInPart += 1;
+      this.options.onSheetWritten?.(this.sheetCount, this.options.totalSheets);
+    } finally {
       // If the budget is exhausted, close this part only with a complete page
       // (never between a sheet's cards).
       if (!this.closing && this.bytesInPart >= this.frontBudget) await this.endPart();
@@ -332,7 +427,7 @@ export class SheetJobWriter {
         const numbers = this.backNumbers;
         this.backPage = new Array(this.perSheet).fill(null);
         this.backNumbers = this.emptyNumbers();
-        await this.writePage(page, numbers);
+        await this.appendNow(page, numbers);
       }
     }
     if (this.backPlaced % this.perSheet > 0) {
@@ -340,7 +435,7 @@ export class SheetJobWriter {
       const numbers = this.backNumbers;
       this.backPage = new Array(this.perSheet).fill(null);
       this.backNumbers = this.emptyNumbers();
-      await this.writePage(page, numbers);
+      await this.appendNow(page, numbers);
     }
     this.backPlaced = 0;
   }

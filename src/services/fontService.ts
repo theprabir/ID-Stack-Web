@@ -538,6 +538,16 @@ export function exactFontCss(
  * @param boldItalicVariants - Style variants to load (default: regular+bold)
  * @returns Families referenced by the design but not available
  */
+/**
+ * CSS font strings already loaded through {@link preloadFontsForText}.
+ *
+ * A batch composites hundreds of cards from one design, so the same faces and
+ * sizes are requested every time. `document.fonts.load` is cheap once a face
+ * is loaded, but the call itself is async and was issued ~18 times per card;
+ * remembering the successful strings removes that per-card overhead.
+ */
+const loadedFontCss = new Set<string>();
+
 export async function preloadFontsForText(
   postScriptNames: (string | undefined)[],
   sizesPx: number[] = [16],
@@ -557,8 +567,10 @@ export async function preloadFontsForText(
     for (const variant of boldItalicVariants) {
       for (const size of sizesPx) {
         const css = exactFontCss(variant.bold, variant.italic, size, `"${matched}"`);
+        if (loadedFontCss.has(css)) continue;
         try {
           await document.fonts.load(css, 'AgÜ0');
+          loadedFontCss.add(css);
         } catch {
           // Invalid font string / unsupported font — the browser falls back.
         }

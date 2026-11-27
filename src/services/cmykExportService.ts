@@ -10,7 +10,11 @@
  *    ICCBased colour space and a document OutputIntent — no Photoshop step.
  */
 import { PDFDocument, PDFName, PDFNumber, PDFRawStream, PDFString } from 'pdf-lib';
-import { encodeJpegInWorker } from '@/services/workerPool';
+import {
+  encodeCardInWorker,
+  encodeJpegInWorker,
+  primeEncodePlate,
+} from '@/services/workerPool';
 import {
   initWasm,
   cmsCreate_sRGBProfile,
@@ -24,7 +28,7 @@ import {
   type cmsHTRANSFORM,
 } from '@kittl/little-cms';
 import { TYPE_RGB_8, TYPE_CMYK_8 } from '@kittl/little-cms/formats';
-import { FLAGS_NOOPTIMIZE } from '@kittl/little-cms/flags';
+import { CMYK_TRANSFORM_FLAGS } from './cmykTransformFlags';
 import cmykProfileUrl from '@/assets/profiles/default_cmyk.icc?url';
 import lcmsWasmUrl from '@/assets/profiles/lcms.wasm?url';
 
@@ -77,7 +81,7 @@ export async function initCmykEngine(): Promise<void> {
     cmykHandle,
     TYPE_CMYK_8,
     CmsIntent.Percepttual,
-    FLAGS_NOOPTIMIZE
+    CMYK_TRANSFORM_FLAGS
   );
   if (transform.error) throw new Error('Failed to create the sRGB→CMYK colour transform.');
   transformHandle = transform.value;
@@ -224,19 +228,96 @@ export function ensureAdobeApp14Transform0(bytes: Uint8Array): Uint8Array {
  * @param quality - JPEG quality 0–1 (clamped)
  * @returns CMYK JPEG bytes
  */
+/** Absolute URL of the bundled LittleCMS WASM (workers load it themselves) */
+function wasmAssetUrl(): string {
+  return new URL(lcmsWasmUrl, document.baseURI).href;
+}
+
+/** Absolute URL of the bundled CMYK ICC profile (workers fetch it once) */
+function profileAssetUrl(): string {
+  return new URL(cmykProfileUrl, document.baseURI).href;
+}
+
+/**
+ * v0.7.6 path, kept as the worker fallback: the ICC transform runs here on the
+ * main thread and only the JPEG compression is posted to a worker.
+ */
+async function encodeCmykJpegOnMainThread(
+  canvas: HTMLCanvasElement,
+  jpegQuality: number
+): Promise<Uint8Array> {
+  await initCmykEngine();
+  const cmyk = await canvasToCmykBytes(canvas);
+  return encodeJpegInWorker(cmyk, canvas.width, canvas.height, jpegQuality);
+}
+
+/**
+ * The batch's first card, used as the CMYK plate (v0.7.8).
+ *
+ * Later cards reuse its transformed CMYK for every pixel that is unchanged,
+ * so the expensive exact transform only runs over what actually differs. The
+ * output is byte-identical (see `cmykPlateSplice`).
+ */
+let plate: { id: string; key: string; rgba: Uint8ClampedArray } | null = null;
+let plateSerial = 0;
+
+/**
+ * Drop the cached plate (a design changed, so its pixels no longer apply).
+ *
+ * Purely an efficiency reset: a stale plate still produces identical output,
+ * because every differing pixel is transformed from its own bytes.
+ */
+export function resetCmykPlateCache(): void {
+  plate = null;
+}
+
+/**
+ * Encode a canvas as a 4-component Adobe CMYK JPEG.
+ *
+ * The pixels are read back here (the canvas lives on the main thread) but the
+ * sRGB→CMYK ICC transform and the JPEG compression both run inside the worker
+ * pool. v0.7.8 adds the plate: the first card of a batch is captured here, sent
+ * to every worker, and later cards only transform their changed pixels.
+ *
+ * @param canvas - Source canvas (RGB content, alpha dropped)
+ * @param quality - JPEG quality 0–1 (clamped)
+ * @returns CMYK JPEG bytes
+ */
 export async function encodeCmykJpeg(
   canvas: HTMLCanvasElement,
   quality = 0.92
 ): Promise<Uint8Array> {
-  await initCmykEngine();
-  const cmyk = await canvasToCmykBytes(canvas);
-  // JPEG compression runs in the export worker (falls back to the main
-  // thread automatically when workers are unavailable).
-  return encodeJpegInWorker(
-    cmyk,
+  const jpegQuality = Math.max(10, Math.min(100, Math.round(quality * 100)));
+  const context = canvas.getContext('2d');
+  if (!context) return encodeCmykJpegOnMainThread(canvas, jpegQuality);
+  let imageData: ImageData;
+  try {
+    imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+  } catch {
+    // A tainted/unreadable canvas falls back to the in-service readback.
+    return encodeCmykJpegOnMainThread(canvas, jpegQuality);
+  }
+
+  const key = `${canvas.width}x${canvas.height}`;
+  if (!plate || plate.key !== key) {
+    plateSerial += 1;
+    plate = {
+      id: `${key}#${plateSerial}`,
+      key,
+      rgba: new Uint8ClampedArray(imageData.data),
+    };
+    primeEncodePlate(plate.id, plate.rgba);
+  }
+
+  return encodeCardInWorker(
+    imageData.data,
     canvas.width,
     canvas.height,
-    Math.max(10, Math.min(100, Math.round(quality * 100)))
+    jpegQuality,
+    plate.id,
+    wasmAssetUrl(),
+    profileAssetUrl(),
+    () => encodeCmykJpegOnMainThread(canvas, jpegQuality)
   );
 }
 

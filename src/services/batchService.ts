@@ -35,6 +35,7 @@ import {
 } from './impositionTypes';
 import { SheetJobWriter } from './sheetJobWriter';
 import { buildName, sanitizeSegment, uniqueFileName } from './batchNaming';
+import { logMessage } from './appLog';
 
 /** Output settings for a batch run */
 export interface BatchOptions {
@@ -281,6 +282,28 @@ export async function runBatch(
 
   // Row cursor inside the current interleaved page (paired mode).
   let pairRowsOnSheet = 0;
+
+  /**
+   * Page pipeline (v0.7.7): encoding of a flushed page starts immediately and
+   * the loop only awaits the PREVIOUS page, so render and encode overlap.
+   * At most two pages of canvases exist at once, so memory stays bounded.
+   */
+  const sheetPipeline: { pending: Promise<void> | null; failure: unknown } = {
+    pending: null,
+    failure: null,
+  };
+  const flushSheetPage = async (): Promise<void> => {
+    if (!writer) return;
+    const previous = sheetPipeline.pending;
+    const page = writer.flushPage();
+    // Keep the rejection for the completion block instead of letting it sit
+    // unhandled while the render loop runs ahead.
+    page.catch((error: unknown) => {
+      if (sheetPipeline.failure === null) sheetPipeline.failure = error;
+    });
+    sheetPipeline.pending = page.then(() => undefined);
+    if (previous) await previous;
+  };
   const columns = sheetLayout?.columns ?? 1;
   /**
    * Records one interleaved page holds — every column of every front row.
@@ -345,7 +368,7 @@ export async function runBatch(
           placedRecords += 1;
           pairRowsOnSheet += 1;
           if (pairRowsOnSheet === recordsPerSheet) {
-            await writer.flushPage();
+            await flushSheetPage();
             pairRowsOnSheet = 0;
           }
         } else {
@@ -357,7 +380,7 @@ export async function runBatch(
           // Fronts stream directly into their page, row-major.
           if (rendered.front) {
             writer.putNext(rendered.front, cardNumber);
-            if (writer.isFull) await writer.flushPage();
+            if (writer.isFull) await flushSheetPage();
           }
           if (rendered.back) {
             if (backFacesSeparate) {
@@ -371,7 +394,7 @@ export async function runBatch(
               releaseCanvas(rendered.back);
             } else {
               writer.putNext(rendered.back, cardNumber);
-              if (writer.isFull) await writer.flushPage();
+              if (writer.isFull) await flushSheetPage();
             }
           }
           placedRecords += 1;
@@ -418,7 +441,9 @@ export async function runBatch(
       errors: [...errors],
     });
 
-    await nextFrame();
+    // Sheets mode yields through the page pipeline (worker round-trips and
+    // page appends) instead of a per-card rAF, which cost 16.7 ms per card.
+    if (!isSheetMode) await nextFrame();
   }
 
   if (controlRef() === 'cancelled') {
@@ -430,7 +455,19 @@ export async function runBatch(
   // --- Sheet mode: close the streamed PDF (or its parts) ------------------
   if (isSheetMode && writer) {
     try {
+      if (sheetPipeline.pending) await sheetPipeline.pending.catch(() => undefined);
+      if (sheetPipeline.failure !== null) throw sheetPipeline.failure;
       const streams = await writer.finish();
+      // Diagnostics (v0.7.7): a slow sheet job can be render-, encode- or
+      // PDF-bound; these totals say which, in the app log.
+      const timings = writer.timings;
+      const elapsedMs = Date.now() - started;
+      logMessage(
+        'info',
+        `Sheet job: ${current} records, ${timings.pages} sheet(s) in ${elapsedMs} ms ` +
+          `(${Math.round(elapsedMs / Math.max(1, current))} ms/card; encode ${timings.encodeMs} ms, ` +
+          `PDF ${timings.appendMs} ms)`
+      );
       const first = streams[0];
       if (!first) {
         errors.push({ rowIndex: -1, message: 'Nothing was placed on any sheet.' });

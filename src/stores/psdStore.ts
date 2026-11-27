@@ -7,6 +7,8 @@ import type {
   BarcodeConfig,
 } from '@/types/psd';
 import { parsePsdFile } from '@/services/psdService';
+import { clearRasterImageCache } from '@/services/psdCompositeService';
+import { resetCmykPlateCache } from '@/services/cmykExportService';
 import {
   savePsdProjectRecord,
   loadFromIndexedDB,
@@ -176,6 +178,10 @@ export const usePsdStore = create<PsdState>()((set, get) => ({
 
   loadPsd: async (file, side) => {
     set({ isParsing: true, parseError: null });
+    // Decoded layer rasters and the CMYK plate belong to the design being
+    // replaced.
+    clearRasterImageCache();
+    resetCmykPlateCache();
     try {
       const design = await parsePsdFile(file, side);
       const project = get().project;
@@ -194,6 +200,8 @@ export const usePsdStore = create<PsdState>()((set, get) => ({
   },
 
   clearSide: (side) => {
+    clearRasterImageCache();
+    resetCmykPlateCache();
     const project = get().project;
     set({
       project: {
@@ -321,6 +329,8 @@ export const usePsdStore = create<PsdState>()((set, get) => ({
   },
 
   resetProject: () => {
+    clearRasterImageCache();
+    resetCmykPlateCache();
     set({ project: EMPTY_PROJECT, projectName: 'Untitled project', parseError: null });
   },
 }));

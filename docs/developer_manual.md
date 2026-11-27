@@ -265,7 +265,10 @@ modules.
 
 `batchService.nextFrame()` yields through a timer while `document.hidden` and
 races rAF with a timer otherwise — the loop never depends on a rendering
-frame that a minimized window would not produce.
+frame that a minimized window would not produce. **Sheets mode no longer yields
+per card** (v0.7.7): the page pipeline already awaits worker round-trips and
+page appends, so the 16.7 ms rAF yield was pure cost; cards mode still yields
+every card.
 
 ---
 
@@ -403,11 +406,30 @@ on every parse.
 1. **ICC transform** — LittleCMS (WASM, `assets/profiles/lcms.wasm`) builds
    one sRGB→CMYK transform against the bundled Ghostscript
    `default_cmyk.icc` (perceptual intent). Canvas pixels are repacked to a
-   tight RGB buffer, transformed to interleaved CMYK bytes.
+   tight RGB buffer, transformed to interleaved CMYK bytes. Since v0.7.7 the
+   transform runs **inside each export worker**. The flags live in one place,
+   `cmykTransformFlags.ts`, shared by the main thread and the workers so the
+   fallback path can never diverge — and they are pinned to
+   **`FLAGS_NOOPTIMIZE`**: printed CMYK must stay exactly what the app has
+   always produced. Measured on the demo card, the exact pipeline costs
+   149–151 ms versus 33–47 ms for an optimised CLUT, but the CLUT moves 52.6 %
+   of samples by up to 8/255 (high-res grid: 36.1 % by up to 6/255), so it is
+   not used. Any speed work must preserve these bytes.
+
+   Because only ~14 % of a card differs between records, v0.7.8 transforms only
+   what changes: the batch's first card becomes a **plate** (RGBA + its exact
+   CMYK, primed into every worker), and `cmykPlateSplice.ts` copies the plate's
+   CMYK for unchanged pixels while transforming the rest. This is exact — the
+   transform is per-pixel and deterministic, so equal RGB implies equal CMYK —
+   and it is proven by a unit test against a full transform, by a real-LittleCMS
+   buffer comparison (all 2 672 800 bytes equal) and by byte-identical JPEGs.
+   Never "optimise" this by quantising or approximating: the ink must not move.
 2. **CMYK JPEG** — a custom 4-component encoder (jpeg-js only writes YCbCr)
    wraps the stream with an **Adobe APP14 marker, transform=0**, telling
    decoders the components are C,M,Y,K. Compression runs in the export
-   worker (`encodeJpegInWorker`).
+   worker pool (`encodeCardInWorker` takes the canvas's RGBA, the plate id and
+   does both the ICC transform and the compression; `encodeJpegInWorker`
+   remains for the raw-CMYK and fallback paths).
 3. **CMYK PDF** — pdf-lib pages exactly canvas-sized (points); each image is
    a DeviceCMYK/ICCBased (N=4) FlateDecode XObject; the document carries a
    **GTS_PDFX OutputIntent** referencing the embedded profile. Producer
@@ -457,7 +479,11 @@ All geometry is in **PDF points** (`toPoints` per unit: mm/cm/in/pt).
   wrapper (it accepts one `cardNumbers` array per sheet).
 - **Streaming for large jobs**: `SheetJobWriter` (`services/sheetJobWriter.ts`)
   drives the builder — `putNext`/`put(card, number)`, `flushPage()` (encode +
-  release the page's canvases), `putBack(encoded, number)` and `finish()`. The
+  release the page's canvases), `putBack(encoded, number)` and `finish()`. Since
+  v0.7.7 a page's cards encode **in parallel** through the worker pool and the
+  append is serialised, so a caller may run one page ahead: encoding of page N
+  overlaps rendering of page N+1 while `addSheet` still lands in sheet order
+  (at most two pages of canvases exist at once). The
   number travels with its record to the back page, so both faces print the
   same value. It splits the document once it holds
   `DEFAULT_PART_BUDGET_BYTES` (96 MB of embedded JPEGs; halved when the part

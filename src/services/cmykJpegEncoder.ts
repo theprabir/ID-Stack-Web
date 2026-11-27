@@ -1,5 +1,5 @@
 /**
- * 4-component Adobe CMYK JPEG encoder (v0.4.2).
+ * 4-component Adobe CMYK JPEG encoder (v0.7.7).
  *
  * jpeg-js hardcodes 3-component (YCbCr) output, so its encoder is adapted here
  * for true CMYK: four components (ids 1–4, 1x1 sampling), no colour-space
@@ -8,6 +8,16 @@
  * 255 = full ink) are stored **inverted** (255 − ink), as Photoshop and every
  * conforming decoder expect. The APP14 marker tells decoders to read the four
  * components as C, M, Y, K.
+ *
+ * PERFORMANCE (v0.7.7): the first version of this file built its Huffman and
+ * bit-category tables — two `Map`s with 65 534 entries each — *inside* every
+ * call, pushed output bytes into a `number[]`, and looked every symbol up
+ * through a `Map`. On a 1011×638 card that cost 257 ms, and even a 32×24 test
+ * image cost 56 ms. Those tables are constants, so they are now built once per
+ * worker (typed arrays), the bit writer is an accumulator with a growable
+ * `Uint8Array`, and the 8×8 block fetch is index math instead of per-pixel
+ * `Math.min`. Output is byte-for-byte identical to v0.7.6 — enforced by
+ * `tests/services/cmykJpegEncoderGolden.test.ts`.
  *
  * Adapted from the jpeg-js encoder (Adobe's public-domain JPEG port via
  * Andreas Ritter, MIT-licensed).
@@ -70,63 +80,85 @@ function at<T>(table: readonly T[], index: number): T {
   return value;
 }
 
-/** Strict-mode helper: read a fully-populated typed array slot */
-function ta(table: Float64Array, index: number): number {
-  const value = table[index];
-  if (value === undefined) throw new Error(`JPEG buffer read out of range: ${index}`);
-  return value;
+/** A Huffman table flattened to typed arrays (symbol → code, code length) */
+interface HuffmanTable {
+  /** Huffman code per symbol (only meaningful where `lengths[symbol] > 0`) */
+  codes: Int32Array;
+  /** Code length per symbol; 0 marks a symbol the table never uses */
+  lengths: Uint8Array;
 }
 
-/** Strict-mode helper: read a populated Map entry */
-function mapAt(table: Map<number, number>, key: number): number {
-  const value = table.get(key);
-  if (value === undefined) throw new Error(`JPEG table lookup out of range: ${key}`);
-  return value;
-}
-
-/** A Huffman table mapping JPEG symbols to [code, codeLength] */
-type HuffmanTable = Map<number, [number, number]>;
-
-/** Compute a standard JPEG Huffman table: symbol → [code, length] */
-function computeHuffmanTable(
+/** Standard-table Huffman codes for one table (built once, shared) */
+function buildHuffmanTable(
   nrcodes: readonly number[],
   stdTable: readonly number[]
 ): HuffmanTable {
-  const table: HuffmanTable = new Map();
+  const codes = new Int32Array(256);
+  const lengths = new Uint8Array(256);
   let codevalue = 0;
   let posInTable = 0;
   for (let k = 1; k <= 16; k += 1) {
     const count = at(nrcodes, k);
     for (let j = 1; j <= count; j += 1) {
       const symbol = at(stdTable, posInTable);
-      table.set(symbol, [codevalue, k]);
+      codes[symbol] = codevalue;
+      lengths[symbol] = k;
       posInTable += 1;
       codevalue += 1;
     }
     codevalue *= 2;
   }
-  return table;
+  return { codes, lengths };
 }
 
-/** Build the JPEG bit-category lookup (coefficients −32767…32767) */
-function buildCategoryLookup(): { bitcode: Map<number, number>; category: Map<number, number> } {
-  const bitcode = new Map<number, number>();
-  const category = new Map<number, number>();
+/** Per-image encoding tables (position-independent, built once per process) */
+interface EncoderTables {
+  luminanceDc: HuffmanTable;
+  luminanceAc: HuffmanTable;
+  chrominanceDc: HuffmanTable;
+  chrominanceAc: HuffmanTable;
+  /** Bit category (1–15) per value, indexed by `32767 + coefficient` */
+  category: Int32Array;
+  /** Amplitude bits per value, indexed by `32767 + coefficient` */
+  bitcode: Int32Array;
+}
+
+let encoderTables: EncoderTables | null = null;
+
+/**
+ * Build the process-wide encoder tables.
+ *
+ * The Huffman codes, bit categories and amplitudes depend only on the JPEG
+ * standard, never on the image or quality. Building them per call was the
+ * single largest fixed cost of an encode (~30 ms).
+ */
+function getEncoderTables(): EncoderTables {
+  if (encoderTables) return encoderTables;
+  const category = new Int32Array(65535);
+  const bitcode = new Int32Array(65535);
   let nrlower = 1;
   let nrupper = 2;
   for (let cat = 1; cat <= 15; cat += 1) {
     for (let nr = nrlower; nr < nrupper; nr += 1) {
-      category.set(32767 + nr, cat);
-      bitcode.set(32767 + nr, nr);
+      category[32767 + nr] = cat;
+      bitcode[32767 + nr] = nr;
     }
     for (let nrneg = -(nrupper - 1); nrneg <= -nrlower; nrneg += 1) {
-      category.set(32767 + nrneg, cat);
-      bitcode.set(32767 + nrneg, nrupper - 1 + nrneg);
+      category[32767 + nrneg] = cat;
+      bitcode[32767 + nrneg] = nrupper - 1 + nrneg;
     }
     nrlower <<= 1;
     nrupper <<= 1;
   }
-  return { bitcode, category };
+  encoderTables = {
+    luminanceDc: buildHuffmanTable(STD_DC_LUMINANCE_NRCODES, STD_DC_LUMINANCE_VALUES),
+    luminanceAc: buildHuffmanTable(STD_AC_LUMINANCE_NRCODES, STD_AC_LUMINANCE_VALUES),
+    chrominanceDc: buildHuffmanTable(STD_DC_CHROMINANCE_NRCODES, STD_DC_CHROMINANCE_VALUES),
+    chrominanceAc: buildHuffmanTable(STD_AC_CHROMINANCE_NRCODES, STD_AC_CHROMINANCE_VALUES),
+    category,
+    bitcode,
+  };
+  return encoderTables;
 }
 
 interface QuantTables {
@@ -136,8 +168,13 @@ interface QuantTables {
   kDiv: Float64Array;
 }
 
+/** Scaled quantisation tables per quality (only a few distinct qualities run) */
+const quantCache = new Map<number, QuantTables>();
+
 /** Build scaled quantisation tables (quality 1–100) and DCT divisors */
 function buildQuantTables(quality: number): QuantTables {
+  const cached = quantCache.get(quality);
+  if (cached) return cached;
   const scale = quality < 50 ? Math.floor(5000 / quality) : Math.floor(200 - quality * 2);
   const cTable = new Array<number>(64).fill(0);
   const kTable = new Array<number>(64).fill(0);
@@ -160,7 +197,11 @@ function buildQuantTables(quality: number): QuantTables {
       k += 1;
     }
   }
-  return { cTable, kTable, cDiv, kDiv };
+  const tables: QuantTables = { cTable, kTable, cDiv, kDiv };
+  // Quality is a percentage from the UI; keep the cache trivially small.
+  if (quantCache.size > 16) quantCache.clear();
+  quantCache.set(quality, tables);
+  return tables;
 }
 
 /**
@@ -185,123 +226,138 @@ export function encodeCmykJpegBytes(
   }
   const q = Math.min(100, Math.max(1, quality));
   const { cTable, kTable, cDiv, kDiv } = buildQuantTables(q);
-  const cDcHt = computeHuffmanTable(STD_DC_LUMINANCE_NRCODES, STD_DC_LUMINANCE_VALUES);
-  const cAcHt = computeHuffmanTable(STD_AC_LUMINANCE_NRCODES, STD_AC_LUMINANCE_VALUES);
-  const kDcHt = computeHuffmanTable(STD_DC_CHROMINANCE_NRCODES, STD_DC_CHROMINANCE_VALUES);
-  const kAcHt = computeHuffmanTable(STD_AC_CHROMINANCE_NRCODES, STD_AC_CHROMINANCE_VALUES);
-  const { bitcode, category } = buildCategoryLookup();
+  const tables = getEncoderTables();
+  const { category, bitcode } = tables;
 
-  const byteout: number[] = [];
-  let bytenew = 0;
-  let bytepos = 7;
+  // --- Growable output buffer (one allocation per image, rarely regrown) ----
+  let out = new Uint8Array(Math.max(4096, (width * height) >> 1));
+  let outPos = 0;
 
-  const writeByte = (value: number): void => {
-    byteout.push(value & 0xff);
+  /** Emit one header byte (no 0xFF stuffing: headers are never bit-packed) */
+  const emit = (value: number): void => {
+    if (outPos >= out.length) {
+      const grown = new Uint8Array(out.length * 2);
+      grown.set(out, 0);
+      out = grown;
+    }
+    out[outPos] = value & 0xff;
+    outPos += 1;
   };
-  const writeWord = (value: number): void => {
-    writeByte((value >> 8) & 0xff);
-    writeByte(value & 0xff);
-  };
-  const writeBits = (code: number, length: number): void => {
-    let posval = length - 1;
-    while (posval >= 0) {
-      if (code & (1 << posval)) bytenew |= 1 << bytepos;
-      posval -= 1;
-      bytepos -= 1;
-      if (bytepos < 0) {
-        if (bytenew === 0xff) {
-          writeByte(0xff);
-          writeByte(0);
-        } else {
-          writeByte(bytenew);
-        }
-        bytepos = 7;
-        bytenew = 0;
-      }
+  /** Emit one entropy-coded byte, stuffing 0x00 after 0xFF as JPEG requires */
+  const emitCoded = (value: number): void => {
+    if (outPos + 1 >= out.length) {
+      const grown = new Uint8Array(out.length * 2);
+      grown.set(out, 0);
+      out = grown;
+    }
+    out[outPos] = value & 0xff;
+    outPos += 1;
+    if (value === 0xff) {
+      out[outPos] = 0;
+      outPos += 1;
     }
   };
-  const writeSymbol = (table: HuffmanTable, symbol: number): void => {
-    const entry = table.get(symbol);
-    if (!entry) throw new Error(`CMYK JPEG encoder: missing Huffman symbol ${symbol}.`);
-    writeBits(entry[0], entry[1]);
+  const writeWord = (value: number): void => {
+    emit((value >> 8) & 0xff);
+    emit(value & 0xff);
+  };
+
+  // --- Bit writer: accumulate up to 24 bits, flush whole bytes -------------
+  let bitBuffer = 0;
+  let bitCount = 0;
+  const writeBits = (code: number, length: number): void => {
+    bitBuffer = (bitBuffer << length) | (code & ((1 << length) - 1));
+    bitCount += length;
+    while (bitCount >= 8) {
+      bitCount -= 8;
+      emitCoded((bitBuffer >>> bitCount) & 0xff);
+    }
+    bitBuffer &= (1 << bitCount) - 1;
+  };
+  const writeHuffman = (table: HuffmanTable, symbol: number): void => {
+    const length = table.lengths[symbol] ?? 0;
+    if (length === 0) throw new Error(`CMYK JPEG encoder: missing Huffman symbol ${symbol}.`);
+    writeBits(table.codes[symbol] ?? 0, length);
   };
 
   // SOI + Adobe APP14 (transform=0: CMYK, not YCCK)
   writeWord(0xffd8);
   writeWord(0xffee);
   writeWord(14);
-  writeByte(0x41); // 'A'
-  writeByte(0x64); // 'd'
-  writeByte(0x6f); // 'o'
-  writeByte(0x62); // 'b'
-  writeByte(0x65); // 'e'
+  emit(0x41); // 'A'
+  emit(0x64); // 'd'
+  emit(0x6f); // 'o'
+  emit(0x62); // 'b'
+  emit(0x65); // 'e'
   writeWord(0x0064); // version 100
   writeWord(0x0000); // flags0
   writeWord(0x0000); // flags1
-  writeByte(0x00); // transform = 0
+  emit(0x00); // transform = 0
 
   // DQT: two tables (0 = C/K luminance-style, 1 = M/Y chrominance-style)
   writeWord(0xffdb);
   writeWord(132);
-  writeByte(0);
-  for (let i = 0; i < 64; i += 1) writeByte(at(cTable, i));
-  writeByte(1);
-  for (let j = 0; j < 64; j += 1) writeByte(at(kTable, j));
+  emit(0);
+  for (let i = 0; i < 64; i += 1) emit(at(cTable, i));
+  emit(1);
+  for (let j = 0; j < 64; j += 1) emit(at(kTable, j));
 
   // SOF0: baseline, 4 components (C=1, M=2, Y=3, K=4), all 1x1 sampling
   writeWord(0xffc0);
   writeWord(8 + 3 * 4); // segment length = 8 + 3 bytes per component
-  writeByte(8); // precision
+  emit(8); // precision
   writeWord(height);
   writeWord(width);
-  writeByte(4); // nrofcomponents
-  writeByte(1);
-  writeByte(0x11);
-  writeByte(0); // C: id, sampling, quant table 0
-  writeByte(2);
-  writeByte(0x11);
-  writeByte(1); // M: id, sampling, quant table 1
-  writeByte(3);
-  writeByte(0x11);
-  writeByte(1); // Y: id, sampling, quant table 1
-  writeByte(4);
-  writeByte(0x11);
-  writeByte(0); // K: id, sampling, quant table 0
+  emit(4); // nrofcomponents
+  emit(1);
+  emit(0x11);
+  emit(0); // C: id, sampling, quant table 0
+  emit(2);
+  emit(0x11);
+  emit(1); // M: id, sampling, quant table 1
+  emit(3);
+  emit(0x11);
+  emit(1); // Y: id, sampling, quant table 1
+  emit(4);
+  emit(0x11);
+  emit(0); // K: id, sampling, quant table 0
 
   // DHT: four standard tables (DC0/AC0 for C+K, DC1/AC1 for M+Y)
   writeWord(0xffc4);
   writeWord(0x01a2);
-  writeByte(0x00);
-  for (let i = 1; i <= 16; i += 1) writeByte(at(STD_DC_LUMINANCE_NRCODES, i));
-  for (let j = 0; j <= 11; j += 1) writeByte(at(STD_DC_LUMINANCE_VALUES, j));
-  writeByte(0x10);
-  for (let k = 1; k <= 16; k += 1) writeByte(at(STD_AC_LUMINANCE_NRCODES, k));
-  for (let l = 0; l <= 161; l += 1) writeByte(at(STD_AC_LUMINANCE_VALUES, l));
-  writeByte(0x01);
-  for (let m = 1; m <= 16; m += 1) writeByte(at(STD_DC_CHROMINANCE_NRCODES, m));
-  for (let n = 0; n <= 11; n += 1) writeByte(at(STD_DC_CHROMINANCE_VALUES, n));
-  writeByte(0x11);
-  for (let o = 1; o <= 16; o += 1) writeByte(at(STD_AC_CHROMINANCE_NRCODES, o));
-  for (let p = 0; p <= 161; p += 1) writeByte(at(STD_AC_CHROMINANCE_VALUES, p));
+  emit(0x00);
+  for (let i = 1; i <= 16; i += 1) emit(at(STD_DC_LUMINANCE_NRCODES, i));
+  for (let j = 0; j <= 11; j += 1) emit(at(STD_DC_LUMINANCE_VALUES, j));
+  emit(0x10);
+  for (let k = 1; k <= 16; k += 1) emit(at(STD_AC_LUMINANCE_NRCODES, k));
+  for (let l = 0; l <= 161; l += 1) emit(at(STD_AC_LUMINANCE_VALUES, l));
+  emit(0x01);
+  for (let m = 1; m <= 16; m += 1) emit(at(STD_DC_CHROMINANCE_NRCODES, m));
+  for (let n = 0; n <= 11; n += 1) emit(at(STD_DC_CHROMINANCE_VALUES, n));
+  emit(0x11);
+  for (let o = 1; o <= 16; o += 1) emit(at(STD_AC_CHROMINANCE_NRCODES, o));
+  for (let p = 0; p <= 161; p += 1) emit(at(STD_AC_CHROMINANCE_VALUES, p));
 
   // SOS: 4 components, DC/AC table selectors matching DHT
   writeWord(0xffda);
   writeWord(6 + 2 * 4); // segment length = 6 + 2 bytes per component
-  writeByte(4); // nrofcomponents
-  writeByte(1);
-  writeByte(0x00); // C: DC0, AC0
-  writeByte(2);
-  writeByte(0x11); // M: DC1, AC1
-  writeByte(3);
-  writeByte(0x11); // Y: DC1, AC1
-  writeByte(4);
-  writeByte(0x00); // K: DC0, AC0
-  writeByte(0); // Ss
-  writeByte(0x3f); // Se
-  writeByte(0); // Ah/Al
+  emit(4); // nrofcomponents
+  emit(1);
+  emit(0x00); // C: DC0, AC0
+  emit(2);
+  emit(0x11); // M: DC1, AC1
+  emit(3);
+  emit(0x11); // Y: DC1, AC1
+  emit(4);
+  emit(0x00); // K: DC0, AC0
+  emit(0); // Ss
+  emit(0x3f); // Se
+  emit(0); // Ah/Al
 
   const block = new Float64Array(64);
   const du = new Float64Array(64);
+  /** Row base offsets for the current block (clamped at the bottom edge) */
+  const rowOffsets = new Int32Array(8);
 
   /** Forward DCT + quantise + Huffman-encode one 8x8 block; returns new DC predictor */
   function processBlock(
@@ -313,40 +369,40 @@ export function encodeCmykJpegBytes(
     // Pass 1: rows
     for (let i = 0; i < 8; i += 1) {
       const off = i * 8;
-      const d0 = ta(block, off),
-        d1 = ta(block, off + 1),
-        d2 = ta(block, off + 2),
-        d3 = ta(block, off + 3);
-      const d4 = ta(block, off + 4),
-        d5 = ta(block, off + 5),
-        d6 = ta(block, off + 6),
-        d7 = ta(block, off + 7);
-      const tmp0 = d0 + d7,
-        tmp7 = d0 - d7;
-      const tmp1 = d1 + d6,
-        tmp6 = d1 - d6;
-      const tmp2 = d2 + d5,
-        tmp5 = d2 - d5;
-      const tmp3 = d3 + d4,
-        tmp4 = d3 - d4;
-      const tmp10 = tmp0 + tmp3,
-        tmp13 = tmp0 - tmp3;
-      const tmp11 = tmp1 + tmp2,
-        tmp12 = tmp1 - tmp2;
+      const d0 = block[off]!;
+      const d1 = block[off + 1]!;
+      const d2 = block[off + 2]!;
+      const d3 = block[off + 3]!;
+      const d4 = block[off + 4]!;
+      const d5 = block[off + 5]!;
+      const d6 = block[off + 6]!;
+      const d7 = block[off + 7]!;
+      const tmp0 = d0 + d7;
+      const tmp7 = d0 - d7;
+      const tmp1 = d1 + d6;
+      const tmp6 = d1 - d6;
+      const tmp2 = d2 + d5;
+      const tmp5 = d2 - d5;
+      const tmp3 = d3 + d4;
+      const tmp4 = d3 - d4;
+      const tmp10 = tmp0 + tmp3;
+      const tmp13 = tmp0 - tmp3;
+      const tmp11 = tmp1 + tmp2;
+      const tmp12 = tmp1 - tmp2;
       block[off] = tmp10 + tmp11;
       block[off + 4] = tmp10 - tmp11;
       const z1 = (tmp12 + tmp13) * 0.707106781;
       block[off + 2] = tmp13 + z1;
       block[off + 6] = tmp13 - z1;
-      const tmp10b = tmp4 + tmp5,
-        tmp11b = tmp5 + tmp6,
-        tmp12b = tmp6 + tmp7;
+      const tmp10b = tmp4 + tmp5;
+      const tmp11b = tmp5 + tmp6;
+      const tmp12b = tmp6 + tmp7;
       const z5 = (tmp10b - tmp12b) * 0.382683433;
       const z2 = 0.5411961 * tmp10b + z5;
       const z4 = 1.306562965 * tmp12b + z5;
       const z3 = tmp11b * 0.707106781;
-      const z11 = tmp7 + z3,
-        z13 = tmp7 - z3;
+      const z11 = tmp7 + z3;
+      const z13 = tmp7 - z3;
       block[off + 5] = z13 + z2;
       block[off + 3] = z13 - z2;
       block[off + 1] = z11 + z4;
@@ -354,40 +410,40 @@ export function encodeCmykJpegBytes(
     }
     // Pass 2: columns
     for (let i = 0; i < 8; i += 1) {
-      const d0 = ta(block, i),
-        d1 = ta(block, i + 8),
-        d2 = ta(block, i + 16),
-        d3 = ta(block, i + 24);
-      const d4 = ta(block, i + 32),
-        d5 = ta(block, i + 40),
-        d6 = ta(block, i + 48),
-        d7 = ta(block, i + 56);
-      const tmp0 = d0 + d7,
-        tmp7 = d0 - d7;
-      const tmp1 = d1 + d6,
-        tmp6 = d1 - d6;
-      const tmp2 = d2 + d5,
-        tmp5 = d2 - d5;
-      const tmp3 = d3 + d4,
-        tmp4 = d3 - d4;
-      const tmp10 = tmp0 + tmp3,
-        tmp13 = tmp0 - tmp3;
-      const tmp11 = tmp1 + tmp2,
-        tmp12 = tmp1 - tmp2;
+      const d0 = block[i]!;
+      const d1 = block[i + 8]!;
+      const d2 = block[i + 16]!;
+      const d3 = block[i + 24]!;
+      const d4 = block[i + 32]!;
+      const d5 = block[i + 40]!;
+      const d6 = block[i + 48]!;
+      const d7 = block[i + 56]!;
+      const tmp0 = d0 + d7;
+      const tmp7 = d0 - d7;
+      const tmp1 = d1 + d6;
+      const tmp6 = d1 - d6;
+      const tmp2 = d2 + d5;
+      const tmp5 = d2 - d5;
+      const tmp3 = d3 + d4;
+      const tmp4 = d3 - d4;
+      const tmp10 = tmp0 + tmp3;
+      const tmp13 = tmp0 - tmp3;
+      const tmp11 = tmp1 + tmp2;
+      const tmp12 = tmp1 - tmp2;
       block[i] = tmp10 + tmp11;
       block[i + 32] = tmp10 - tmp11;
       const z1 = (tmp12 + tmp13) * 0.707106781;
       block[i + 16] = tmp13 + z1;
       block[i + 48] = tmp13 - z1;
-      const tmp10b = tmp4 + tmp5,
-        tmp11b = tmp5 + tmp6,
-        tmp12b = tmp6 + tmp7;
+      const tmp10b = tmp4 + tmp5;
+      const tmp11b = tmp5 + tmp6;
+      const tmp12b = tmp6 + tmp7;
       const z5 = (tmp10b - tmp12b) * 0.382683433;
       const z2 = 0.5411961 * tmp10b + z5;
       const z4 = 1.306562965 * tmp12b + z5;
       const z3 = tmp11b * 0.707106781;
-      const z11 = tmp7 + z3,
-        z13 = tmp7 - z3;
+      const z11 = tmp7 + z3;
+      const z13 = tmp7 - z3;
       block[i + 40] = z13 + z2;
       block[i + 24] = z13 - z2;
       block[i + 8] = z11 + z4;
@@ -395,75 +451,94 @@ export function encodeCmykJpegBytes(
     }
     // Quantise
     for (let i = 0; i < 64; i += 1) {
-      const v = ta(block, i) * ta(fdtbl, i);
+      const v = block[i]! * fdtbl[i]!;
       block[i] = v > 0.0 ? Math.floor(v + 0.5) : Math.ceil(v - 0.5);
     }
     // Zig-zag reorder
-    for (let j = 0; j < 64; j += 1) du[at(ZIG_ZAG, j)] = ta(block, j);
+    for (let j = 0; j < 64; j += 1) du[ZIG_ZAG[j]!] = block[j]!;
 
-    const newDc = ta(du, 0);
+    const newDc = du[0]!;
     const diff = newDc - dc;
     if (diff === 0) {
-      writeSymbol(htDc, 0);
+      writeHuffman(htDc, 0);
     } else {
       const pos = 32767 + diff;
-      writeSymbol(htDc, mapAt(category, pos));
-      writeBits(mapAt(bitcode, pos), mapAt(category, pos));
+      const cat = category[pos]!;
+      writeHuffman(htDc, cat);
+      writeBits(bitcode[pos]!, cat);
     }
     let end0pos = 63;
-    while (end0pos > 0 && ta(du, end0pos) === 0) end0pos -= 1;
+    while (end0pos > 0 && du[end0pos] === 0) end0pos -= 1;
     if (end0pos === 0) {
-      writeSymbol(htAc, 0x00);
+      writeHuffman(htAc, 0x00);
       return newDc;
     }
     let i = 1;
     while (i <= end0pos) {
       const startpos = i;
-      while (ta(du, i) === 0 && i <= end0pos) i += 1;
+      while (du[i] === 0 && i <= end0pos) i += 1;
       let nrzeroes = i - startpos;
       if (nrzeroes >= 16) {
         const lng = nrzeroes >> 4;
-        for (let nrmarker = 1; nrmarker <= lng; nrmarker += 1) writeSymbol(htAc, 0xf0);
+        for (let nrmarker = 1; nrmarker <= lng; nrmarker += 1) writeHuffman(htAc, 0xf0);
         nrzeroes &= 0xf;
       }
-      const pos = 32767 + ta(du, i);
-      writeSymbol(htAc, (nrzeroes << 4) + mapAt(category, pos));
-      writeBits(mapAt(bitcode, pos), mapAt(category, pos));
+      const pos = 32767 + du[i]!;
+      const cat = category[pos]!;
+      writeHuffman(htAc, (nrzeroes << 4) + cat);
+      writeBits(bitcode[pos]!, cat);
       i += 1;
     }
-    if (end0pos !== 63) writeSymbol(htAc, 0x00);
+    if (end0pos !== 63) writeHuffman(htAc, 0x00);
     return newDc;
   }
 
   // Encode 8x8 blocks, channel order C, M, Y, K
   const divs = [cDiv, kDiv, kDiv, cDiv];
-  const dcHts = [cDcHt, kDcHt, kDcHt, cDcHt];
-  const acHts = [cAcHt, kAcHt, kAcHt, cAcHt];
+  const dcHts = [
+    tables.luminanceDc,
+    tables.chrominanceDc,
+    tables.chrominanceDc,
+    tables.luminanceDc,
+  ];
+  const acHts = [
+    tables.luminanceAc,
+    tables.chrominanceAc,
+    tables.chrominanceAc,
+    tables.luminanceAc,
+  ];
   const dcs = [0, 0, 0, 0];
+  const rowStride = width * 4;
 
   for (let by = 0; by < height; by += 8) {
+    // Row base offsets for this block row, clamped at the bottom edge.
+    for (let row = 0; row < 8; row += 1) {
+      rowOffsets[row] = Math.min(height - 1, by + row) * rowStride;
+    }
     for (let bx = 0; bx < width; bx += 8) {
+      // Right-edge clamp for the last block of the row.
+      const lastCol = Math.min(7, width - 1 - bx);
+      const columnBase = bx * 4;
       for (let comp = 0; comp < 4; comp += 1) {
-        // Extract the 8x8 block for this component, clamped at the edges
+        // Extract the 8x8 block for this component.
         for (let pos = 0; pos < 64; pos += 1) {
           const row = pos >> 3;
           const col = pos & 7;
-          const py = Math.min(height - 1, by + row);
-          const px = Math.min(width - 1, bx + col); // Adobe convention: store the complement (255 − ink), then level-shift.
-          const sample = data[(py * width + px) * 4 + comp];
-          block[pos] = 127 - (sample ?? 0); // (255 − ink) − 128
+          const px = col <= lastCol ? col : lastCol;
+          // Adobe convention: store the complement (255 − ink), then level-shift.
+          block[pos] = 127 - data[rowOffsets[row]! + columnBase + px * 4 + comp]!;
         }
-        dcs[comp] = processBlock(at(divs, comp), at(dcs, comp), at(dcHts, comp), at(acHts, comp));
+        dcs[comp] = processBlock(divs[comp]!, dcs[comp]!, dcHts[comp]!, acHts[comp]!);
       }
     }
   }
 
-  // Bit alignment + EOI
-  if (bytepos >= 0) {
-    writeBits((1 << (bytepos + 1)) - 1, bytepos + 1);
-  }
+  // Bit alignment + EOI. v0.7.6 always padded to a full byte, which emits a
+  // stuffed 0xFF 0x00 even when the stream is already byte-aligned; keep that
+  // exactly so the output stays byte-identical to the previous encoder.
+  const pad = 8 - bitCount;
+  writeBits((1 << pad) - 1, pad);
   writeWord(0xffd9);
 
-  // The APP14 transform=0 marker was written in the header above.
-  return new Uint8Array(byteout);
+  return out.slice(0, outPos);
 }

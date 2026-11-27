@@ -1852,6 +1852,54 @@ function strokeRingForRaster(
  * overlay tinting it, and the stroke painted as a dilation/erosion ring
  * around the alpha contour (outside/center/inside Photoshop semantics).
  */
+/**
+ * Decoded layer rasters, keyed by their blob URL (v0.7.7).
+ *
+ * Every card used to construct a fresh `Image` for every layer, so a batch
+ * re-decoded the same PNGs once per record: ~12 decorative layers × 500 cards
+ * is thousands of identical decodes, each a PNG inflate on the main thread.
+ * Layer rasters are immutable for the life of a project, so one decode is
+ * enough. Photos are deliberately NOT cached here — each record has its own
+ * photo and its blob URL is revoked when the photo is replaced.
+ */
+const rasterImageCache = new Map<string, Promise<HTMLImageElement>>();
+
+/** How many distinct layer rasters stay decoded (roughly 30–60 MB worst case) */
+const RASTER_CACHE_LIMIT = 64;
+
+/** Load (and memoise) a layer raster image */
+function loadRasterImage(url: string): Promise<HTMLImageElement> {
+  const cached = rasterImageCache.get(url);
+  if (cached) {
+    // Refresh LRU position.
+    rasterImageCache.delete(url);
+    rasterImageCache.set(url, cached);
+    return cached;
+  }
+  const pending = loadImageElement(url);
+  rasterImageCache.set(url, pending);
+  pending.catch(() => {
+    // A failed decode must not poison the cache for a retry.
+    if (rasterImageCache.get(url) === pending) rasterImageCache.delete(url);
+  });
+  while (rasterImageCache.size > RASTER_CACHE_LIMIT) {
+    const oldest = rasterImageCache.keys().next().value;
+    if (oldest === undefined) break;
+    rasterImageCache.delete(oldest);
+  }
+  return pending;
+}
+
+/**
+ * Drop every cached layer raster (project closed or replaced).
+ *
+ * Call this whenever the parsed project is discarded so a new design never
+ * inherits decoded bitmaps it cannot use.
+ */
+export function clearRasterImageCache(): void {
+  rasterImageCache.clear();
+}
+
 async function drawRasterLayer(
   context: CanvasRenderingContext2D,
   layer: PsdLayerInfo,
@@ -1859,7 +1907,7 @@ async function drawRasterLayer(
   scale: number
 ): Promise<void> {
   if (!rasterUrl) return;
-  const image = await loadImageElement(rasterUrl);
+  const image = await loadRasterImage(rasterUrl);
   const bounds = layer.bounds;
   const dx = bounds.left * scale;
   const dy = bounds.top * scale;
@@ -2016,7 +2064,7 @@ async function applyClippingMask(
 ): Promise<HTMLCanvasElement> {
   if (!baseRasterUrl) return content;
   try {
-    const baseImage = await loadImageElement(baseRasterUrl);
+    const baseImage = await loadRasterImage(baseRasterUrl);
     const masked = makeCanvas(content.width, content.height);
     const maskedContext = masked.getContext('2d');
     if (!maskedContext) return content;
