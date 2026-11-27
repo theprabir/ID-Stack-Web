@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { FolderOpen, X } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { useRecentExports } from '@/hooks/useRecentExports';
@@ -36,6 +37,17 @@ function destination(entry: ExportRecord): string {
  */
 export function RecentExports(): JSX.Element {
   const exports = useRecentExports();
+  const [revealError, setRevealError] = useState<string | null>(null);
+
+  const reveal = async (path: string): Promise<void> => {
+    setRevealError(null);
+    const opened = await revealExportPath(path);
+    if (!opened) {
+      setRevealError(
+        'Explorer could not be opened. The file is still on disk at the path shown above.'
+      );
+    }
+  };
 
   if (exports.length === 0) {
     return (
@@ -67,7 +79,7 @@ export function RecentExports(): JSX.Element {
                 variant="outline"
                 size="sm"
                 className="shrink-0"
-                onClick={() => void revealExportPath(entry.path as string)}
+                onClick={() => void reveal(entry.path as string)}
               >
                 <FolderOpen className="h-3.5 w-3.5" aria-hidden="true" />
                 Show
@@ -76,6 +88,11 @@ export function RecentExports(): JSX.Element {
           </li>
         ))}
       </ul>
+      {revealError && (
+        <p className="text-[11px] text-destructive" role="alert">
+          {revealError}
+        </p>
+      )}
       <Button variant="outline" size="sm" onClick={clearRecentExports}>
         <X className="h-3.5 w-3.5" aria-hidden="true" />
         Clear list

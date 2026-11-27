@@ -4,3 +4,4 @@ export { Select, type SelectProps } from './select';
 export { Checkbox, type CheckboxProps } from './checkbox';
 export { Label, type LabelProps } from './label';
 export { Input, type InputProps } from './input';
+export { ConfirmDialog, type ConfirmDialogProps } from './confirm-dialog';

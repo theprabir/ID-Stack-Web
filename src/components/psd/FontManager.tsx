@@ -86,7 +86,9 @@ export function FontManager(): JSX.Element {
         aria-label="Upload font files or drop them here"
         onClick={() => inputRef.current?.click()}
         onKeyDown={(event) => {
-          if (event.key === 'Enter' || event.key === ' ') inputRef.current?.click();
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          inputRef.current?.click();
         }}
         onDragOver={(event) => {
           event.preventDefault();
@@ -95,7 +97,7 @@ export function FontManager(): JSX.Element {
         onDragLeave={() => setIsDragging(false)}
         onDrop={onDrop}
         className={cn(
-          'flex cursor-pointer flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed p-4 text-center text-xs transition-colors',
+          'flex cursor-pointer flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed p-4 text-center text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
           isDragging
             ? 'border-primary bg-primary/5'
             : 'border-border text-muted-foreground hover:border-primary/50 hover:bg-accent/5 hover:text-foreground'
@@ -153,7 +155,11 @@ export function FontManager(): JSX.Element {
         )
       )}
 
-      {notice && <p className="mt-2 text-xs text-muted-foreground">{notice}</p>}
+      {notice && (
+        <p className="mt-2 text-xs text-muted-foreground" role="status">
+          {notice}
+        </p>
+      )}
     </section>
   );
 }

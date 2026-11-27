@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 import { FileUp, Loader2, X, Layers } from 'lucide-react';
 import type { SideType } from '@/types/psd';
 import { usePsdStore } from '@/stores/psdStore';
-import { Button } from '@/components/ui';
+import { Button, ConfirmDialog } from '@/components/ui';
 import { cn } from '@/lib/utils';
 
 interface PsdUploaderProps {
@@ -22,6 +22,7 @@ export function PsdUploader({ side }: PsdUploaderProps): JSX.Element {
 
   const inputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
 
   const handleFile = useCallback(
     (files: FileList | null) => {
@@ -60,12 +61,25 @@ export function PsdUploader({ side }: PsdUploaderProps): JSX.Element {
             size="icon"
             aria-label={`Remove ${label}`}
             title={`Remove ${label}`}
-            onClick={() => clearSide(side)}
+            onClick={() => setConfirmRemove(true)}
           >
             <X className="h-4 w-4" aria-hidden="true" />
           </Button>
         )}
       </div>
+
+      <ConfirmDialog
+        open={confirmRemove}
+        title={`Remove the ${side} design?`}
+        description={`Its placeholders, mappings and preview are discarded. You can upload the ${side} PSD again at any time.`}
+        confirmLabel="Remove design"
+        destructive
+        onCancel={() => setConfirmRemove(false)}
+        onConfirm={() => {
+          setConfirmRemove(false);
+          clearSide(side);
+        }}
+      />
 
       {!design && !isParsing && (
         <div
@@ -74,7 +88,9 @@ export function PsdUploader({ side }: PsdUploaderProps): JSX.Element {
           aria-label={`Upload the ${side} PSD file`}
           onClick={() => inputRef.current?.click()}
           onKeyDown={(event) => {
-            if (event.key === 'Enter' || event.key === ' ') inputRef.current?.click();
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            inputRef.current?.click();
           }}
           onDragOver={(event) => {
             event.preventDefault();
@@ -83,7 +99,7 @@ export function PsdUploader({ side }: PsdUploaderProps): JSX.Element {
           onDragLeave={() => setIsDragging(false)}
           onDrop={onDrop}
           className={cn(
-            'flex cursor-pointer flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed p-6 text-center transition-colors',
+            'flex cursor-pointer flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed p-6 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
             isDragging
               ? 'border-primary bg-primary/5'
               : 'border-border hover:border-primary/50 hover:bg-accent/5'
@@ -96,7 +112,7 @@ export function PsdUploader({ side }: PsdUploaderProps): JSX.Element {
       )}
 
       {isParsing && (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
           Parsing PSD…
         </div>

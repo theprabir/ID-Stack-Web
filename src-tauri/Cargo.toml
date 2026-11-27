@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.7.6"
+version = "0.7.7"
 description = "ID Stack — offline ID card design and batch printing"
 authors = ["Prabir Kumar Das"]
 license = "MIT"

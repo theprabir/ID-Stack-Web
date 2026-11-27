@@ -49,7 +49,8 @@ export function Sidebar(): JSX.Element {
                 }
               >
                 <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
-                {!collapsed && <span className="truncate">{label}</span>}
+                {/* Collapsed: keep the name for screen readers and the tooltip. */}
+                <span className={collapsed ? 'sr-only' : 'truncate'}>{label}</span>
               </NavLink>
             </li>
           ))}
@@ -61,6 +62,8 @@ export function Sidebar(): JSX.Element {
           type="button"
           onClick={() => setSidebarCollapsed(!collapsed)}
           aria-expanded={!collapsed}
+          aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'}
+          title={collapsed ? 'Expand navigation' : 'Collapse navigation'}
           className="flex w-full items-center justify-center rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent/10 hover:text-foreground"
         >
           {collapsed ? '»' : '«'}

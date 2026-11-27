@@ -2,7 +2,7 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.7.7] — performance and multi-batch fixes (unreleased)
+## [0.7.7] - 2026-11-27
 
 ### Changed
 
@@ -18,6 +18,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Printed CMYK is unchanged.** The transform stays pinned to
   `FLAGS_NOOPTIMIZE`; the optimised CLUT (149 → 33–47 ms) was rejected because it
   moves 52.6 % of CMYK samples by up to 8/255.
+- **Destructive actions ask inside the app.** The two remaining `window.confirm`
+  popups (open the demo project over a working one, clear the recent-export
+  list) now use one accessible `ConfirmDialog`. The same dialog guards the
+  operations that cannot be undone by clicking again: removing a design side,
+  removing a data source, and removing all photos or a whole photo library each
+  state what is discarded first. Single-photo removal stays instant.
 - **Only changed pixels are colour-converted.** The first card of a size becomes
   a *plate* (its RGBA plus its exactly transformed CMYK); later cards transform
   only differing pixels and copy the rest. A duplex job keeps one plate per side.
@@ -51,6 +57,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   failed asset. `initCmykEngine` is single-flight too, and a failed setup no
   longer poisons the session.
 
+### Fixed
+
+- **Failures are reported instead of swallowed.** A failed local-storage read on
+  Settings now says so (with the reason) instead of showing 0 bytes, and a
+  "Show in Explorer" that fails says so instead of doing nothing. Persistence
+  failures that used to be silent — imposition settings, a project save, a font
+  that loads but is not stored, the recent-export list, the theme mirror — are
+  written to the app log so the diagnostics bundle explains them. A worker that
+  crashes and falls back to the main thread is logged rather than silently
+  making the batch slower.
+
+### Accessibility
+
+- **Dialogs** are `role="alertdialog"` with `aria-modal`, a labelled title and
+  description, focus moved to **Cancel** on open (a stray Enter cannot
+  confirm), Tab trapped inside, Escape/backdrop to cancel, and focus restored to
+  the opening control. Sidebar and drop-zone controls gained `preventDefault`
+  on Space so the page no longer scrolls under them, focus rings, and real
+  accessible names (the collapsed sidebar links and the collapse toggle were
+  unnamed or named only `«`). Busy/import/status text is announced (`role="status"`)
+  and the Settings storage meter is a labelled `progressbar`.
+
 ### Verified
 
 - 3 workbooks + 3 photo ZIPs (116 records, front + back, imposed sheets) driven
@@ -59,6 +87,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - CMYK output unchanged: golden encoder test (`cmykJpegEncoderGolden.test.ts`)
   and plate-splice equivalence tests, plus `npm run typecheck`,
   `npx vitest run` and `npm run build`.
+- `ConfirmDialog.test.tsx` (new): alertdialog wiring, Cancel focused on open,
+  confirm/cancel callbacks, Escape, and focus returning to the opener.
 
 ## [0.7.6] - 2026-11-22
 

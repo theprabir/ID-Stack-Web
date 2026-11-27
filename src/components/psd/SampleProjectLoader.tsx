@@ -3,7 +3,7 @@ import { Loader2, Sparkles } from 'lucide-react';
 import { usePsdStore } from '@/stores/psdStore';
 import { useDataStore } from '@/stores/dataStore';
 import { loadDemoProject } from '@/services/sampleProjectService';
-import { Button } from '@/components/ui';
+import { Button, ConfirmDialog } from '@/components/ui';
 
 interface SampleProjectLoaderProps {
   /** Called after the demo project has been loaded (advances to the placeholder step) */
@@ -22,14 +22,9 @@ export function SampleProjectLoader({ onLoaded }: SampleProjectLoaderProps): JSX
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const load = async (): Promise<void> => {
-    if (hasDesign || hasData) {
-      const confirmed = window.confirm(
-        'Open the demo project? This replaces the current designs, data and mappings.'
-      );
-      if (!confirmed) return;
-    }
     setBusy(true);
     setError(null);
     setStatus('Preparing the demo project…');
@@ -44,10 +39,19 @@ export function SampleProjectLoader({ onLoaded }: SampleProjectLoaderProps): JSX
     }
   };
 
+  const requestLoad = (): void => {
+    if (hasDesign || hasData) {
+      setConfirmOpen(true);
+      return;
+    }
+    void load();
+  };
+
   return (
     <section
       className="flex flex-wrap items-center gap-3 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3"
       aria-labelledby="sample-project-title"
+      aria-busy={busy}
     >
       <Sparkles className="h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
       <div className="min-w-0 flex-1">
@@ -64,7 +68,7 @@ export function SampleProjectLoader({ onLoaded }: SampleProjectLoaderProps): JSX
           </p>
         )}
       </div>
-      <Button variant="outline" size="sm" onClick={() => void load()} disabled={busy}>
+      <Button variant="outline" size="sm" onClick={requestLoad} disabled={busy}>
         {busy ? (
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
         ) : (
@@ -72,6 +76,19 @@ export function SampleProjectLoader({ onLoaded }: SampleProjectLoaderProps): JSX
         )}
         {busy ? (status ?? 'Loading…') : 'Open demo project'}
       </Button>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Open the demo project?"
+        description="This replaces the current designs, data, photo libraries and mappings. They cannot be restored afterwards."
+        confirmLabel="Open demo project"
+        destructive
+        onCancel={() => setConfirmOpen(false)}
+        onConfirm={() => {
+          setConfirmOpen(false);
+          void load();
+        }}
+      />
     </section>
   );
 }

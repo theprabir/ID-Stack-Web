@@ -7,7 +7,7 @@
 **Professional ID card design & batch printing — a fully offline Windows desktop application.**
 
 [![Downloads](https://img.shields.io/github/v/release/theprabir/id-stack-web?label=download&color=0078D4)](https://github.com/theprabir/id-stack-web/releases/latest)
-[![Version](https://img.shields.io/badge/version-0.7.6-6366f1)](https://github.com/theprabir/id-stack-web/blob/main/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.7.7-6366f1)](https://github.com/theprabir/id-stack-web/blob/main/CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-22c55e)](LICENSE)
 
 [**⬇️ Download for Windows**](https://github.com/theprabir/id-stack-web/releases/latest) · [**📖 Changelog**](CHANGELOG.md) · [**🐛 Report an issue**](https://github.com/theprabir/id-stack-web/issues)

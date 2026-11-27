@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTheme } from '@/hooks/useTheme';
 import { useUIStore, type ThemeId, type ThemeMode } from '@/stores/uiStore';
-import { Button, Label } from '@/components/ui';
+import { Button, ConfirmDialog, Label } from '@/components/ui';
 import { RecentExports } from '@/components/common/RecentExports';
 import { buildDiagnosticsArchive, getLogDirectory } from '@/services/diagnosticsService';
 import {
@@ -12,6 +12,7 @@ import {
   type SaveExportResult,
 } from '@/services/exportService';
 import { getStorageOverview, type StorageOverview } from '@/services/storageService';
+import { logMessage } from '@/services/appLog';
 import {
   Sun,
   Moon,
@@ -242,22 +243,22 @@ export function SettingsPage(): JSX.Element {
 
   // --- Storage overview (v0.7.6) ----------------------------------------
   const [storage, setStorage] = useState<StorageOverview | null>(null);
+  const [storageError, setStorageError] = useState<string | null>(null);
   const [isMeasuring, setIsMeasuring] = useState(false);
+  const [confirmClearExports, setConfirmClearExports] = useState(false);
+  const [revealError, setRevealError] = useState<string | null>(null);
 
   const refreshStorage = useCallback(async () => {
     setIsMeasuring(true);
     try {
       setStorage(await getStorageOverview());
-    } catch {
-      // A blocked/failed IndexedDB read must not leave the section spinning.
-      setStorage({
-        usageBytes: 0,
-        quotaBytes: 0,
-        localStorageBytes: 0,
-        fonts: { count: 0, bytes: 0 },
-        projects: { count: 0, bytes: 0 },
-        keyValue: { count: 0, bytes: 0 },
-      });
+      setStorageError(null);
+    } catch (error) {
+      // A blocked/failed IndexedDB read must not leave the section spinning,
+      // and must not pretend the app uses zero bytes: say what went wrong.
+      const message = error instanceof Error ? error.message : String(error);
+      logMessage('warn', `Could not read local storage usage: ${message}`);
+      setStorageError(message);
     } finally {
       setIsMeasuring(false);
     }
@@ -276,6 +277,24 @@ export function SettingsPage(): JSX.Element {
       active = false;
     };
   }, []);
+
+  const storagePercent = storage
+    ? Math.min(
+        100,
+        storage.quotaBytes > 0
+          ? (storage.usageBytes / storage.quotaBytes) * 100
+          : storage.usageBytes > 0
+            ? 100
+            : 0
+      )
+    : 0;
+
+  const revealPath = async (path: string): Promise<void> => {
+    setRevealError(null);
+    if (!(await revealExportPath(path))) {
+      setRevealError('Explorer could not be opened. The file is still on disk at the path shown.');
+    }
+  };
 
   const exportDiagnostics = useCallback(async () => {
     setIsBuildingDiagnostics(true);
@@ -384,20 +403,18 @@ export function SettingsPage(): JSX.Element {
                     {storage.quotaBytes > 0 ? ` of ${formatBytes(storage.quotaBytes)}` : ''}
                   </span>
                 </div>
-                <div className="h-2 w-full overflow-hidden rounded-full bg-surface-card">
-                  <div
-                    className="h-full bg-primary"
-                    style={{
-                      width: `${Math.min(
-                        100,
-                        storage.quotaBytes > 0
-                          ? (storage.usageBytes / storage.quotaBytes) * 100
-                          : storage.usageBytes > 0
-                            ? 100
-                            : 0
-                      )}%`,
-                    }}
-                  />
+                <div
+                  className="h-2 w-full overflow-hidden rounded-full bg-surface-card"
+                  role="progressbar"
+                  aria-label="App storage used"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={Math.round(storagePercent)}
+                  aria-valuetext={`${formatBytes(storage.usageBytes)} of ${
+                    storage.quotaBytes > 0 ? formatBytes(storage.quotaBytes) : 'unknown quota'
+                  }`}
+                >
+                  <div className="h-full bg-primary" style={{ width: `${storagePercent}%` }} />
                 </div>
               </div>
               <dl className="grid grid-cols-3 gap-2 text-center">
@@ -425,7 +442,13 @@ export function SettingsPage(): JSX.Element {
               </dl>
             </>
           ) : (
-            <p className="text-xs text-muted-foreground">Measuring local storage…</p>
+            !storageError && <p className="text-xs text-muted-foreground">Measuring local storage…</p>
+          )}
+          {storageError && (
+            <p className="text-[11px] text-destructive" role="alert">
+              Could not read local storage usage: {storageError}. Exporting and saving still work;
+              try Refresh.
+            </p>
           )}
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" size="sm" onClick={() => void refreshStorage()} disabled={isMeasuring}>
@@ -435,11 +458,7 @@ export function SettingsPage(): JSX.Element {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => {
-                if (!window.confirm('Clear the recent-export list? The saved files on disk are not deleted.')) return;
-                clearRecentExports();
-                void refreshStorage();
-              }}
+              onClick={() => setConfirmClearExports(true)}
             >
               <Trash2 className="h-4 w-4" aria-hidden="true" />
               Clear recent exports
@@ -475,7 +494,7 @@ export function SettingsPage(): JSX.Element {
             <Button
               variant="outline"
               onClick={() => {
-                if (logDirectory) void revealExportPath(logDirectory);
+                if (logDirectory) void revealPath(logDirectory);
               }}
               disabled={!logDirectory}
             >
@@ -498,7 +517,7 @@ export function SettingsPage(): JSX.Element {
                 size="sm"
                 className="shrink-0"
                 onClick={() => {
-                  if (diagnosticsResult.path) void revealExportPath(diagnosticsResult.path);
+                  if (diagnosticsResult.path) void revealPath(diagnosticsResult.path);
                 }}
               >
                 <FolderOpen className="h-3.5 w-3.5" aria-hidden="true" />
@@ -514,6 +533,11 @@ export function SettingsPage(): JSX.Element {
           {diagnosticsResult && diagnosticsResult.status === 'cancelled' && (
             <p className="text-[11px] text-muted-foreground">
               Save cancelled — nothing was written.
+            </p>
+          )}
+          {revealError && (
+            <p className="text-[11px] text-destructive" role="alert">
+              {revealError}
             </p>
           )}
         </div>
@@ -545,6 +569,20 @@ export function SettingsPage(): JSX.Element {
           </div>
         </div>
       </SettingsSection>
+
+      <ConfirmDialog
+        open={confirmClearExports}
+        title="Clear the recent-export list?"
+        description="Only the list in this app is cleared. The files already saved on disk are not deleted and can still be opened from their folders."
+        confirmLabel="Clear list"
+        destructive
+        onCancel={() => setConfirmClearExports(false)}
+        onConfirm={() => {
+          setConfirmClearExports(false);
+          clearRecentExports();
+          void refreshStorage();
+        }}
+      />
     </div>
   );
 }

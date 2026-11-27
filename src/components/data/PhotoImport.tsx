@@ -1,7 +1,8 @@
 import { useCallback, useRef, useState } from 'react';
 import { Images, Upload, X, Loader2, FileArchive, AlertTriangle } from 'lucide-react';
 import { useDataStore } from '@/stores/dataStore';
-import { Button, Select } from '@/components/ui';
+import type { PhotoLibrary } from '@/types/data';
+import { Button, ConfirmDialog, Select } from '@/components/ui';
 import { cn } from '@/lib/utils';
 
 /**
@@ -28,6 +29,8 @@ export function PhotoImport(): JSX.Element {
 
   const inputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [libraryToRemove, setLibraryToRemove] = useState<PhotoLibrary | null>(null);
 
   const handleFiles = useCallback(
     (files: FileList | null) => {
@@ -65,7 +68,7 @@ export function PhotoImport(): JSX.Element {
           </h2>
         </div>
         {photos.length > 0 && (
-          <Button variant="ghost" size="sm" onClick={clearPhotos}>
+          <Button variant="ghost" size="sm" onClick={() => setConfirmClear(true)}>
             Remove all
           </Button>
         )}
@@ -77,7 +80,9 @@ export function PhotoImport(): JSX.Element {
         aria-label="Click to add photos or ZIP files, or drop them here"
         onClick={() => inputRef.current?.click()}
         onKeyDown={(event) => {
-          if (event.key === 'Enter' || event.key === ' ') inputRef.current?.click();
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          inputRef.current?.click();
         }}
         onDragOver={(event) => {
           event.preventDefault();
@@ -86,7 +91,7 @@ export function PhotoImport(): JSX.Element {
         onDragLeave={() => setIsDragging(false)}
         onDrop={onDrop}
         className={cn(
-          'mb-3 flex cursor-pointer flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed p-4 text-center transition-colors',
+          'mb-3 flex cursor-pointer flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed p-4 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
           isDragging
             ? 'border-primary bg-primary/5'
             : 'border-border hover:border-primary/50 hover:bg-accent/5'
@@ -98,7 +103,7 @@ export function PhotoImport(): JSX.Element {
           <Upload className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
         )}
         <p className="text-sm">Click to add photos or drop images / ZIP files here</p>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-muted-foreground" role="status">
           One ZIP per class keeps same-named photos apart. {zipProgress !== null && `Reading archive… ${Math.round(zipProgress * 100)}%`}
         </p>
       </div>
@@ -146,7 +151,7 @@ export function PhotoImport(): JSX.Element {
                 size="icon"
                 aria-label={`Remove photo library ${library.name}`}
                 title={`Remove ${library.name}`}
-                onClick={() => removePhotoLibrary(library.id)}
+                onClick={() => setLibraryToRemove(library)}
               >
                 <X className="h-4 w-4" aria-hidden="true" />
               </Button>
@@ -301,6 +306,33 @@ export function PhotoImport(): JSX.Element {
           ))}
         </ul>
       )}
+
+      <ConfirmDialog
+        open={confirmClear}
+        title="Remove all photos?"
+        description={`${photos.length} photo(s) from ${libraries.length} library(ies) are discarded, together with their source mappings. Re-import the files to bring them back.`}
+        confirmLabel="Remove all photos"
+        destructive
+        onCancel={() => setConfirmClear(false)}
+        onConfirm={() => {
+          setConfirmClear(false);
+          clearPhotos();
+        }}
+      />
+
+      <ConfirmDialog
+        open={libraryToRemove !== null}
+        title={`Remove "${libraryToRemove?.name ?? ''}"?`}
+        description={`Its ${libraryToRemove?.photos.length ?? 0} photo(s) are discarded and any data source mapped to it loses its photos. Re-import the archive to bring it back.`}
+        confirmLabel="Remove library"
+        destructive
+        onCancel={() => setLibraryToRemove(null)}
+        onConfirm={() => {
+          const library = libraryToRemove;
+          setLibraryToRemove(null);
+          if (library) removePhotoLibrary(library.id);
+        }}
+      />
 
       {photoError && (
         <p className="mt-2 text-sm text-destructive" role="alert">

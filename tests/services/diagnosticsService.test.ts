@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import JSZip from 'jszip';
+import { APP_VERSION } from '@/constants/app';
 
 const mocks = vi.hoisted(() => ({
   isTauri: vi.fn<() => boolean>(() => true),
@@ -48,7 +49,9 @@ describe('diagnosticsService', () => {
     );
 
     const system = await zip.file('system.txt')!.async('string');
-    expect(system).toContain('appVersion: 0.7.6');
+    // Read the real build version instead of hardcoding it: a version bump is
+    // not a regression in the diagnostics bundle.
+    expect(system).toContain(`appVersion: ${APP_VERSION}`);
     expect(system).toContain('shellVersion: 0.7.5');
     expect(system).toContain('id-stack.log');
 

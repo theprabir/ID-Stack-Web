@@ -1,7 +1,8 @@
 import { useCallback, useRef, useState } from 'react';
 import { FileSpreadsheet, Upload, X, Loader2, AlertTriangle } from 'lucide-react';
 import { useDataStore } from '@/stores/dataStore';
-import { Button } from '@/components/ui';
+import type { ExcelSource } from '@/types/data';
+import { Button, ConfirmDialog } from '@/components/ui';
 import { cn } from '@/lib/utils';
 
 /**
@@ -18,6 +19,7 @@ export function ExcelImport(): JSX.Element {
 
   const inputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [pendingRemoval, setPendingRemoval] = useState<ExcelSource | null>(null);
 
   const handleFiles = useCallback(
     (files: FileList | null) => {
@@ -63,7 +65,9 @@ export function ExcelImport(): JSX.Element {
         aria-label="Click to choose Excel files or drop them here"
         onClick={() => inputRef.current?.click()}
         onKeyDown={(event) => {
-          if (event.key === 'Enter' || event.key === ' ') inputRef.current?.click();
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          inputRef.current?.click();
         }}
         onDragOver={(event) => {
           event.preventDefault();
@@ -72,7 +76,7 @@ export function ExcelImport(): JSX.Element {
         onDragLeave={() => setIsDragging(false)}
         onDrop={onDrop}
         className={cn(
-          'flex cursor-pointer flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed text-center transition-colors',
+          'flex cursor-pointer flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
           hasSources ? 'p-3' : 'p-6',
           isDragging
             ? 'border-primary bg-primary/5'
@@ -120,7 +124,7 @@ export function ExcelImport(): JSX.Element {
                 size="icon"
                 aria-label={`Remove ${source.label}`}
                 title={`Remove ${source.label}`}
-                onClick={() => removeSource(source.id)}
+                onClick={() => setPendingRemoval(source)}
               >
                 <X className="h-4 w-4" aria-hidden="true" />
               </Button>
@@ -128,6 +132,20 @@ export function ExcelImport(): JSX.Element {
           ))}
         </ul>
       )}
+
+      <ConfirmDialog
+        open={pendingRemoval !== null}
+        title={`Remove "${pendingRemoval?.label ?? ''}"?`}
+        description="Its rows, column mappings, photo-library mapping and manual photo picks are discarded for this session. Import the file again to bring it back."
+        confirmLabel="Remove source"
+        destructive
+        onCancel={() => setPendingRemoval(null)}
+        onConfirm={() => {
+          const source = pendingRemoval;
+          setPendingRemoval(null);
+          if (source) removeSource(source.id);
+        }}
+      />
 
       {parseError && (
         <p className="mt-2 text-sm text-destructive" role="alert">

@@ -15,6 +15,7 @@ import {
   listFontRecords,
   type FontRecord,
 } from './storageService';
+import { logMessage } from './appLog';
 import arimoRegularUrl from '@/assets/fonts/arimo-regular.ttf?url';
 import arimoBoldUrl from '@/assets/fonts/arimo-bold.ttf?url';
 import arimoItalicUrl from '@/assets/fonts/arimo-italic.ttf?url';
@@ -267,8 +268,14 @@ export function registerFontFace(family: string, buffer: ArrayBuffer): FontFaceR
         delete fontLoadQueue[family];
       }
     })
-    .catch(() => {
-      // Invalid font file — mark as not loaded.
+    .catch((error: unknown) => {
+      // Invalid font file — mark as not loaded, but say which one and why.
+      logMessage(
+        'warn',
+        `Font "${family}" failed to load: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
       record.loaded = false;
       loadedFamilies.set(family, record);
       notify();
@@ -310,8 +317,15 @@ export function registerFontFace(family: string, buffer: ArrayBuffer): FontFaceR
     };
     try {
       await saveFontRecord(fontRecord);
-    } catch {
-      // Persistence failure shouldn't block the in-session font.
+    } catch (error) {
+      // Persistence failure shouldn't block the in-session font, but the
+      // font will be gone after a restart — record that.
+      logMessage(
+        'warn',
+        `Font "${family}" was loaded but not saved for the next start: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
     }
     imported.push(family);
   }

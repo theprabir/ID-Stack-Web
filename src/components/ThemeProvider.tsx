@@ -1,6 +1,7 @@
 import { useEffect, type PropsWithChildren } from 'react';
 import { useUIStore, isValidThemeId } from '@/stores/uiStore';
 import { saveToIndexedDB, loadFromIndexedDB } from '@/services/storageService';
+import { logMessage } from '@/services/appLog';
 
 const THEME_STORAGE_KEY = 'theme';
 const UI_PREFERENCES_KEY = 'id-stack-ui-preferences';
@@ -51,7 +52,14 @@ export function ThemeProvider({ children }: PropsWithChildren): JSX.Element {
           await saveToIndexedDB(THEME_STORAGE_KEY, next);
         }
       } catch (error) {
-        console.warn('Failed to mirror theme to IndexedDB', error);
+        // The theme already applies from localStorage; record why the mirror
+        // failed so the diagnostics bundle can show it.
+        logMessage(
+          'warn',
+          `Theme was not mirrored to IndexedDB: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
       }
     };
     void mirror();

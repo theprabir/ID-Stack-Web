@@ -14,6 +14,7 @@
  *   the caller falls back, and the rest of the pool keeps going.
  */
 import { encodeCmykJpegBytes } from './cmykJpegEncoder';
+import { logMessage } from './appLog';
 
 /** Pending request bookkeeping */
 interface Task {
@@ -255,8 +256,13 @@ async function requestBytes(
 
   try {
     return new Uint8Array(await promise);
-  } catch {
-    // Worker path failed — fall back rather than failing the batch.
+  } catch (error) {
+    // Worker path failed — fall back rather than failing the batch, but say so:
+    // a silent fallback hides a wedged or crashing worker behind a slow batch.
+    logMessage(
+      'warn',
+      `Export worker failed (${error instanceof Error ? error.message : String(error)}); using the main thread.`
+    );
     return fallback();
   }
 }

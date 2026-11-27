@@ -83,7 +83,13 @@ function readRecent(): ExportRecord[] {
         typeof (entry as ExportRecord).fileName === 'string' &&
         typeof (entry as ExportRecord).savedAt === 'string'
     );
-  } catch {
+  } catch (error) {
+    logMessage(
+      'warn',
+      `The recent-export list could not be read: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
     return [];
   }
 }
@@ -91,8 +97,15 @@ function readRecent(): ExportRecord[] {
 function persistRecent(records: ExportRecord[]): void {
   try {
     localStorage.setItem(RECENT_KEY, JSON.stringify(records));
-  } catch {
-    // A full/blocked localStorage must never fail an export.
+  } catch (error) {
+    // A full/blocked localStorage must never fail an export, but the user
+    // should not wonder why the list forgets exports: log it.
+    logMessage(
+      'warn',
+      `The recent-export list could not be saved: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
   }
 }
 

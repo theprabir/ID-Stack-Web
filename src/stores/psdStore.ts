@@ -16,6 +16,7 @@ import {
   type PsdProjectRecord,
 } from '@/services/storageService';
 import type { BatchState } from '@/services/batchService';
+import { logMessage } from '@/services/appLog';
 import type { ImpositionSettings, NumberingSettings } from '@/services/impositionTypes';
 import { DEFAULT_IMPOSITION_SETTINGS } from '@/services/impositionTypes';
 
@@ -113,8 +114,15 @@ export const usePsdStore = create<PsdState>()((set, get) => ({
 
   setImpositionSettings: (settings) => {
     set({ impositionSettings: settings });
-    void saveToIndexedDB(IMPOSITION_SETTINGS_KEY, settings).catch(() => {
-      // Persistence failure must not break the UI — settings stay in memory.
+    void saveToIndexedDB(IMPOSITION_SETTINGS_KEY, settings).catch((error: unknown) => {
+      // Persistence failure must not break the UI — settings stay in memory —
+      // but a silent failure means the next session silently reverts them.
+      logMessage(
+        'warn',
+        `Imposition settings were not saved: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
     });
   },
 
@@ -171,8 +179,16 @@ export const usePsdStore = create<PsdState>()((set, get) => ({
         }
         set({ impositionSettings: merged });
       }
-    } catch {
-      // Missing/corrupt settings fall back to defaults.
+    } catch (error) {
+      // Missing/corrupt settings fall back to defaults, but keep the reason:
+      // a corrupt record silently resetting the panel is exactly the kind of
+      // report the diagnostics bundle has to explain.
+      logMessage(
+        'warn',
+        `Imposition settings could not be restored: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
     }
   },
 
@@ -323,7 +339,15 @@ export const usePsdStore = create<PsdState>()((set, get) => ({
       // mappings are saved.
       await savePsdProjectRecord({ ...record, frontPsd: null, backPsd: null });
       set({ lastSaved: new Date().toISOString(), isSaving: false });
-    } catch {
+    } catch (error) {
+      // The Save button must stop spinning *and* the failure must be visible
+      // in the log instead of looking like a successful save.
+      logMessage(
+        'error',
+        `Project could not be saved: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
       set({ isSaving: false });
     }
   },
